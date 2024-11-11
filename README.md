@@ -1,2 +1,1 @@
-# lfi
-Lightweight Fabric Interface (LFI)
+# Lightweight Fabric Interface (LFI)
