@@ -7,8 +7,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-add_compile_options("-D_GNU_SOURCE" "-DMPICH_SKIP_MPICXX" "-D_REENTRANT")
-add_compile_options("-fPIC" "-O2" "-g" "-g3" "-ggdb" "-Wall" "-Wextra")
+add_compile_options("-DDEBUG")
+add_compile_options("-fPIC" "-O3" "-g" "-g3" "-ggdb" "-Wall" "-Wextra")
 
 link_libraries("pthread" "dl")
 

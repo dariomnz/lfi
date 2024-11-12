@@ -1,25 +1,24 @@
 
 /*
- *  Copyright 2020-2024 Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos, Dario Muñoz Muñoz
+ *  Copyright 2024-2025 Dario Muñoz Muñoz, Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos
  *
- *  This file is part of Expand.
+ *  This file is part of LFI.
  *
- *  Expand is free software: you can redistribute it and/or modify
+ *  LFI is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
  *
- *  Expand is distributed in the hope that it will be useful,
+ *  LFI is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU Lesser General Public License for more details.
  *
  *  You should have received a copy of the GNU Lesser General Public License
- *  along with Expand.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with LFI.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 
-#define DEBUG
 #include "impl/socket.hpp"
 
 #include <unistd.h>
@@ -76,7 +75,7 @@ int socket::server_init(const std::string& addr, int& port) {
 
     debug_info("available at " << port);
 
-    debug_info(">> End");
+    debug_info(">> End = "<<socket);
     return socket;
 }
 
@@ -125,7 +124,7 @@ int socket::client_init(const std::string& addr, int port) {
         return -1;
     }
 
-    debug_info(">> End");
+    debug_info(">> End = "<<socket);
     return socket;
 }
 
@@ -166,7 +165,7 @@ int socket::open() {
         return ret;
     }
 
-    debug_info(">> End");
+    debug_info(">> End = "<<out_socket);
     return out_socket;
 }
 
@@ -192,7 +191,7 @@ int socket::accept(int socket) {
         return -1;
     }
 
-    debug_info(">> End");
+    debug_info(">> End = "<<new_socket);
     return new_socket;
 }
 
@@ -200,7 +199,7 @@ int socket::close(int socket) {
     int ret = -1;
     debug_info(">> Begin");
     ret = ::close(socket);
-    debug_info(">> End");
+    debug_info(">> End = "<<ret);
     return ret;
 }
 
@@ -219,7 +218,7 @@ ssize_t socket::send(int socket, const void* data, size_t len) {
 
     } while ((l > 0) && (r >= 0));
 
-    debug_info(">> End");
+    debug_info(">> End = "<<len);
     return len;
 }
 
@@ -238,7 +237,7 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
 
     } while ((l > 0) && (r >= 0));
 
-    debug_info(">> End");
+    debug_info(">> End = "<<len);
     return len;
 }
 }  // namespace LFI

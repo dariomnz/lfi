@@ -1,5 +1,24 @@
-// Server side C program to demonstrate Socket
-// programming
+
+/*
+ *  Copyright 2024-2025 Dario Muñoz Muñoz, Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos
+ *
+ *  This file is part of LFI.
+ *
+ *  LFI is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  LFI is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with LFI.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,7 +26,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #define PORT 8080
-int main(int argc, char const* argv[])
+int main(void)
 {
     int server_fd, new_socket;
     ssize_t valread;
@@ -24,9 +43,7 @@ int main(int argc, char const* argv[])
     }
 
     // Forcefully attaching socket to the port 8080
-    if (setsockopt(server_fd, SOL_SOCKET,
-                   SO_REUSEADDR | SO_REUSEPORT, &opt,
-                   sizeof(opt))) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
@@ -35,9 +52,7 @@ int main(int argc, char const* argv[])
     address.sin_port = htons(PORT);
 
     // Forcefully attaching socket to the port 8080
-    if (bind(server_fd, (struct sockaddr*)&address,
-             sizeof(address))
-        < 0) {
+    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
@@ -45,16 +60,12 @@ int main(int argc, char const* argv[])
         perror("listen");
         exit(EXIT_FAILURE);
     }
-    if ((new_socket
-         = accept(server_fd, (struct sockaddr*)&address,
-                  &addrlen))
-        < 0) {
+    if ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0) {
         perror("accept");
         exit(EXIT_FAILURE);
     }
-    valread = read(new_socket, buffer,
-                   1024 - 1); // subtract 1 for the null
-                              // terminator at the end
+    valread = read(new_socket, buffer, 1024 - 1); // subtract 1 for the null
+                                                  // terminator at the end
     printf("Recv msg size %ld: %s\n", valread, buffer);
     send(new_socket, hello, strlen(hello), 0);
     printf("Hello message sent size %ld\n", strlen(hello));

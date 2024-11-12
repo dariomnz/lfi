@@ -1,25 +1,24 @@
 
 /*
- *  Copyright 2020-2024 Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos, Dario Muñoz Muñoz
+ *  Copyright 2024-2025 Dario Muñoz Muñoz, Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos
  *
- *  This file is part of Expand.
+ *  This file is part of LFI.
  *
- *  Expand is free software: you can redistribute it and/or modify
+ *  LFI is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
  *
- *  Expand is distributed in the hope that it will be useful,
+ *  LFI is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU Lesser General Public License for more details.
  *
  *  You should have received a copy of the GNU Lesser General Public License
- *  along with Expand.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with LFI.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 
-#define DEBUG
 #include "lfi.h"
 #include "impl/fabric.hpp"
 #include "impl/socket.hpp"
@@ -46,50 +45,115 @@ int lfi_server_create(char* serv_addr, int port)
 
 int lfi_client_create(char* serv_addr, int port)
 {
-    int ret = -1;
+    int out = -1;
+    int client_socket;
     debug_info("("<<serv_addr<<", "<<port<<")>> Begin");
-    ret = socket::client_init(serv_addr, port);
-    debug_info("("<<serv_addr<<", "<<port<<")="<<ret<<" >> End");
-    return ret;
+
+    client_socket = socket::client_init(serv_addr, port);
+
+    out = LFI::init_client(client_socket);
+
+    // TODO handle error in close
+    socket::close(client_socket);
+
+    debug_info("("<<serv_addr<<", "<<port<<")="<<out<<" >> End");
+    return out;
 }
 
 int lfi_server_accept(int socket)
 {
-    int ret = -1;
+    int out = -1;
+    int client_socket;
     debug_info("("<<socket<<") >> Begin");
 
-    ret = socket::accept(socket);
+    client_socket = socket::accept(socket);
 
-    debug_info("("<<socket<<")="<<ret<<" >> End");
-    return ret;
+    out = LFI::init_server(client_socket);
+
+
+    debug_info("("<<socket<<")="<<out<<" >> End");
+    return out;
 }
 
-ssize_t lfi_send(int socket, const void *data, size_t size)
+ssize_t lfi_send(int id, const void *data, size_t size)
 {
     ssize_t ret = -1;
-    debug_info("("<<socket<<", "<<data<<", "<<size<<")>> Begin");
-    ret = socket::send(socket, data, size);
-    debug_info("("<<socket<<", "<<data<<", "<<size<<")="<<ret<<" >> End");
+    fabric_msg msg;
+    debug_info("("<<id<<", "<<data<<", "<<size<<")>> Begin");
+    msg = LFI::send(id, data, size, 0);
+    if (msg.error < 0){
+        ret = msg.error;
+    }else{
+        ret = msg.size;
+    }
+    debug_info("("<<id<<", "<<data<<", "<<size<<")="<<ret<<" >> End");
     return ret;
 }
 
-ssize_t lfi_recv(int socket, void *data, size_t size)
+ssize_t lfi_tsend(int id, const void *data, size_t size, int tag)
 {
     ssize_t ret = -1;
-    debug_info("("<<socket<<", "<<data<<", "<<size<<")>> Begin");
-    ret = socket::recv(socket, data, size);
-    debug_info("("<<socket<<", "<<data<<", "<<size<<")="<<ret<<" >> End");
+    fabric_msg msg;
+    debug_info("("<<id<<", "<<data<<", "<<size<<", "<<tag<<")>> Begin");
+    msg = LFI::send(id, data, size, tag);
+    if (msg.error < 0){
+        ret = msg.error;
+    }else{
+        ret = msg.size;
+    }
+    debug_info("("<<id<<", "<<data<<", "<<size<<", "<<tag<<")="<<ret<<" >> End");
     return ret;
 }
 
-int lfi_close(int socket)
+ssize_t lfi_recv(int id, void *data, size_t size)
+{
+    ssize_t ret = -1;
+    fabric_msg msg;
+    debug_info("("<<id<<", "<<data<<", "<<size<<")>> Begin");
+    msg = LFI::recv(id, data, size, 0);
+    if (msg.error < 0){
+        ret = msg.error;
+    }else{
+        ret = msg.size;
+    }
+    debug_info("("<<id<<", "<<data<<", "<<size<<")="<<ret<<" >> End");
+    return ret;
+}
+
+ssize_t lfi_trecv(int id, void *data, size_t size, int tag)
+{
+    ssize_t ret = -1;
+    fabric_msg msg;
+    debug_info("("<<id<<", "<<data<<", "<<size<<", "<<tag<<")>> Begin");
+    msg = LFI::recv(id, data, size, tag);
+    if (msg.error < 0){
+        ret = msg.error;
+    }else{
+        ret = msg.size;
+    }
+    debug_info("("<<id<<", "<<data<<", "<<size<<", "<<tag<<")="<<ret<<" >> End");
+    return ret;
+}
+
+int lfi_server_close(int id)
 {
     int ret = -1;
-    debug_info("("<<socket<<") >> Begin");
+    debug_info("("<<id<<") >> Begin");
 
-    ret = socket::close(socket);
+    ret = socket::close(id);
 
-    debug_info("("<<socket<<")="<<ret<<" >> End");
+    debug_info("("<<id<<")="<<ret<<" >> End");
+    return ret;
+}
+
+int lfi_client_close(int id)
+{
+    int ret = -1;
+    debug_info("("<<id<<") >> Begin");
+
+    ret = LFI::close_comm(id);
+
+    debug_info("("<<id<<")="<<ret<<" >> End");
     return ret;
 }
 

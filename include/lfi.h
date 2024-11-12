@@ -1,21 +1,21 @@
 
 /*
- *  Copyright 2020-2024 Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos, Dario Muñoz Muñoz
+ *  Copyright 2024-2025 Dario Muñoz Muñoz, Felix Garcia Carballeira, Diego Camarmas Alonso, Alejandro Calderon Mateos
  *
- *  This file is part of Expand.
+ *  This file is part of LFI.
  *
- *  Expand is free software: you can redistribute it and/or modify
+ *  LFI is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
  *
- *  Expand is distributed in the hope that it will be useful,
+ *  LFI is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU Lesser General Public License for more details.
  *
  *  You should have received a copy of the GNU Lesser General Public License
- *  along with Expand.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with LFI.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 
@@ -25,18 +25,20 @@
 #include <sys/types.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-int lfi_server_create(char* serv_addr, int port);
-int lfi_server_accept(int id);
+    int lfi_server_create(char *serv_addr, int port);
+    int lfi_server_accept(int id);
+    int lfi_server_close(int id);
 
-int lfi_client_create(char* serv_addr, int port);
+    int lfi_client_create(char *serv_addr, int port);
+    int lfi_client_close(int id);
 
-ssize_t lfi_send(int id, const void *data, size_t size);
-ssize_t lfi_recv(int id, void *data, size_t size);
+    ssize_t lfi_send(int id, const void *data, size_t size);
+    ssize_t lfi_recv(int id, void *data, size_t size);
 
-int lfi_close(int socket);
 
 #ifdef __cplusplus
 }
