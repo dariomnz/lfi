@@ -698,7 +698,7 @@ namespace LFI
             {
                 return 0;
             }
-            set_hints(lfi.peer_ep, "sockets");
+            set_hints(lfi.peer_ep, "");
             ret = init(lfi.peer_ep);
         }
         debug_info("[LFI] End = " << ret);
