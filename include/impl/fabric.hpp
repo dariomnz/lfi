@@ -97,42 +97,13 @@ namespace LFI
         uint32_t tag = 0;
         int32_t error = 0;
     };
-    class fabric
-    {
-    public:
-        constexpr static const uint32_t FABRIC_ANY_RANK = 0xFFFFFFFF;
-
-    private:
-        static fabric_comm &any_comm(fabric_ep &fabric_ep);
-        static int set_hints(fabric_ep &fabric_ep);
-        static int run_thread_cq(fabric_ep &fabric_ep, uint32_t id);
-        static int init_thread_cq(fabric_ep &fabric_ep);
-        static int destroy_thread_cq(fabric_ep &fabric_ep);
-
-    public:
-        static int init(fabric_ep &fabric, bool have_threads = true);
-
-        static int destroy(fabric_ep &fabric_ep);
-
-        static fabric_comm &new_comm(fabric_ep &fabric_ep);
-        static fabric_comm &get_any_rank_comm(fabric_ep &fabric_ep);
-        static int close(fabric_ep &fabric_ep, fabric_comm &fabric_comm);
-        static int get_addr(fabric_ep &fabric_ep, std::vector<uint8_t> &out_addr);
-        static int register_addr(fabric_ep &fabric_ep, fabric_comm &fabric_comm, std::vector<uint8_t> &addr);
-        static int remove_addr(fabric_ep &fabric_ep, fabric_comm &fabric_comm);
-        static void wait(fabric_ep &fabric_ep, fabric_comm &fabric_comm);
-        static fabric_msg send(fabric_ep &fabric_ep, fabric_comm &fabric_comm, const void *buffer, size_t size, uint32_t tag);
-        static fabric_msg recv(fabric_ep &fabric_ep, fabric_comm &fabric_comm, void *buffer, size_t size, uint32_t tag);
-
-        static std::mutex s_mutex;
-    };
 
     class LFI
     {
         // Constants
         constexpr static const uint32_t FABRIC_ANY_RANK = 0xFFFFFFFF;
 
-        // Asegurate destroy when close app
+        // Secure destroy when closing app
         // fabric_init
     public:
         ~LFI();
