@@ -124,7 +124,7 @@ namespace LFI
         static int init_server(int socket);
         static int init_client(int socket);
 
-        static int init_endpoints(bool is_shm);
+        static int init_endpoints(bool is_shm, bool have_threads);
         static fabric_comm &init_comm(bool is_shm);
 
         // fabric_thread

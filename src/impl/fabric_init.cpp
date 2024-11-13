@@ -502,7 +502,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm);
+        ret = init_endpoints(is_shm, true);
         if (ret < 0)
         {
             return ret;
@@ -606,7 +606,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm);
+        ret = init_endpoints(is_shm, false);
         if (ret < 0)
         {
             return ret;
@@ -673,7 +673,7 @@ namespace LFI
         return ret;
     }
 
-    int LFI::init_endpoints(bool is_shm)
+    int LFI::init_endpoints(bool is_shm, bool have_threads)
     {
         int ret = 0;
         LFI &lfi = LFI::get_instance();
@@ -685,11 +685,11 @@ namespace LFI
                 return 0;
             }
             set_hints(lfi.shm_ep, "shm");
-            ret = init(lfi.shm_ep);
+            ret = init(lfi.shm_ep, have_threads);
             if (ret < 0)
             {
                 set_hints(lfi.shm_ep, "sm2");
-                ret = init(lfi.shm_ep);
+                ret = init(lfi.shm_ep, have_threads);
             }
         }
         else
@@ -699,7 +699,7 @@ namespace LFI
                 return 0;
             }
             set_hints(lfi.peer_ep, "");
-            ret = init(lfi.peer_ep);
+            ret = init(lfi.peer_ep, have_threads);
         }
         debug_info("[LFI] End = " << ret);
         return ret;

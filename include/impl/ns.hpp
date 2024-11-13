@@ -42,9 +42,11 @@ namespace LFI
             return "";
         }
 
-        static std::string get_host_ip()
+        static std::string get_host_ip(std::string hostname = "")
         {
-            std::string hostname = get_host_name();
+            if (hostname.empty()){
+                hostname = get_host_name();
+            }
 
             struct addrinfo hints{}, *res;
             hints.ai_family = AF_INET; // IPv4 only

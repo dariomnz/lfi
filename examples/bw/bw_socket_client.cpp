@@ -27,6 +27,7 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "impl/socket.hpp"
+#include "impl/ns.hpp"
 
 using namespace bw_examples;
 
@@ -82,9 +83,7 @@ int main(int argc, char *argv[])
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
 
-    // Convert IPv4 and IPv6 addresses from text to binary
-    // form
-    if (inet_pton(AF_INET, argv[1], &serv_addr.sin_addr) <= 0)
+    if (inet_pton(AF_INET, LFI::ns::get_host_ip(argv[1]).c_str(), &serv_addr.sin_addr) <= 0)
     {
         printf(
             "\nInvalid address/ Address not supported \n");

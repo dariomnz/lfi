@@ -48,7 +48,7 @@ namespace bw_examples
 
     static std::vector<bw_test> &get_test_vector()
     {
-        static std::vector<bw_test> tests(29);
+        static std::vector<bw_test> tests(25);
         static bool initialized = false;
         if (!initialized)
         {
@@ -84,27 +84,25 @@ namespace bw_examples
     [[maybe_unused]] static void print_test(bw_test &test)
     {
         uint64_t s_test_count = test.test_count;
-        uint64_t s_recv_size = test.recv_size;
         uint64_t s_recv_microsec = test.recv_microsec;
-        uint64_t s_send_size = test.send_size;
         uint64_t s_send_microsec = test.send_microsec;
+        double s_send_bw = ((double)test.send_size / (double)MB) / ((double)test.send_microsec / 1'000'000.0f);
+        double s_recv_bw = ((double)test.recv_size / (double)MB) / ((double)test.recv_microsec / 1'000'000.0f);
 
         uint64_t r_test_count = 0;
-        uint64_t r_recv_size = 0;
         uint64_t r_recv_microsec = 0;
-        uint64_t r_send_size = 0;
         uint64_t r_send_microsec = 0;
+        double r_send_bw = 0;
+        double r_recv_bw = 0;
 
+        MPI_Reduce(&s_send_bw, &r_send_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&s_recv_bw, &r_recv_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(&s_test_count, &r_test_count, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_recv_size, &r_recv_size, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(&s_recv_microsec, &r_recv_microsec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_send_size, &r_send_size, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(&s_send_microsec, &r_send_microsec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
 
         test.test_count = r_test_count;
-        test.recv_size = r_recv_size;
         test.recv_microsec = r_recv_microsec;
-        test.send_size = r_send_size;
         test.send_microsec = r_send_microsec;
 
         int rank;
@@ -115,9 +113,9 @@ namespace bw_examples
                       << std::setw(22) << test.test_size << " | "
                       << std::setw(06) << test.test_count << " | "
                       << std::setw(22) << (double)test.send_microsec / (double)test.test_count << " | "
-                      << std::setw(22) << ((double)test.send_size / (double)MB) / ((double)test.send_microsec / 1'000'000.0f) << " | "
+                      << std::setw(22) << r_send_bw << " | "
                       << std::setw(22) << (double)test.recv_microsec / (double)test.test_count << " | "
-                      << std::setw(22) << ((double)test.recv_size / (double)MB) / ((double)test.recv_microsec / 1'000'000.0f)
+                      << std::setw(22) << r_recv_bw
                       << std::endl;
         }
     }
