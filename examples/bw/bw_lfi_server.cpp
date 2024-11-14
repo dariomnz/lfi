@@ -43,7 +43,7 @@ int run_test(int id, bw_test &test)
             print("Error lfi_recv = "<<data_recv);
             return -1;
         }
-        test.recv_microsec += t.resetElapsedMicro();
+        test.recv_nanosec += t.resetElapsedNano();
         test.recv_size += data_recv;
 
         debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
@@ -52,7 +52,7 @@ int run_test(int id, bw_test &test)
             print("Error lfi_send = "<<data_send);
             return -1;
         }
-        test.send_microsec += t.resetElapsedMicro();
+        test.send_nanosec += t.resetElapsedNano();
         test.send_size += data_send;
     }
 

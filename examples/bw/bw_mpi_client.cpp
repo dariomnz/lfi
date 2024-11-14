@@ -45,7 +45,7 @@ int run_test(MPI_Comm& client_comm, bw_test &test)
             printf("Error MPI_Send\n");
             return -1;
         }
-        test.send_microsec += t.resetElapsedMicro();
+        test.send_nanosec += t.resetElapsedNano();
         test.send_size += test_size;
 
         data_recv = MPI_Recv(data.data(), test_size, MPI_UINT8_T, 0, 0, client_comm, MPI_STATUS_IGNORE);
@@ -53,7 +53,7 @@ int run_test(MPI_Comm& client_comm, bw_test &test)
             printf("Error MPI_Recv\n");
             return -1;
         }
-        test.recv_microsec += t.resetElapsedMicro();
+        test.recv_nanosec += t.resetElapsedNano();
         test.recv_size += test_size;
     }
 

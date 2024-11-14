@@ -41,9 +41,9 @@ namespace bw_examples
         std::atomic_uint64_t test_count = 0;
 
         std::atomic_uint64_t recv_size = 0;
-        std::atomic_uint64_t recv_microsec = 0;
+        std::atomic_uint64_t recv_nanosec = 0;
         std::atomic_uint64_t send_size = 0;
-        std::atomic_uint64_t send_microsec = 0;
+        std::atomic_uint64_t send_nanosec = 0;
     };
 
     static std::vector<bw_test> &get_test_vector()
@@ -73,9 +73,9 @@ namespace bw_examples
             std::cout << std::left
                       << std::setw(22) << "Size (bytes)" << " | "
                       << std::setw(06) << "Count" << " | "
-                      << std::setw(22) << "Send latency (us)" << " | "
+                      << std::setw(22) << "Send latency (ms)" << " | "
                       << std::setw(22) << "Send bandwidth (MB/s)" << " | "
-                      << std::setw(22) << "Recv latency (us)" << " | "
+                      << std::setw(22) << "Recv latency (ms)" << " | "
                       << std::setw(22) << "Recv bandwidth (MB/s)"
                       << std::endl;
         }
@@ -84,26 +84,26 @@ namespace bw_examples
     [[maybe_unused]] static void print_test(bw_test &test)
     {
         uint64_t s_test_count = test.test_count;
-        uint64_t s_recv_microsec = test.recv_microsec;
-        uint64_t s_send_microsec = test.send_microsec;
-        double s_send_bw = ((double)test.send_size / (double)MB) / ((double)test.send_microsec / 1'000'000.0f);
-        double s_recv_bw = ((double)test.recv_size / (double)MB) / ((double)test.recv_microsec / 1'000'000.0f);
+        uint64_t s_recv_nanosec = test.recv_nanosec;
+        uint64_t s_send_nanosec = test.send_nanosec;
+        double s_send_bw = ((double)test.send_size / (double)MB) / ((double)test.send_nanosec / 1'000'000'000.0);
+        double s_recv_bw = ((double)test.recv_size / (double)MB) / ((double)test.recv_nanosec / 1'000'000'000.0);
 
         uint64_t r_test_count = 0;
-        uint64_t r_recv_microsec = 0;
-        uint64_t r_send_microsec = 0;
+        uint64_t r_recv_nanosec = 0;
+        uint64_t r_send_nanosec = 0;
         double r_send_bw = 0;
         double r_recv_bw = 0;
 
         MPI_Reduce(&s_send_bw, &r_send_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(&s_recv_bw, &r_recv_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(&s_test_count, &r_test_count, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_recv_microsec, &r_recv_microsec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_send_microsec, &r_send_microsec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&s_recv_nanosec, &r_recv_nanosec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&s_send_nanosec, &r_send_nanosec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
 
         test.test_count = r_test_count;
-        test.recv_microsec = r_recv_microsec;
-        test.send_microsec = r_send_microsec;
+        test.recv_nanosec = r_recv_nanosec;
+        test.send_nanosec = r_send_nanosec;
 
         int rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -112,9 +112,9 @@ namespace bw_examples
             std::cout << std::left
                       << std::setw(22) << test.test_size << " | "
                       << std::setw(06) << test.test_count << " | "
-                      << std::setw(22) << (double)test.send_microsec / (double)test.test_count << " | "
+                      << std::setw(22) << (double)test.send_nanosec / 1'000'000.0 / (double)test.test_count << " | "
                       << std::setw(22) << r_send_bw << " | "
-                      << std::setw(22) << (double)test.recv_microsec / (double)test.test_count << " | "
+                      << std::setw(22) << (double)test.recv_nanosec / 1'000'000.0 / (double)test.test_count << " | "
                       << std::setw(22) << r_recv_bw
                       << std::endl;
         }
@@ -125,12 +125,12 @@ namespace bw_examples
     public:
         timer()
         {
-            resetElapsedMicro();
+            resetElapsedNano();
         }
 
-        uint64_t resetElapsedMicro()
+        uint64_t resetElapsedNano()
         {
-            uint64_t out = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - m_Start).count();
+            uint64_t out = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - m_Start).count();
             m_Start = std::chrono::high_resolution_clock::now();
             return out;
         }

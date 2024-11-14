@@ -36,14 +36,13 @@ int run_test(int id, bw_test &test)
     debug_info("Start run_test id "<<id<<" size "<<test.test_size);
     for (size_t i = 0; i < test.test_count; i++)
     {
-        t.resetElapsedMicro();
         debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
         data_send = lfi_send(id, data.data(), test_size);
         if (data_send != test_size){
             print("Error lfi_send = "<<data_send);
             return -1;
         }
-        test.send_microsec += t.resetElapsedMicro();
+        test.send_nanosec += t.resetElapsedNano();
         test.send_size += data_send;
         debug_info("count "<<i<<" lfi_recv("<<id<<", data.data(), "<<test_size<<")");
         data_recv = lfi_recv(id, data.data(), test_size);
@@ -51,7 +50,7 @@ int run_test(int id, bw_test &test)
             print("Error lfi_recv = "<<data_recv);
             return -1;
         }
-        test.recv_microsec += t.resetElapsedMicro();
+        test.recv_nanosec += t.resetElapsedNano();
         test.recv_size += data_recv;
     }
     
