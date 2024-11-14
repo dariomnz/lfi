@@ -43,15 +43,14 @@ int run_test(int socket, bw_test &test)
         data_send = LFI::socket::send(socket, data.data(), test_size);
         if (data_send != test_size)
             return -1;
-        test.send_nanosec += t.resetElapsedNano();
-        test.send_size += data_send;
+        test.size += data_send;
 
         data_recv = LFI::socket::recv(socket, data.data(), test_size);
         if (data_recv != test_size)
             return -1;
-        test.recv_nanosec += t.resetElapsedNano();
-        test.recv_size += data_recv;
+        test.size += data_recv;
     }
+    test.nanosec += t.resetElapsedNano();
 
     return 0;
 }

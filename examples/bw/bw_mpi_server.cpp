@@ -38,7 +38,6 @@ int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
-    timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
         data_recv = MPI_Recv(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm, MPI_STATUS_IGNORE);
@@ -46,16 +45,12 @@ int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
             printf("Error MPI_Recv\n");
             return -1;
         }
-        test.recv_nanosec += t.resetElapsedNano();
-        test.recv_size += test_size;
 
         data_send = MPI_Send(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm);
         if (data_send != MPI_SUCCESS){
             printf("Error MPI_Send\n");
             return -1;
         }
-        test.send_nanosec += t.resetElapsedNano();
-        test.send_size += test_size;
     }
 
     return 0;
