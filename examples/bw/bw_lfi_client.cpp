@@ -22,6 +22,7 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "lfi.h"
+#include "impl/debug.hpp"
 
 using namespace bw_examples;
 
@@ -32,20 +33,29 @@ int run_test(int id, bw_test &test)
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
     timer t;
+    debug_info("Start run_test id "<<id<<" size "<<test.test_size);
     for (size_t i = 0; i < test.test_count; i++)
     {
+        t.resetElapsedMicro();
+        debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
         data_send = lfi_send(id, data.data(), test_size);
-        if (data_send != test_size)
+        if (data_send != test_size){
+            print("Error lfi_send = "<<data_send);
             return -1;
+        }
         test.send_microsec += t.resetElapsedMicro();
         test.send_size += data_send;
-
+        debug_info("count "<<i<<" lfi_recv("<<id<<", data.data(), "<<test_size<<")");
         data_recv = lfi_recv(id, data.data(), test_size);
-        if (data_recv != test_size)
+        if (data_recv != test_size){
+            print("Error lfi_recv = "<<data_recv);
             return -1;
+        }
         test.recv_microsec += t.resetElapsedMicro();
         test.recv_size += data_recv;
     }
+    
+    debug_info("End run_test id "<<id<<" size "<<test.test_size);
 
     return 0;
 }
@@ -61,6 +71,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
@@ -70,8 +83,11 @@ int main(int argc, char *argv[])
 
     if ((client_fd = lfi_client_create(argv[1], PORT)) < 0) {
         printf("lfi client creation error \n");
+        MPI_Abort(MPI_COMM_WORLD, -1);
         return -1;
     }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
 

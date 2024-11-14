@@ -86,7 +86,7 @@ namespace LFI
         std::thread id;
         std::mutex thread_cq_mutex;
         std::condition_variable thread_cq_cv;
-        bool thread_cq_is_running = true;
+        std::atomic_bool thread_cq_is_running = true;
     };
 
     struct fabric_msg

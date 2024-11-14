@@ -66,6 +66,9 @@ int main(int argc, char *argv[])
     int opt = 1;
     socklen_t addrlen = sizeof(address);
 
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     ret = MPI_Init(&argc, &argv);
     if (ret < 0) exit(EXIT_FAILURE);
 

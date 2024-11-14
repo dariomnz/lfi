@@ -69,55 +69,6 @@ namespace LFI
         return 0;
     }
 
-    int LFI::progress(fabric_ep &fabric_ep)
-    {
-        int ret;
-        const int comp_count = 8;
-        struct fi_cq_tagged_entry comp[comp_count] = {};
-
-        // Libfabric progress
-        ret = fi_cq_read(fabric_ep.cq, comp, comp_count);
-        if (ret == -FI_EAGAIN)
-        {
-            return 0;
-        }
-
-        // TODO: handle error
-        if (ret < 0)
-        {
-            return ret;
-        }
-
-        // Handle the cq entries
-        for (int i = 0; i < ret; i++)
-        {
-            fabric_context *context = static_cast<fabric_context *>(comp[i].op_context);
-            fabric_comm* comm = get_comm(context->rank);
-            if (comm == nullptr){
-                continue;
-            }
-            context->entry = comp[i];
-
-            {
-                std::unique_lock<std::mutex> lock(comm->comm_mutex);
-                if (comp[i].flags & FI_SEND)
-                {
-                    debug_info("[LFI] Send cq of rank_peer " << context->rank);
-                }
-                if (comp[i].flags & FI_RECV)
-                {
-                    debug_info("[LFI] Recv cq of rank_peer " << context->rank);
-                }
-
-                // print_fi_cq_err_entry(comp);
-                // fabric_ep.subs_to_wait--;
-                comm->wait_context = false;
-                comm->comm_cv.notify_one();
-            }
-        }
-        return ret;
-    }
-
     int LFI::run_thread_cq(uint32_t id)
     {
         int ret = 0;

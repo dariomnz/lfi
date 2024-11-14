@@ -38,16 +38,18 @@ namespace LFI
         return file;
     }
 
+    #define print_error(out_format) std::cerr << "[ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << " : " << strerror(errno) << std::endl;
+
 #ifdef DEBUG
-    #define debug_error(out_format) std::cerr << "[ERROR] [" << __func__ << "] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] " << out_format << std::endl;
-    #define debug_warning(out_format) std::cerr << "[WARNING] [" << __func__ << "] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] " << out_format << std::endl;
-    #define debug_info(out_format) std::cerr << "[INFO] [" << __func__ << "] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] " << out_format << std::endl;
+    #define debug_error(out_format) std::cerr << "[ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl;
+    #define debug_warning(out_format) std::cerr << "[WARNING] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl;
+    #define debug_info(out_format) std::cerr << "[INFO] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl;
 #else
     #define debug_error(out_format)
     #define debug_warning(out_format)
     #define debug_info(out_format)
 #endif
 
-#define print(out_format) std::cout << out_format << std::endl;
+#define print(out_format) std::cerr << out_format << std::endl;
 
 } // namespace LFI

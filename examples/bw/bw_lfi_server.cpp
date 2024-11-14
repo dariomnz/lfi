@@ -23,6 +23,7 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "lfi.h"
+#include "impl/debug.hpp"
 
 using namespace bw_examples;
 
@@ -33,20 +34,29 @@ int run_test(int id, bw_test &test)
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
     timer t;
+    debug_info("Start run_test id "<<id<<" size "<<test.test_size);
     for (size_t i = 0; i < test.test_count; i++)
     {
+        debug_info("count "<<i<<" lfi_recv("<<id<<", data.data(), "<<test_size<<")");
         data_recv = lfi_recv(id, data.data(), test_size);
-        if (data_recv != test_size)
+        if (data_recv != test_size){
+            print("Error lfi_recv = "<<data_recv);
             return -1;
+        }
         test.recv_microsec += t.resetElapsedMicro();
         test.recv_size += data_recv;
 
+        debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
         data_send = lfi_send(id, data.data(), test_size);
-        if (data_send != test_size)
+        if (data_send != test_size){
+            print("Error lfi_send = "<<data_send);
             return -1;
+        }
         test.send_microsec += t.resetElapsedMicro();
         test.send_size += data_send;
     }
+
+    debug_info("End run_test id "<<id<<" size "<<test.test_size);
 
     return 0;
 }
@@ -56,6 +66,9 @@ int main(int argc, char *argv[])
     int ret;
     const int max_clients = 1000;
     int server_fd, new_socket;
+
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
 
     ret = MPI_Init(&argc, &argv);
     if (ret < 0) exit(EXIT_FAILURE);
@@ -68,6 +81,7 @@ int main(int argc, char *argv[])
 
     auto &tests = get_test_vector();
 
+    printf("Server start accepting :\n");
     int iter = 0;
     while (iter < max_clients)
     {
@@ -75,6 +89,7 @@ int main(int argc, char *argv[])
             perror("accept");
             exit(EXIT_FAILURE);
         }
+        print("Server accept client "<<new_socket);
         std::thread([new_socket, &tests](){
            
             for (auto &test : tests)

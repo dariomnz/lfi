@@ -68,6 +68,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
@@ -95,6 +98,8 @@ int main(int argc, char *argv[])
         printf("\nConnection Failed \n");
         return -1;
     }
+    
+    MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
 

@@ -30,6 +30,8 @@ namespace LFI
 {
     LFI::~LFI()
     {
+        std::unique_lock<std::mutex> lock(m_init_mutex);
+
         debug_info("[LFI] Start");
         destroy_thread_cq();
 
@@ -45,8 +47,6 @@ namespace LFI
     int LFI::set_hints(fabric_ep &fabric_ep, const std::string& prov)
     {
         debug_info("[LFI] Start");
-        LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
 
         fabric_ep.hints = fi_allocinfo();
         if (!fabric_ep.hints)
@@ -79,8 +79,6 @@ namespace LFI
         debug_info("[LFI] Start");
 
         LFI &lfi = LFI::get_instance();
-
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
 
         lfi.have_thread = have_threads;
 
@@ -268,9 +266,6 @@ namespace LFI
         int ret = 0;
 
         debug_info("[LFI] Start");
-        LFI &lfi = LFI::get_instance();
-
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
 
         fabric_ep.enable_ep = false;
 
@@ -362,7 +357,6 @@ namespace LFI
 
         debug_info("[LFI] Start");
         LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
 
         auto [key, inserted] = lfi.m_comms.emplace(std::piecewise_construct,
                                                    std::forward_as_tuple(rank_counter),
@@ -388,7 +382,6 @@ namespace LFI
     {
         int ret = 0;
         debug_info("[LFI] Start");
-
 
         LFI &lfi = LFI::get_instance();
         std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
@@ -467,34 +460,42 @@ namespace LFI
     {
         int ret;
         debug_info("[LFI] Start");
+        
+        LFI &lfi = LFI::get_instance();
+        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
+
         // First comunicate the identifier
         std::string host_id = ns::get_host_name() + " " + ns::get_host_ip();
         std::string peer_id;
-
-        // Server recv
-        size_t peer_id_size = 0;
-        ret = socket::recv(socket, &peer_id_size, sizeof(peer_id_size));
-        if (ret != sizeof(peer_id_size))
-        {
-            return -1;
-        }
-        peer_id.resize(peer_id_size);
-        ret = socket::recv(socket, peer_id.data(), peer_id.size());
-        if (ret != static_cast<int>(peer_id.size()))
-        {
-            return -1;
-        }
 
         // Server send
         size_t host_id_size = host_id.size();
         ret = socket::send(socket, &host_id_size, sizeof(host_id_size));
         if (ret != sizeof(host_id_size))
         {
+            print_error("socket::send host_id_size socket "<<socket);
             return -1;
         }
         ret = socket::send(socket, host_id.data(), host_id.size());
         if (ret != static_cast<int>(host_id.size()))
         {
+            print_error("socket::send host_id.data() socket "<<socket);
+            return -1;
+        }
+
+        // Server recv
+        size_t peer_id_size = 0;
+        ret = socket::recv(socket, &peer_id_size, sizeof(peer_id_size));
+        if (ret != sizeof(peer_id_size))
+        {
+            print_error("socket::recv peer_id_size socket "<<socket);
+            return -1;
+        }
+        peer_id.resize(peer_id_size);
+        ret = socket::recv(socket, peer_id.data(), peer_id.size());
+        if (ret != static_cast<int>(peer_id.size()))
+        {
+            print_error("socket::recv peer_id.data() socket "<<socket);
             return -1;
         }
 
@@ -505,6 +506,7 @@ namespace LFI
         ret = init_endpoints(is_shm, true);
         if (ret < 0)
         {
+            print_error("init_endpoints");
             return ret;
         }
 
@@ -514,11 +516,13 @@ namespace LFI
         ret = socket::recv(socket, &comm.rank_self_in_peer, sizeof(comm.rank_self_in_peer));
         if (ret != sizeof(comm.rank_self_in_peer))
         {
+            print_error("socket::recv comm.rank_self_in_peer socket "<<socket);
             return -1;
         }
         ret = socket::send(socket, &comm.rank_peer, sizeof(comm.rank_peer));
         if (ret != sizeof(comm.rank_peer))
         {
+            print_error("socket::send comm.rank_peer socket "<<socket);
             return -1;
         }
 
@@ -530,23 +534,27 @@ namespace LFI
         ret = socket::recv(socket, &peer_addr_size, sizeof(peer_addr_size));
         if (ret != sizeof(peer_addr_size))
         {
+            print_error("socket::recv peer_addr_size socket "<<socket);
             return -1;
         }
         peer_addr.resize(peer_addr_size);
         ret = socket::recv(socket, peer_addr.data(), peer_addr.size());
         if (ret != static_cast<int>(peer_addr.size()))
         {
+            print_error("socket::recv peer_addr.data() socket "<<socket);
             return -1;
         }
         ret = register_addr(comm, peer_addr);
         if (ret < 0)
         {
+            print_error("register_addr");
             return ret;
         }
 
         ret = get_addr(comm, host_addr);
         if (ret < 0)
         {
+            print_error("get_addr");
             return ret;
         }
         debug_info("[LFI] send addr");
@@ -554,15 +562,32 @@ namespace LFI
         ret = socket::send(socket, &host_addr_size, sizeof(host_addr_size));
         if (ret != sizeof(host_addr_size))
         {
+            print_error("socket::send host_addr_size socket "<<socket);
             return -1;
         }
         ret = socket::send(socket, host_addr.data(), host_addr.size());
         if (ret != static_cast<int>(host_addr.size()))
         {
+            print_error("socket::send host_addr.data() socket "<<socket);
             return -1;
         }
 
         ret = comm.rank_peer;
+
+        // Do a send recv because some providers need it
+        int buf = 123;
+        fabric_msg msg;
+        msg = LFI::send(comm.rank_peer, &buf, sizeof(buf), 123);
+        if (msg.error < 0){
+            print_error("LFI::send");
+            return msg.error;
+        }
+        msg = LFI::recv(comm.rank_peer, &buf, sizeof(buf), 1234);
+        if (msg.error < 0){
+            print_error("LFI::recv");
+            return msg.error;
+        }
+
         debug_info("[LFI] End = " << ret);
         return ret;
     }
@@ -571,34 +596,42 @@ namespace LFI
     {
         int ret;
         debug_info("[LFI] Start");
+
+        LFI &lfi = LFI::get_instance();
+        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
+
         // First comunicate the identifier
         std::string host_id = ns::get_host_name() + " " + ns::get_host_ip();
         std::string peer_id;
-
-        // Client send
-        size_t host_id_size = host_id.size();
-        ret = socket::send(socket, &host_id_size, sizeof(host_id_size));
-        if (ret != sizeof(host_id_size))
-        {
-            return -1;
-        }
-        ret = socket::send(socket, host_id.data(), host_id.size());
-        if (ret != static_cast<int>(host_id.size()))
-        {
-            return -1;
-        }
 
         // Client recv
         size_t peer_id_size = 0;
         ret = socket::recv(socket, &peer_id_size, sizeof(peer_id_size));
         if (ret != sizeof(peer_id_size))
         {
+            print_error("socket::recv peer_id_size socket "<<socket);
             return -1;
         }
         peer_id.resize(peer_id_size);
         ret = socket::recv(socket, peer_id.data(), peer_id.size());
         if (ret != static_cast<int>(peer_id.size()))
         {
+            print_error("socket::recv peer_id.data() socket "<<socket);
+            return -1;
+        }
+
+        // Client send
+        size_t host_id_size = host_id.size();
+        ret = socket::send(socket, &host_id_size, sizeof(host_id_size));
+        if (ret != sizeof(host_id_size))
+        {
+            print_error("socket::send host_id_size socket "<<socket);
+            return -1;
+        }
+        ret = socket::send(socket, host_id.data(), host_id.size());
+        if (ret != static_cast<int>(host_id.size()))
+        {
+            print_error("socket::send host_id.data() socket "<<socket);
             return -1;
         }
 
@@ -609,6 +642,7 @@ namespace LFI
         ret = init_endpoints(is_shm, false);
         if (ret < 0)
         {
+            print_error("init_endpoints");
             return ret;
         }
 
@@ -618,11 +652,13 @@ namespace LFI
         ret = socket::send(socket, &comm.rank_peer, sizeof(comm.rank_peer));
         if (ret != sizeof(comm.rank_peer))
         {
+            print_error("socket::send comm.rank_peer socket "<<socket);
             return -1;
         }
         ret = socket::recv(socket, &comm.rank_self_in_peer, sizeof(comm.rank_self_in_peer));
         if (ret != sizeof(comm.rank_self_in_peer))
         {
+            print_error("socket::recv comm.rank_self_in_peer socket "<<socket);
             return -1;
         }
 
@@ -634,6 +670,7 @@ namespace LFI
         ret = get_addr(comm, host_addr);
         if (ret < 0)
         {
+            print_error("get_addr");
             return ret;
         }
         debug_info("[LFI] send addr");
@@ -641,11 +678,13 @@ namespace LFI
         ret = socket::send(socket, &host_addr_size, sizeof(host_addr_size));
         if (ret != sizeof(host_addr_size))
         {
+            print_error("socket::send host_addr_size socket "<<socket);
             return -1;
         }
         ret = socket::send(socket, host_addr.data(), host_addr.size());
         if (ret != static_cast<int>(host_addr.size()))
         {
+            print_error("socket::send host_addr.data() socket "<<socket);
             return -1;
         }
 
@@ -653,22 +692,39 @@ namespace LFI
         ret = socket::recv(socket, &peer_addr_size, sizeof(peer_addr_size));
         if (ret != sizeof(peer_addr_size))
         {
+            print_error("socket::recv peer_addr_size socket "<<socket);
             return -1;
         }
         peer_addr.resize(peer_addr_size);
         ret = socket::recv(socket, peer_addr.data(), peer_addr.size());
         if (ret != static_cast<int>(peer_addr.size()))
         {
+            print_error("socket::recv peer_addr.data() socket "<<socket);
             return -1;
         }
         ret = register_addr(comm, peer_addr);
         if (ret < 0)
         {
+            print_error("register_addr");
             return ret;
         }
 
-
         ret = comm.rank_peer;
+        
+        // Do a recv send because some providers need it
+        int buf = 123;
+        fabric_msg msg;
+        msg = LFI::recv(comm.rank_peer, &buf, sizeof(buf), 123);
+        if (msg.error < 0){
+            print_error("LFI::recv");
+            return msg.error;
+        }
+        msg = LFI::send(comm.rank_peer, &buf, sizeof(buf), 1234);
+        if (msg.error < 0){
+            print_error("LFI::send");
+            return msg.error;
+        }
+
         debug_info("[LFI] End = " << ret);
         return ret;
     }

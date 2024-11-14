@@ -80,14 +80,14 @@ int socket::server_init(const std::string& addr, int& port) {
 }
 
 int socket::client_init(const std::string& addr, int port) {
-    int ret;
+    int ret = -1;
     int socket;
     debug_info(">> Begin");
 
     struct addrinfo hints = {};
     struct addrinfo* res;
 
-    hints.ai_family = AF_UNSPEC;      // Allow IPv4 or IPv6
+    hints.ai_family = AF_INET;      // Allow IPv4 or IPv6
     hints.ai_socktype = SOCK_STREAM;  // TCP socket
 
     // Get address information
@@ -121,6 +121,16 @@ int socket::client_init(const std::string& addr, int port) {
     // If no valid connection was made
     if (ret == -1) {
         print("Failed to connect");
+        return -1;
+    }
+
+    int buf = 123;
+    ret = send(socket, &buf, sizeof(buf));
+    if (ret != sizeof(buf)){
+        return -1;
+    }
+    ret = recv(socket, &buf, sizeof(buf));
+    if (ret != sizeof(buf)){
         return -1;
     }
 
@@ -191,6 +201,16 @@ int socket::accept(int socket) {
         return -1;
     }
 
+    int buf = 123;
+    ret = recv(new_socket, &buf, sizeof(buf));
+    if (ret != sizeof(buf)){
+        return -1;
+    }
+    ret = send(new_socket, &buf, sizeof(buf));
+    if (ret != sizeof(buf)){
+        return -1;
+    }
+
     debug_info(">> End = "<<new_socket);
     return new_socket;
 }
@@ -210,7 +230,7 @@ ssize_t socket::send(int socket, const void* data, size_t len) {
     debug_info(">> Begin");
 
     do {
-        r = write(socket, buffer, l);
+        r = ::send(socket, buffer, l, 0);
         if (r < 0) return r; /* fail */
 
         l = l - r;
@@ -229,7 +249,7 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
     char* buffer = static_cast<char*>(data);
 
     do {
-        r = read(socket, buffer, l);
+        r = ::recv(socket, buffer, l, 0);
         if (r < 0) return r; /* fail */
 
         l = l - r;

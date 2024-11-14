@@ -84,67 +84,124 @@ namespace LFI
         return out.str();
     }
 
+    int LFI::progress(fabric_ep &fabric_ep)
+    {
+        int ret;
+        const int comp_count = 8;
+        struct fi_cq_tagged_entry comp[comp_count] = {};
+        
+        LFI &lfi = LFI::get_instance();
+
+        // Libfabric progress
+        ret = fi_cq_read(fabric_ep.cq, comp, comp_count);
+        if (ret == -FI_EAGAIN)
+        {
+            if (lfi.have_thread){
+                std::this_thread::yield();
+            }
+            return 0;
+        }
+
+        // TODO: handle error
+        if (ret < 0)
+        {
+            return ret;
+        }
+
+        // Handle the cq entries
+        for (int i = 0; i < ret; i++)
+        {
+            fabric_context *context = static_cast<fabric_context *>(comp[i].op_context);
+            context->entry = comp[i];
+
+            {
+                fabric_comm* comm = get_comm(context->rank);
+                if (comm == nullptr){
+                    print("Error rank "<<context->rank<<" without comm");
+                    continue;
+                }
+
+                debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+                if (lfi.have_thread){
+                    std::unique_lock<std::mutex> lock(comm->comm_mutex);
+                    comm->wait_context = false;
+                    comm->comm_cv.notify_one();
+                }else{
+                    comm->wait_context = false;
+                }
+            }
+        }
+        return ret;
+    }
+
     // The pointer must not be nullptr
     void LFI::wait(fabric_comm *f_comm)
     {
         LFI &lfi = LFI::get_instance();
         if (lfi.have_thread)
         {
-            debug_info("[LFI] With threads");
+            debug_info("[LFI] Start With threads");
             std::unique_lock<std::mutex> lock(f_comm->comm_mutex);
             f_comm->comm_cv.wait(lock, [&f_comm]
-                                     { return !f_comm->wait_context; });
-            f_comm->wait_context = true;
+                                    { return !f_comm->wait_context; });
+            debug_info("[LFI] End With threads");
         }
         else
         {
-            debug_info("[LFI] Without threads");
-            std::unique_lock<std::mutex> lock(f_comm->comm_mutex);
-
-            int ret = 0;
-            const int comp_count = 8;
-            fi_cq_tagged_entry comp[comp_count] = {};
+            debug_info("[LFI] Start Without threads");
             while (f_comm->wait_context)
             {
-                ret = fi_cq_read(f_comm->m_ep.cq, &comp, comp_count);
-
-                if (ret == -FI_EAGAIN)
-                {
-                    // std::this_thread::yield();
-                    continue;
-                }
-
-                // TODO: handle error
-                if (ret < 0)
-                {
-                    print("Error in fi_cq_read " << ret << " " << fi_strerror(ret));
-                    continue;
-                }
-
-                for (int i = 0; i < ret; i++)
-                {
-                    // Handle the cq entries
-                    fabric_context *context = static_cast<fabric_context *>(comp[i].op_context);
-                    context->entry = comp[i];
-                    if (comp[i].flags & FI_SEND)
-                    {
-                        debug_info("[LFI] Send cq of rank_peer " << context->rank);
-                    }
-                    if (comp[i].flags & FI_RECV)
-                    {
-                        debug_info("[LFI] Recv cq of rank_peer " << context->rank);
-                    }
-                    
-                    debug_info(fi_cq_tagged_entry_to_string(comp[i]));
-                    fabric_comm* comm = get_comm(context->rank);
-                    if (comm) {
-                        comm->wait_context = false;
-                    }
-                    // fabric_ep.m_comms[context->rank].comm_cv.notify_one();
-                }
+                progress(f_comm->m_ep);
             }
-            f_comm->wait_context = true;
+            debug_info("[LFI] End Without threads");
+
+            // std::unique_lock<std::mutex> lock(f_comm->comm_mutex);
+
+            // int ret = 0;
+            // const int comp_count = 8;
+            // fi_cq_tagged_entry comp[comp_count] = {};
+            // while (f_comm->wait_context)
+            // {
+            //     ret = fi_cq_read(f_comm->m_ep.cq, &comp, comp_count);
+
+            //     if (ret == -FI_EAGAIN)
+            //     {
+            //         // std::this_thread::yield();
+            //         continue;
+            //     }
+
+            //     // TODO: handle error
+            //     if (ret < 0)
+            //     {
+            //         print("Error in fi_cq_read " << ret << " " << fi_strerror(ret));
+            //         continue;
+            //     }
+
+            //     for (int i = 0; i < ret; i++)
+            //     {
+            //         // Handle the cq entries
+            //         fabric_context *context = static_cast<fabric_context *>(comp[i].op_context);
+            //         context->entry = comp[i];
+            //         if (comp[i].flags & FI_SEND)
+            //         {
+            //             debug_info("[LFI] Send cq of rank_peer " << context->rank);
+            //         }
+            //         if (comp[i].flags & FI_RECV)
+            //         {
+            //             debug_info("[LFI] Recv cq of rank_peer " << context->rank);
+            //         }
+                    
+            //         debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+            //         fabric_comm* comm = get_comm(context->rank);
+            //         if (comm) {
+            //             comm->wait_context = false;
+            //         }
+            //         // fabric_ep.m_comms[context->rank].comm_cv.notify_one();
+            //     }
+            // }
+            // f_comm->wait_context = true;
         }
+        f_comm->wait_context = true;
     }
 
     fabric_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag)
@@ -201,7 +258,7 @@ namespace LFI
                 if (ret == -FI_EAGAIN)
                     (void)fi_cq_read(comm->m_ep.cq, NULL, 0);
             } while (ret == -FI_EAGAIN);
-            debug_info("[LFI] fi_tinject for rank_peer " << comm->rank_peer);
+            debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << comm->rank_peer);
         }
 
         msg.size = size;

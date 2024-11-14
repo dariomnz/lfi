@@ -72,6 +72,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
@@ -121,6 +124,8 @@ int main(int argc, char *argv[])
 
     MPI_Comm client_comm;
     MPI_Comm_connect(port_name.c_str(), MPI_INFO_NULL, 0, MPI_COMM_WORLD, &client_comm);
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
 

@@ -70,6 +70,10 @@ int main(int argc, char *argv[])
     int opt = 1;
     socklen_t addrlen = sizeof(address);
     int provided;
+    
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     ret = MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     if (ret < 0) exit(EXIT_FAILURE);
 
@@ -120,7 +124,7 @@ int main(int argc, char *argv[])
         }
         int client_size = 0;
         MPI_Comm_remote_size(client_comm, &client_size);
-        printf("Client size: %d\n", client_size);
+        // printf("Client size: %d\n", client_size);
         std::vector<std::thread> v_threads(client_size);
         for (int i = 0; i < client_size; i++)
         {
