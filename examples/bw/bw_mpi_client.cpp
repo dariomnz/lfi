@@ -34,27 +34,27 @@ using namespace bw_examples;
 int run_test(MPI_Comm& client_comm, bw_test &test)
 {
     std::vector<uint8_t> data(test.test_size);
-    ssize_t data_send = 0;
-    ssize_t data_recv = 0;
+    int ret = 0;
     ssize_t test_size = test.test_size;
+    MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
-        data_send = MPI_Send(data.data(), test_size, MPI_UINT8_T, 0, 0, client_comm);
-        if (data_send != MPI_SUCCESS){
+        ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, 0, 0, client_comm);
+        if (ret != MPI_SUCCESS){
             printf("Error MPI_Send\n");
             return -1;
         }
         test.size += test_size;
 
-        data_recv = MPI_Recv(data.data(), test_size, MPI_UINT8_T, 0, 0, client_comm, MPI_STATUS_IGNORE);
-        if (data_recv != MPI_SUCCESS){
-            printf("Error MPI_Recv\n");
-            return -1;
-        }
-        test.size += test_size;
     }
-    
+    int ack = 0;
+    ret = MPI_Recv(&ack, 1, MPI_INT, 0, 0, client_comm, MPI_STATUS_IGNORE);
+    if (ret != MPI_SUCCESS){
+        printf("Error MPI_Recv\n");
+        return -1;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
 
     return 0;

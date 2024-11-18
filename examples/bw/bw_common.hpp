@@ -46,7 +46,7 @@ namespace bw_examples
 
     static std::vector<bw_test> &get_test_vector()
     {
-        static std::vector<bw_test> tests(25);
+        static std::vector<bw_test> tests(30);
         static bool initialized = false;
         if (!initialized)
         {
@@ -69,40 +69,78 @@ namespace bw_examples
         if (rank == 0)
         {
             std::cout << std::left
-                      << std::setw(22) << "Size (bytes)" << " | "
-                      << std::setw(06) << "Count" << " | "
-                      << std::setw(22) << "Latency (ms)" << " | "
-                      << std::setw(22) << "Bandwidth (MB/s)" << " | "
+                      << std::setw( 8) << "Msg size" << " | "
+                      << std::setw( 5) << "Count" << " | "
+                      << std::setw( 7) << "Size" << " | "
+                      << std::setw( 8) << "Time (s)" << " | "
+                      << std::setw(12) << "Latency (ms)" << " | "
+                      << std::setw(16) << "Bandwidth (MB/s)" << " | "
+                      << std::setw(16) << "Msg rate (msg/s)"
                       << std::endl;
         }
     }
 
+    [[maybe_unused]] static std::string bytes_to_str(uint64_t bytes) 
+    {
+        const uint64_t GIGABYTE = 1024ull * 1024 * 1024;
+        const uint64_t MEGABYTE = 1024ull * 1024;
+        const uint64_t KILOBYTE = 1024ull;
+
+        double value = 0.0;
+        std::string unit;
+
+        if (bytes >= GIGABYTE) {
+            value = static_cast<double>(bytes) / GIGABYTE;
+            unit = "g";
+        } else if (bytes >= MEGABYTE) {
+            value = static_cast<double>(bytes) / MEGABYTE;
+            unit = "m";
+        } else if (bytes >= KILOBYTE) {
+            value = static_cast<double>(bytes) / KILOBYTE;
+            unit = "k";
+        } else {
+            value = static_cast<double>(bytes);
+            unit = "b";
+        }
+
+        std::ostringstream result;
+        if (value == static_cast<int64_t>(value)) {
+            result << static_cast<int64_t>(value) << unit;
+        } else {
+            result << std::fixed << std::setprecision(2) << value << unit;
+        }
+        return result.str();
+    }
+
     [[maybe_unused]] static void print_test(bw_test &test)
     {
-        uint64_t s_test_count = test.test_count*2;
-        uint64_t s_nanosec = test.nanosec;
-        double s_bw = ((double)test.size / (double)MB) / ((double)test.nanosec / 1'000'000'000.0);
+        uint64_t s_test_count = test.test_count;
+        uint64_t s_size = test.size;
 
         uint64_t r_test_count = 0;
-        uint64_t r_nanosec = 0;
-        double r_bw = 0;
+        uint64_t r_size = 0;
 
-        MPI_Reduce(&s_bw, &r_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        // MPI_Reduce(&s_bw, &r_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(&s_test_count, &r_test_count, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_nanosec, &r_nanosec, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&s_size, &r_size, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Barrier(MPI_COMM_WORLD);
 
+        double sec =  ((double)test.nanosec / 1'000'000'000.0);
+        double bw = ((double)r_size / (double)MB) / sec;
         test.test_count = r_test_count;
-        test.nanosec = r_nanosec;
 
         int rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         if (rank == 0)
         {
             std::cout << std::left
-                      << std::setw(22) << test.test_size << " | "
-                      << std::setw(06) << test.test_count << " | "
-                      << std::setw(22) << (double)test.nanosec / 1'000'000.0 / (double)test.test_count << " | "
-                      << std::setw(22) << r_bw
+                      << std::setw( 8) << bytes_to_str(test.test_size) << " | "
+                      << std::setw( 5) << test.test_count << " | "
+                      << std::setw( 7) << bytes_to_str(r_size) << " | "
+                      << std::setw( 8) << std::fixed << std::setprecision(5) << sec << " | "
+                      << std::setw(12) << std::fixed << std::setprecision(5) << (double)test.nanosec / 1'000'000.0 / (double)test.test_count << " | "
+                      << std::setw(16) << bw << " | "
+                      << std::setw(16) << std::fixed << std::setprecision(0) << (double)test.test_count / ((double)test.nanosec / 1'000'000'000.0)
                       << std::endl;
         }
     }

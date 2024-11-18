@@ -437,6 +437,7 @@ namespace LFI
         }
 
         fabric_comm.fi_addr = fi_addr;
+        debug_info("[LFI] register fi_addr = " << fi_addr);
 
         debug_info("[LFI] End = " << ret);
         return ret;
@@ -446,6 +447,8 @@ namespace LFI
     {
         int ret = -1;
         debug_info("[LFI] Start");
+        
+        debug_info("[LFI] remove fi_addr = " << fabric_comm.fi_addr);
         ret = fi_av_remove(fabric_comm.m_ep.av, &fabric_comm.fi_addr, 1, 0);
         if (ret < 0)
         {
@@ -503,7 +506,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm, true);
+        ret = init_endpoints(is_shm, false);
         if (ret < 0)
         {
             print_error("init_endpoints");

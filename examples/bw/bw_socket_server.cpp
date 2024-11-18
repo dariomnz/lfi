@@ -43,11 +43,12 @@ int run_test(int socket, bw_test &test)
         data_recv = LFI::socket::recv(socket, data.data(), test_size);
         if (data_recv != test_size)
             return -1;
-
-        data_send = LFI::socket::send(socket, data.data(), test_size);
-        if (data_send != test_size)
-            return -1;
     }
+    
+    int ack = 0;
+    data_send = LFI::socket::send(socket, &ack, sizeof(ack));
+    if (data_send != sizeof(ack))
+        return -1;
 
     return 0;
 }
@@ -55,7 +56,7 @@ int run_test(int socket, bw_test &test)
 int main(int argc, char *argv[])
 {   
     int ret;
-    const int max_clients = 1000;
+    const int max_clients = 1024;
     int server_fd, new_socket;
     struct sockaddr_in address;
     int opt = 1;

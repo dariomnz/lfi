@@ -56,8 +56,8 @@ namespace LFI
 
         fabric_ep &m_ep;
 
-        std::mutex comm_mutex;
-        std::condition_variable comm_cv;
+        std::recursive_mutex comm_mutex;
+        std::condition_variable_any comm_cv;
         std::atomic_bool wait_context = true;
         fabric_context context;
 
@@ -77,6 +77,8 @@ namespace LFI
         struct fid_av *av = nullptr;
         struct fid_cq *cq = nullptr;
         std::atomic_bool enable_ep = false;
+
+        std::recursive_mutex mutex_ep;
 
         bool initialized() { return enable_ep; }
     };

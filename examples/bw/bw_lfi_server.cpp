@@ -43,12 +43,13 @@ int run_test(int id, bw_test &test)
             return -1;
         }
 
-        debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
-        data_send = lfi_send(id, data.data(), test_size);
-        if (data_send != test_size){
-            print("Error lfi_send = "<<data_send);
-            return -1;
-        }
+    }
+    int ack = 0;
+    debug_info("ack lfi_send("<<id<<", ack, "<<sizeof(ack)<<")");
+    data_send = lfi_send(id, &ack, sizeof(ack));
+    if (data_send != sizeof(ack)){
+        print("Error lfi_send = "<<data_send);
+        return -1;
     }
 
     debug_info("End run_test id "<<id<<" size "<<test.test_size);
@@ -59,7 +60,7 @@ int run_test(int id, bw_test &test)
 int main(int argc, char *argv[])
 {   
     int ret;
-    const int max_clients = 1000;
+    const int max_clients = 1024;
     int server_fd, new_socket;
 
     setbuf(stdout, NULL);

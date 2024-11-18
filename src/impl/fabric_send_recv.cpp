@@ -26,61 +26,86 @@
 
 namespace LFI
 {
+    static inline std::string fi_flags_to_string(uint64_t flags)
+    {
+        std::stringstream out;
+        if (flags & FI_MSG) { out << "    FI_MSG" << std::endl; }
+        if (flags & FI_RMA) { out << "    FI_RMA" << std::endl; }
+        if (flags & FI_TAGGED) { out << "    FI_TAGGED" << std::endl; }
+        if (flags & FI_ATOMIC) { out << "    FI_ATOMIC" << std::endl; }
+        if (flags & FI_MULTICAST) { out << "    FI_MULTICAST" << std::endl; }
+        if (flags & FI_COLLECTIVE) { out << "    FI_COLLECTIVE" << std::endl; }
+
+        if (flags & FI_READ) { out << "    FI_READ" << std::endl; }
+        if (flags & FI_WRITE) { out << "    FI_WRITE" << std::endl; }
+        if (flags & FI_RECV) { out << "    FI_RECV" << std::endl; }
+        if (flags & FI_SEND) { out << "    FI_SEND" << std::endl; }
+        if (flags & FI_REMOTE_READ) { out << "    FI_REMOTE_READ" << std::endl; }
+        if (flags & FI_REMOTE_WRITE) { out << "    FI_REMOTE_WRITE" << std::endl; }
+
+        if (flags & FI_MULTI_RECV) { out << "    FI_MULTI_RECV" << std::endl; }
+        if (flags & FI_REMOTE_CQ_DATA) { out << "    FI_REMOTE_CQ_DATA" << std::endl; }
+        if (flags & FI_MORE) { out << "    FI_MORE" << std::endl; }
+        if (flags & FI_PEEK) { out << "    FI_PEEK" << std::endl; }
+        if (flags & FI_TRIGGER) { out << "    FI_TRIGGER" << std::endl; }
+        if (flags & FI_FENCE) { out << "    FI_FENCE" << std::endl; }
+        // if (flags & FI_PRIORITY) { out << "    FI_PRIORITY" << std::endl; }
+
+        if (flags & FI_COMPLETION) { out << "    FI_COMPLETION" << std::endl; }
+        if (flags & FI_INJECT) { out << "    FI_INJECT" << std::endl; }
+        if (flags & FI_INJECT_COMPLETE) { out << "    FI_INJECT_COMPLETE" << std::endl; }
+        if (flags & FI_TRANSMIT_COMPLETE) { out << "    FI_TRANSMIT_COMPLETE" << std::endl; }
+        if (flags & FI_DELIVERY_COMPLETE) { out << "    FI_DELIVERY_COMPLETE" << std::endl; }
+        if (flags & FI_AFFINITY) { out << "    FI_AFFINITY" << std::endl; }
+        if (flags & FI_COMMIT_COMPLETE) { out << "    FI_COMMIT_COMPLETE" << std::endl; }
+        if (flags & FI_MATCH_COMPLETE) { out << "    FI_MATCH_COMPLETE" << std::endl; }
+
+        if (flags & FI_HMEM) { out << "    FI_HMEM" << std::endl; }
+        if (flags & FI_VARIABLE_MSG) { out << "    FI_VARIABLE_MSG" << std::endl; }
+        if (flags & FI_RMA_PMEM) { out << "    FI_RMA_PMEM" << std::endl; }
+        if (flags & FI_SOURCE_ERR) { out << "    FI_SOURCE_ERR" << std::endl; }
+        if (flags & FI_LOCAL_COMM) { out << "    FI_LOCAL_COMM" << std::endl; }
+        if (flags & FI_REMOTE_COMM) { out << "    FI_REMOTE_COMM" << std::endl; }
+        if (flags & FI_SHARED_AV) { out << "    FI_SHARED_AV" << std::endl; }
+        if (flags & FI_PROV_ATTR_ONLY) { out << "    FI_PROV_ATTR_ONLY" << std::endl; }
+        if (flags & FI_NUMERICHOST) { out << "    FI_NUMERICHOST" << std::endl; }
+        if (flags & FI_RMA_EVENT) { out << "    FI_RMA_EVENT" << std::endl; }
+        if (flags & FI_SOURCE) { out << "    FI_SOURCE" << std::endl; }
+        if (flags & FI_NAMED_RX_CTX) { out << "    FI_NAMED_RX_CTX" << std::endl; }
+        if (flags & FI_DIRECTED_RECV) { out << "    FI_DIRECTED_RECV" << std::endl; }
+        return out.str();
+    }
+
     static inline std::string fi_cq_tagged_entry_to_string(const fi_cq_tagged_entry &entry)
     {
         std::stringstream out;
         out << "fi_cq_tagged_entry:" << std::endl;
         out << "  op_context: " << entry.op_context << std::endl;
         out << "  Flags set:" << std::endl;
-        if (entry.flags & FI_MSG) { out << "    FI_MSG" << std::endl; }
-        if (entry.flags & FI_RMA) { out << "    FI_RMA" << std::endl; }
-        if (entry.flags & FI_TAGGED) { out << "    FI_TAGGED" << std::endl; }
-        if (entry.flags & FI_ATOMIC) { out << "    FI_ATOMIC" << std::endl; }
-        if (entry.flags & FI_MULTICAST) { out << "    FI_MULTICAST" << std::endl; }
-        if (entry.flags & FI_COLLECTIVE) { out << "    FI_COLLECTIVE" << std::endl; }
-
-        if (entry.flags & FI_READ) { out << "    FI_READ" << std::endl; }
-        if (entry.flags & FI_WRITE) { out << "    FI_WRITE" << std::endl; }
-        if (entry.flags & FI_RECV) { out << "    FI_RECV" << std::endl; }
-        if (entry.flags & FI_SEND) { out << "    FI_SEND" << std::endl; }
-        if (entry.flags & FI_REMOTE_READ) { out << "    FI_REMOTE_READ" << std::endl; }
-        if (entry.flags & FI_REMOTE_WRITE) { out << "    FI_REMOTE_WRITE" << std::endl; }
-
-        if (entry.flags & FI_MULTI_RECV) { out << "    FI_MULTI_RECV" << std::endl; }
-        if (entry.flags & FI_REMOTE_CQ_DATA) { out << "    FI_REMOTE_CQ_DATA" << std::endl; }
-        if (entry.flags & FI_MORE) { out << "    FI_MORE" << std::endl; }
-        if (entry.flags & FI_PEEK) { out << "    FI_PEEK" << std::endl; }
-        if (entry.flags & FI_TRIGGER) { out << "    FI_TRIGGER" << std::endl; }
-        if (entry.flags & FI_FENCE) { out << "    FI_FENCE" << std::endl; }
-        // if (entry.flags & FI_PRIORITY) { out << "    FI_PRIORITY" << std::endl; }
-
-        if (entry.flags & FI_COMPLETION) { out << "    FI_COMPLETION" << std::endl; }
-        if (entry.flags & FI_INJECT) { out << "    FI_INJECT" << std::endl; }
-        if (entry.flags & FI_INJECT_COMPLETE) { out << "    FI_INJECT_COMPLETE" << std::endl; }
-        if (entry.flags & FI_TRANSMIT_COMPLETE) { out << "    FI_TRANSMIT_COMPLETE" << std::endl; }
-        if (entry.flags & FI_DELIVERY_COMPLETE) { out << "    FI_DELIVERY_COMPLETE" << std::endl; }
-        if (entry.flags & FI_AFFINITY) { out << "    FI_AFFINITY" << std::endl; }
-        if (entry.flags & FI_COMMIT_COMPLETE) { out << "    FI_COMMIT_COMPLETE" << std::endl; }
-        if (entry.flags & FI_MATCH_COMPLETE) { out << "    FI_MATCH_COMPLETE" << std::endl; }
-
-        if (entry.flags & FI_HMEM) { out << "    FI_HMEM" << std::endl; }
-        if (entry.flags & FI_VARIABLE_MSG) { out << "    FI_VARIABLE_MSG" << std::endl; }
-        if (entry.flags & FI_RMA_PMEM) { out << "    FI_RMA_PMEM" << std::endl; }
-        if (entry.flags & FI_SOURCE_ERR) { out << "    FI_SOURCE_ERR" << std::endl; }
-        if (entry.flags & FI_LOCAL_COMM) { out << "    FI_LOCAL_COMM" << std::endl; }
-        if (entry.flags & FI_REMOTE_COMM) { out << "    FI_REMOTE_COMM" << std::endl; }
-        if (entry.flags & FI_SHARED_AV) { out << "    FI_SHARED_AV" << std::endl; }
-        if (entry.flags & FI_PROV_ATTR_ONLY) { out << "    FI_PROV_ATTR_ONLY" << std::endl; }
-        if (entry.flags & FI_NUMERICHOST) { out << "    FI_NUMERICHOST" << std::endl; }
-        if (entry.flags & FI_RMA_EVENT) { out << "    FI_RMA_EVENT" << std::endl; }
-        if (entry.flags & FI_SOURCE) { out << "    FI_SOURCE" << std::endl; }
-        if (entry.flags & FI_NAMED_RX_CTX) { out << "    FI_NAMED_RX_CTX" << std::endl; }
-        if (entry.flags & FI_DIRECTED_RECV) { out << "    FI_DIRECTED_RECV" << std::endl; }
+        out << fi_flags_to_string(entry.flags);
         out << "  len: " << entry.len << std::endl;
         out << "  buf: " << entry.buf << std::endl;
         out << "  data: " << entry.data << std::endl;
         out << "  tag: " << entry.tag << std::endl;
+        return out.str();
+    }
 
+    static inline std::string fi_cq_err_entry_to_string(const fi_cq_err_entry &entry)
+    {
+        std::stringstream out;
+        out << "fi_cq_err_entry:" << std::endl;
+        out << "  op_context: " << entry.op_context << std::endl;
+        out << "  Flags set:" << std::endl;
+        out << fi_flags_to_string(entry.flags);
+        out << "  len: " << entry.len << std::endl;
+        out << "  buf: " << entry.buf << std::endl;
+        out << "  data: " << entry.data << std::endl;
+        out << "  tag: " << entry.tag << std::endl;
+        out << "  olen: " << entry.olen << std::endl;
+        out << "  err: " << entry.err << " " << fi_strerror(entry.err) << std::endl;
+        out << "  prov_errno: " << entry.prov_errno << " " << fi_strerror(entry.err) << std::endl;
+        out << "  err_data: " << entry.err_data << std::endl;
+        out << "  err_data_size: " << entry.err_data_size << std::endl;
         return out.str();
     }
 
@@ -90,21 +115,20 @@ namespace LFI
         const int comp_count = 8;
         struct fi_cq_tagged_entry comp[comp_count] = {};
         
-        LFI &lfi = LFI::get_instance();
-
         // Libfabric progress
         ret = fi_cq_read(fabric_ep.cq, comp, comp_count);
         if (ret == -FI_EAGAIN)
         {
-            if (lfi.have_thread){
-                std::this_thread::yield();
-            }
             return 0;
         }
 
         // TODO: handle error
         if (ret < 0)
         {
+            print("[Error] fi_cq_read "<<ret<<" "<<fi_strerror(ret));
+            fi_cq_err_entry err;
+            fi_cq_readerr(fabric_ep.cq, &err, 0);
+            print(fi_cq_err_entry_to_string(err));
             return ret;
         }
 
@@ -122,13 +146,9 @@ namespace LFI
                 }
 
                 debug_info(fi_cq_tagged_entry_to_string(comp[i]));
-                if (lfi.have_thread){
-                    std::unique_lock<std::mutex> lock(comm->comm_mutex);
-                    comm->wait_context = false;
-                    comm->comm_cv.notify_one();
-                }else{
-                    comm->wait_context = false;
-                }
+                std::unique_lock lock(comm->comm_mutex);
+                comm->wait_context = false;
+                comm->comm_cv.notify_one();
             }
         }
         return ret;
@@ -141,7 +161,7 @@ namespace LFI
         if (lfi.have_thread)
         {
             debug_info("[LFI] Start With threads");
-            std::unique_lock<std::mutex> lock(f_comm->comm_mutex);
+            std::unique_lock lock(f_comm->comm_mutex);
             f_comm->comm_cv.wait(lock, [&f_comm]
                                     { return !f_comm->wait_context; });
             debug_info("[LFI] End With threads");
@@ -149,57 +169,25 @@ namespace LFI
         else
         {
             debug_info("[LFI] Start Without threads");
+            std::unique_lock global_lock(f_comm->m_ep.mutex_ep, std::defer_lock);
+            std::unique_lock comm_lock(f_comm->comm_mutex);
+
             while (f_comm->wait_context)
             {
-                progress(f_comm->m_ep);
+                if (global_lock.try_lock()){
+                    while (f_comm->wait_context)
+                    {
+                        progress(f_comm->m_ep);
+                    }
+                    global_lock.unlock();
+                }else{
+                    if (f_comm->wait_context){
+                        f_comm->comm_cv.wait_for(comm_lock, std::chrono::milliseconds(10));
+                    }
+                }
             }
             debug_info("[LFI] End Without threads");
 
-            // std::unique_lock<std::mutex> lock(f_comm->comm_mutex);
-
-            // int ret = 0;
-            // const int comp_count = 8;
-            // fi_cq_tagged_entry comp[comp_count] = {};
-            // while (f_comm->wait_context)
-            // {
-            //     ret = fi_cq_read(f_comm->m_ep.cq, &comp, comp_count);
-
-            //     if (ret == -FI_EAGAIN)
-            //     {
-            //         // std::this_thread::yield();
-            //         continue;
-            //     }
-
-            //     // TODO: handle error
-            //     if (ret < 0)
-            //     {
-            //         print("Error in fi_cq_read " << ret << " " << fi_strerror(ret));
-            //         continue;
-            //     }
-
-            //     for (int i = 0; i < ret; i++)
-            //     {
-            //         // Handle the cq entries
-            //         fabric_context *context = static_cast<fabric_context *>(comp[i].op_context);
-            //         context->entry = comp[i];
-            //         if (comp[i].flags & FI_SEND)
-            //         {
-            //             debug_info("[LFI] Send cq of rank_peer " << context->rank);
-            //         }
-            //         if (comp[i].flags & FI_RECV)
-            //         {
-            //             debug_info("[LFI] Recv cq of rank_peer " << context->rank);
-            //         }
-                    
-            //         debug_info(fi_cq_tagged_entry_to_string(comp[i]));
-            //         fabric_comm* comm = get_comm(context->rank);
-            //         if (comm) {
-            //             comm->wait_context = false;
-            //         }
-            //         // fabric_ep.m_comms[context->rank].comm_cv.notify_one();
-            //     }
-            // }
-            // f_comm->wait_context = true;
         }
         f_comm->wait_context = true;
     }
@@ -234,7 +222,7 @@ namespace LFI
                 ret = fi_tsend(p_tx_ep, buffer, size, NULL, comm->fi_addr, tag_send, &comm->context);
 
                 if (ret == -FI_EAGAIN)
-                    (void)fi_cq_read(comm->m_ep.cq, NULL, 0);
+                    progress(comm->m_ep);
             } while (ret == -FI_EAGAIN);
 
             if (ret)
@@ -256,7 +244,7 @@ namespace LFI
                 ret = fi_tinject(p_tx_ep, buffer, size, comm->fi_addr, tag_send);
 
                 if (ret == -FI_EAGAIN)
-                    (void)fi_cq_read(comm->m_ep.cq, NULL, 0);
+                    progress(comm->m_ep);
             } while (ret == -FI_EAGAIN);
             debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << comm->rank_peer);
         }
@@ -308,7 +296,7 @@ namespace LFI
             ret = fi_trecv(p_rx_ep, buffer, size, NULL, comm->fi_addr, tag_recv, mask, &comm->context);
 
             if (ret == -FI_EAGAIN)
-                (void)fi_cq_read(comm->m_ep.cq, NULL, 0);
+                progress(comm->m_ep);
         } while (ret == -FI_EAGAIN);
 
         if (ret)

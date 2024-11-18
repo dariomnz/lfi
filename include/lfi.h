@@ -42,7 +42,6 @@ extern "C"
     ssize_t lfi_tsend(int id, const void *data, size_t size, int tag);
     ssize_t lfi_trecv(int id, void *data, size_t size, int tag);
 
-
 #ifdef __cplusplus
 }
 #endif

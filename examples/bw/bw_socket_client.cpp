@@ -37,6 +37,7 @@ int run_test(int socket, bw_test &test)
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
+    MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
@@ -44,12 +45,14 @@ int run_test(int socket, bw_test &test)
         if (data_send != test_size)
             return -1;
         test.size += data_send;
-
-        data_recv = LFI::socket::recv(socket, data.data(), test_size);
-        if (data_recv != test_size)
-            return -1;
-        test.size += data_recv;
     }
+    
+    int ack = 0;
+    data_recv = LFI::socket::recv(socket, &ack, sizeof(ack));
+    if (data_recv != sizeof(ack))
+        return -1;
+
+    MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
 
     return 0;

@@ -74,16 +74,16 @@ namespace LFI
         int ret = 0;
         LFI &lfi = LFI::get_instance();
         auto &t = lfi.threads_cq[id];
-        std::unique_lock<std::mutex> lock(t.thread_cq_mutex);
+        // std::unique_lock<std::mutex> lock(t.thread_cq_mutex);
         debug_info("[LFI] Start");
 
         while (t.thread_cq_is_running)
         {
-            if (t.thread_cq_cv.wait_for(lock, std::chrono::nanoseconds(1), [&t]
-                                        { return !t.thread_cq_is_running; }))
-            {
-                break;
-            }
+            // if (t.thread_cq_cv.wait_for(lock, std::chrono::nanoseconds(1), [&t]
+            //                             { return !t.thread_cq_is_running; }))
+            // {
+            //     break;
+            // }
 
             if (lfi.shm_ep.initialized())
             {

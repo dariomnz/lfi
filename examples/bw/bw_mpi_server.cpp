@@ -35,22 +35,22 @@ using namespace bw_examples;
 int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
 {
     std::vector<uint8_t> data(test.test_size);
-    ssize_t data_send = 0;
-    ssize_t data_recv = 0;
+    int ret = 0;
     ssize_t test_size = test.test_size;
     for (size_t i = 0; i < test.test_count; i++)
     {
-        data_recv = MPI_Recv(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm, MPI_STATUS_IGNORE);
-        if (data_recv != MPI_SUCCESS){
+        ret = MPI_Recv(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm, MPI_STATUS_IGNORE);
+        if (ret != MPI_SUCCESS){
             printf("Error MPI_Recv\n");
             return -1;
         }
-
-        data_send = MPI_Send(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm);
-        if (data_send != MPI_SUCCESS){
-            printf("Error MPI_Send\n");
-            return -1;
-        }
+    }
+    
+    int ack = 0;
+    ret = MPI_Send(&ack, 1, MPI_INT, rank, 0, client_comm);
+    if (ret != MPI_SUCCESS){
+        printf("Error MPI_Recv\n");
+        return -1;
     }
 
     return 0;
@@ -59,7 +59,7 @@ int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
 int main(int argc, char *argv[])
 {   
     int ret;
-    const int max_clients = 1000;
+    const int max_clients = 1024;
     int server_fd, new_socket;
     struct sockaddr_in address;
     int opt = 1;
