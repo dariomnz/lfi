@@ -95,6 +95,7 @@ namespace LFI
         }
 
         debug_info("[LFI] " << fi_tostr(fabric_ep.info, FI_TYPE_INFO));
+        debug_info("[LFI] provider: " << fabric_ep.info->fabric_attr->prov_name);
 
         ret = fi_fabric(fabric_ep.info->fabric_attr, &fabric_ep.fabric, NULL);
         debug_info("[LFI] fi_fabric = " << ret);

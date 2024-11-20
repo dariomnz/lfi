@@ -26,6 +26,9 @@
 #include <vector>
 #include <iostream>
 #include <iomanip>
+#include <thread>
+#include <string>
+#include <algorithm>
 
 namespace bw_examples
 {
@@ -61,9 +64,22 @@ namespace bw_examples
         return tests;
     }
 
+    [[maybe_unused]] static std::vector<std::string> split(std::string s, std::string delimiter) {
+        std::vector<std::string> tokens;
+        size_t pos = 0;
+        std::string token;
+        while ((pos = s.find(delimiter)) != std::string::npos) {
+            token = s.substr(0, pos);
+            tokens.push_back(token);
+            s.erase(0, pos + delimiter.length());
+        }
+        tokens.push_back(s);
+
+        return tokens;
+    }
+
     [[maybe_unused]] static void print_header()
     {
-
         int rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         if (rank == 0)
@@ -82,6 +98,7 @@ namespace bw_examples
 
     [[maybe_unused]] static std::string bytes_to_str(uint64_t bytes) 
     {
+        const uint64_t TERABYTE = 1024ull * 1024 * 1024 * 1024;
         const uint64_t GIGABYTE = 1024ull * 1024 * 1024;
         const uint64_t MEGABYTE = 1024ull * 1024;
         const uint64_t KILOBYTE = 1024ull;
@@ -89,18 +106,21 @@ namespace bw_examples
         double value = 0.0;
         std::string unit;
 
-        if (bytes >= GIGABYTE) {
+        if (bytes >= TERABYTE) {
+            value = static_cast<double>(bytes) / TERABYTE;
+            unit = "TB";
+        } else if (bytes >= GIGABYTE) {
             value = static_cast<double>(bytes) / GIGABYTE;
-            unit = "g";
+            unit = "GB";
         } else if (bytes >= MEGABYTE) {
             value = static_cast<double>(bytes) / MEGABYTE;
-            unit = "m";
+            unit = "MB";
         } else if (bytes >= KILOBYTE) {
             value = static_cast<double>(bytes) / KILOBYTE;
-            unit = "k";
+            unit = "KB";
         } else {
             value = static_cast<double>(bytes);
-            unit = "b";
+            unit = "B";
         }
 
         std::ostringstream result;

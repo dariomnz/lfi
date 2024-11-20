@@ -26,7 +26,7 @@
 
 using namespace bw_examples;
 
-int run_test(int id, bw_test &test)
+int run_test(std::vector<int>& ids, bw_test &test)
 {
     std::vector<uint8_t> data(test.test_size);
     ssize_t data_send = 0;
@@ -37,21 +37,27 @@ int run_test(int id, bw_test &test)
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
-        debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
-        data_send = lfi_send(id, data.data(), test_size);
-        if (data_send != test_size){
-            print("Error lfi_send = "<<data_send);
-            return -1;
+        for (auto &id : ids)
+        {
+            debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
+            data_send = lfi_send(id, data.data(), test_size);
+            if (data_send != test_size){
+                print("Error lfi_send = "<<data_send);
+                return -1;
+            }
+            test.size += data_send;
         }
-        test.size += data_send;
     }
     
-    int ack = 0;
-    debug_info("ack lfi_recv("<<id<<", ack, "<<sizeof(ack)<<")");
-    data_recv = lfi_recv(id, &ack, sizeof(ack));
-    if (data_recv != sizeof(ack)){
-        print("Error lfi_recv = "<<data_recv);
-        return -1;
+    for (auto &id : ids)
+    {
+        int ack = 0;
+        debug_info("ack lfi_recv("<<id<<", ack, "<<sizeof(ack)<<")");
+        data_recv = lfi_recv(id, &ack, sizeof(ack));
+        if (data_recv != sizeof(ack)){
+            print("Error lfi_recv = "<<data_recv);
+            return -1;
+        }
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -66,41 +72,51 @@ int run_test(int id, bw_test &test)
 int main(int argc, char *argv[])
 {
     int ret;
-    int client_fd;
+    std::vector<int> client_fds;
+
     if (argc < 2)
     {
-        printf("Usage: %s <server_ip>\n", argv[0]);
+        printf("Usage: %s <server_ips sep ';'>\n", argv[0]);
         return -1;
     }
 
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
+    auto servers = split(argv[1], ";");
+
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
 
-    print_header();
-
-
-    if ((client_fd = lfi_client_create(argv[1], PORT)) < 0) {
-        printf("lfi client creation error \n");
-        MPI_Abort(MPI_COMM_WORLD, -1);
-        return -1;
+    client_fds.resize(servers.size());
+    for (size_t i = 0; i < servers.size(); i++)
+    {
+        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT)) < 0) {
+            printf("lfi client creation error \n");
+            MPI_Abort(MPI_COMM_WORLD, -1);
+            return -1;
+        }
     }
+    
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
+    print_header();
 
     for (auto &test : tests)
     {
-        run_test(client_fd, test);
+        run_test(client_fds, test);
         print_test(test);
     }
 
-    // closing the connected socket
-    lfi_client_close(client_fd);
+    for (auto &id : client_fds)
+    {
+        // closing the connected socket
+        lfi_client_close(id);
+    }
+    
 
     ret = MPI_Finalize();
     if (ret < 0)

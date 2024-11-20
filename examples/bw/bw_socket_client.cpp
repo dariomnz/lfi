@@ -31,7 +31,7 @@
 
 using namespace bw_examples;
 
-int run_test(int socket, bw_test &test)
+int run_test(std::vector<int> sockets, bw_test &test)
 {
     std::vector<uint8_t> data(test.test_size);
     ssize_t data_send = 0;
@@ -41,17 +41,22 @@ int run_test(int socket, bw_test &test)
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
-        data_send = LFI::socket::send(socket, data.data(), test_size);
-        if (data_send != test_size)
-            return -1;
-        test.size += data_send;
+        for (auto &socket : sockets)
+        {
+            data_send = LFI::socket::send(socket, data.data(), test_size);
+            if (data_send != test_size)
+                return -1;
+            test.size += data_send;
+        }
     }
     
-    int ack = 0;
-    data_recv = LFI::socket::recv(socket, &ack, sizeof(ack));
-    if (data_recv != sizeof(ack))
-        return -1;
-
+    for (auto &socket : sockets)
+    {   
+        int ack = 0;
+        data_recv = LFI::socket::recv(socket, &ack, sizeof(ack));
+        if (data_recv != sizeof(ack))
+            return -1;
+    }
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
 
@@ -62,7 +67,8 @@ int run_test(int socket, bw_test &test)
 int main(int argc, char *argv[])
 {
     int ret;
-    int status, client_fd;
+    int status;
+    std::vector<int> client_fds;
     struct sockaddr_in serv_addr;
     if (argc < 2)
     {
@@ -73,46 +79,54 @@ int main(int argc, char *argv[])
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
+    auto servers = split(argv[1], ";");
+    
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
 
     print_header();
 
-    if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    client_fds.resize(servers.size());
+    for (size_t i = 0; i < servers.size(); i++)
     {
-        printf("\n Socket creation error \n");
-        return -1;
-    }
+        if ((client_fds[i] = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        {
+            printf("\n Socket creation error \n");
+            return -1;
+        }
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(PORT);
 
-    if (inet_pton(AF_INET, LFI::ns::get_host_ip(argv[1]).c_str(), &serv_addr.sin_addr) <= 0)
-    {
-        printf(
-            "\nInvalid address/ Address not supported \n");
-        return -1;
-    }
+        if (inet_pton(AF_INET, LFI::ns::get_host_ip(servers[i]).c_str(), &serv_addr.sin_addr) <= 0)
+        {
+            printf(
+                "\nInvalid address/ Address not supported \n");
+            return -1;
+        }
 
-    if ((status = connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
-    {
-        printf("\nConnection Failed \n");
-        return -1;
+        if ((status = connect(client_fds[i], (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
+        {
+            printf("\nConnection Failed \n");
+            return -1;
+        }
     }
-    
     MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
 
     for (auto &test : tests)
     {
-        run_test(client_fd, test);
+        run_test(client_fds, test);
         print_test(test);
     }
 
-    // closing the connected socket
-    close(client_fd);
+    for (auto &id : client_fds)
+    {
+        // closing the connected socket
+        close(id);
+    }
 
     ret = MPI_Finalize();
     if (ret < 0)

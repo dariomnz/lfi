@@ -27,35 +27,46 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "impl/socket.hpp"
+#include "impl/debug.hpp"
 #include "impl/ns.hpp"
 
 using namespace bw_examples;
 
-int run_test(MPI_Comm& client_comm, bw_test &test)
+int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
 {
     std::vector<uint8_t> data(test.test_size);
     int ret = 0;
     ssize_t test_size = test.test_size;
+    debug_info("Start run_test size "<<test.test_size);
     MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
-        ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, 0, 0, client_comm);
+        for (int j = 0; j < servers; j++)
+        {
+            debug_info("count "<<i<<" MPI_Send(data.data(), "<<test_size<<")");
+            ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm);
+            if (ret != MPI_SUCCESS){
+                printf("Error MPI_Send\n");
+                return -1;
+            }
+            test.size += test_size;
+        }
+    }
+    for (int j = 0; j < servers; j++)
+    {
+        int ack = 0;
+        debug_info("ack MPI_Recv(ack, "<<sizeof(ack)<<")");
+        ret = MPI_Recv(&ack, 1, MPI_INT, j, 0, client_comm, MPI_STATUS_IGNORE);
         if (ret != MPI_SUCCESS){
-            printf("Error MPI_Send\n");
+            printf("Error MPI_Recv\n");
             return -1;
         }
-        test.size += test_size;
-
-    }
-    int ack = 0;
-    ret = MPI_Recv(&ack, 1, MPI_INT, 0, 0, client_comm, MPI_STATUS_IGNORE);
-    if (ret != MPI_SUCCESS){
-        printf("Error MPI_Recv\n");
-        return -1;
     }
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
+
+    debug_info("End run_test size "<<test.test_size);
 
     return 0;
 }
@@ -75,6 +86,8 @@ int main(int argc, char *argv[])
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
+    auto servers = split(argv[1], ";");
+
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
@@ -86,6 +99,8 @@ int main(int argc, char *argv[])
     if (ret < 0)
         exit(EXIT_FAILURE);
 
+    MPI_Comm client_comm;
+
     std::string port_name;
     port_name.resize(MPI_MAX_PORT_NAME);
     if (rank == 0){
@@ -94,21 +109,22 @@ int main(int argc, char *argv[])
             printf("Socket creation error \n");
             return -1;
         }
-
+        serv_addr = {};
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_port = htons(PORT);
 
-        if (inet_pton(AF_INET, LFI::ns::get_host_ip(argv[1]).c_str(), &serv_addr.sin_addr) <= 0)
+        if (inet_pton(AF_INET, LFI::ns::get_host_ip(servers[0]).c_str(), &serv_addr.sin_addr) <= 0)
         {
             printf("Invalid address/ Address not supported \n");
             return -1;
         }
-
+        debug_info("Connecting to "<<servers[0]);
         if ((status = connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
         {
             printf("Connection Failed \n");
             return -1;
         }
+        debug_info("Connected to "<<servers[0]);
 
         ret = LFI::socket::recv(client_fd, port_name.data(), MPI_MAX_PORT_NAME);
         if (ret != MPI_MAX_PORT_NAME){
@@ -122,8 +138,10 @@ int main(int argc, char *argv[])
 
     MPI_Bcast(port_name.data(), port_name.size(), MPI_CHAR, 0, MPI_COMM_WORLD);
 
-    MPI_Comm client_comm;
+    debug_info("Connecting mpi "<<port_name.c_str());
     MPI_Comm_connect(port_name.c_str(), MPI_INFO_NULL, 0, MPI_COMM_WORLD, &client_comm);
+    
+    debug_info("Connected mpi "<<port_name.c_str());
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -131,7 +149,7 @@ int main(int argc, char *argv[])
 
     for (auto &test : tests)
     {
-        run_test(client_comm, test);
+        run_test(client_comm, servers.size(), test);
         print_test(test);
     }
 

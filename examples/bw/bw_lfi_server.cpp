@@ -24,6 +24,7 @@
 #include "bw_common.hpp"
 #include "lfi.h"
 #include "impl/debug.hpp"
+#include "impl/ns.hpp"
 
 using namespace bw_examples;
 
@@ -77,7 +78,7 @@ int main(int argc, char *argv[])
 
     auto &tests = get_test_vector();
 
-    printf("Server start accepting :\n");
+    print("Server start accepting "<<LFI::ns::get_host_name()<<" :");
     int iter = 0;
     while (iter < max_clients)
     {

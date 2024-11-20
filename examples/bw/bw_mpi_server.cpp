@@ -29,6 +29,8 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "impl/socket.hpp"
+#include "impl/debug.hpp"
+#include "impl/ns.hpp"
 
 using namespace bw_examples;
 
@@ -59,9 +61,10 @@ int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
 int main(int argc, char *argv[])
 {   
     int ret;
+    int rank;
     const int max_clients = 1024;
-    int server_fd, new_socket;
-    struct sockaddr_in address;
+    int server_fd = -1, new_socket;
+    struct sockaddr_in address = {};
     int opt = 1;
     socklen_t addrlen = sizeof(address);
     int provided;
@@ -72,46 +75,55 @@ int main(int argc, char *argv[])
     ret = MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     if (ret < 0) exit(EXIT_FAILURE);
 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (ret < 0) exit(EXIT_FAILURE);
+
     std::string port_name; 
     port_name.resize(MPI_MAX_PORT_NAME);
-    ret = MPI_Open_port(MPI_INFO_NULL, port_name.data());
+    if (rank == 0){
+        ret = MPI_Open_port(MPI_INFO_NULL, port_name.data());
 
-    // Creating socket file descriptor
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("socket failed");
-        exit(EXIT_FAILURE);
-    }
+        // Creating socket file descriptor
+        if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            perror("socket failed");
+            exit(EXIT_FAILURE);
+        }
 
-    // Forcefully attaching socket to the port 8080
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+        // Forcefully attaching socket to the port 8080
+        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+            perror("setsockopt");
+            exit(EXIT_FAILURE);
+        }
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        address.sin_port = htons(PORT);
 
-    // Forcefully attaching socket to the port 8080
-    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
-    if (listen(server_fd, 3) < 0) {
-        perror("listen");
-        exit(EXIT_FAILURE);
+        // Forcefully attaching socket to the port 8080
+        if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
+            perror("bind failed");
+            exit(EXIT_FAILURE);
+        }
+        if (listen(server_fd, 3) < 0) {
+            perror("listen");
+            exit(EXIT_FAILURE);
+        }
     }
 
     auto &tests = get_test_vector();
 
+    print("Server start accepting "<<LFI::ns::get_host_name()<<" :");
     int iter = 0;
     while (iter < max_clients)
     {
-        if ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0) {
-            perror("accept");
-            exit(EXIT_FAILURE);
+        if (rank == 0){
+            if ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0) {
+                perror("accept");
+                exit(EXIT_FAILURE);
+            }
+            LFI::socket::send(new_socket, port_name.data(), MPI_MAX_PORT_NAME);
+            close(new_socket);
         }
-        LFI::socket::send(new_socket, port_name.data(), MPI_MAX_PORT_NAME);
-        close(new_socket);
+
         MPI_Comm client_comm;
         int ret = MPI_Comm_accept(port_name.c_str(), MPI_INFO_NULL, 0, MPI_COMM_WORLD, &client_comm);
         if (ret < 0){
@@ -119,12 +131,12 @@ int main(int argc, char *argv[])
         }
         int client_size = 0;
         MPI_Comm_remote_size(client_comm, &client_size);
+        print("Server accept client of size "<<client_size);
         // printf("Client size: %d\n", client_size);
         std::vector<std::thread> v_threads(client_size);
         for (int i = 0; i < client_size; i++)
         {
             v_threads[i] = std::thread([&client_comm, i, &tests](){
-
                 for (auto &test : tests)
                 {
                     run_test(client_comm, i, test);
