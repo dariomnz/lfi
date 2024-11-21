@@ -39,21 +39,26 @@ int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
     std::vector<uint8_t> data(test.test_size);
     int ret = 0;
     ssize_t test_size = test.test_size;
+    std::vector<MPI_Request> requests(test.test_count);
+    debug_info("Start run_test size "<<test.test_size);
     for (size_t i = 0; i < test.test_count; i++)
     {
-        ret = MPI_Recv(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm, MPI_STATUS_IGNORE);
+        debug_info("count "<<i<<" MPI_Irecv(data.data(), "<<test_size<<")");
+        ret = MPI_Irecv(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm, &requests[i]);
         if (ret != MPI_SUCCESS){
             printf("Error MPI_Recv\n");
             return -1;
         }
     }
-    
+    MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
     int ack = 0;
+    debug_info("ack MPI_Send(ack, "<<sizeof(ack)<<")");
     ret = MPI_Send(&ack, 1, MPI_INT, rank, 0, client_comm);
     if (ret != MPI_SUCCESS){
         printf("Error MPI_Recv\n");
         return -1;
     }
+    debug_info("End run_test size "<<test.test_size);
 
     return 0;
 }

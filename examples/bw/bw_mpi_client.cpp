@@ -35,6 +35,7 @@ using namespace bw_examples;
 int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
 {
     std::vector<uint8_t> data(test.test_size);
+    std::vector<MPI_Request> requests(test.test_count*servers);
     int ret = 0;
     ssize_t test_size = test.test_size;
     debug_info("Start run_test size "<<test.test_size);
@@ -44,8 +45,8 @@ int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
     {
         for (int j = 0; j < servers; j++)
         {
-            debug_info("count "<<i<<" MPI_Send(data.data(), "<<test_size<<")");
-            ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm);
+            debug_info("count "<<i<<" MPI_Isend(data.data(), "<<test_size<<")");
+            ret = MPI_Isend(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, &requests[i*servers+j]);
             if (ret != MPI_SUCCESS){
                 printf("Error MPI_Send\n");
                 return -1;
@@ -53,6 +54,8 @@ int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
             test.size += test_size;
         }
     }
+
+    MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
     for (int j = 0; j < servers; j++)
     {
         int ack = 0;
