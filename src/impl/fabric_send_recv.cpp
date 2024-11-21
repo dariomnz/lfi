@@ -109,11 +109,21 @@ namespace LFI
         return out.str();
     }
 
+    fabric_request fabric_request::Create(uint32_t comm_id) {
+        LFI& lfi = LFI::get_instance();
+        fabric_comm *comm = lfi.get_comm(comm_id);
+        if (comm == nullptr){
+            throw std::runtime_error("fabric_comm not found");
+        }
+        return fabric_request{*comm};
+    }
+
     int LFI::progress(fabric_ep &fabric_ep)
     {
         int ret;
         const int comp_count = 8;
         struct fi_cq_tagged_entry comp[comp_count] = {};
+        // sizeof(comp)
         
         // Libfabric progress
         ret = fi_cq_read(fabric_ep.cq, comp, comp_count);
@@ -135,61 +145,40 @@ namespace LFI
         // Handle the cq entries
         for (int i = 0; i < ret; i++)
         {
-            fabric_context *context = static_cast<fabric_context *>(comp[i].op_context);
-            context->entry = comp[i];
+            fabric_request *request = static_cast<fabric_request *>(comp[i].op_context);
+            request->entry = comp[i];
 
-            {
-                fabric_comm* comm = get_comm(context->rank);
-                if (comm == nullptr){
-                    print("Error rank "<<context->rank<<" without comm");
-                    continue;
-                }
-
-                debug_info(fi_cq_tagged_entry_to_string(comp[i]));
-                std::unique_lock lock(comm->comm_mutex);
-                comm->wait_context = false;
-                comm->comm_cv.notify_one();
-            }
+            debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+            std::unique_lock lock(request->mutex);
+            request->wait_context = false;
+            request->cv.notify_one();
         }
+        // print("lfi process "<<ret<<" num entrys");
         return ret;
     }
 
     // The pointer must not be nullptr
-    void LFI::wait(fabric_comm *f_comm)
+    void LFI::wait(fabric_request &request)
     {
-        LFI &lfi = LFI::get_instance();
-        if (lfi.have_thread)
-        {
-            debug_info("[LFI] Start With threads");
-            std::unique_lock lock(f_comm->comm_mutex);
-            f_comm->comm_cv.wait(lock, [&f_comm]
-                                    { return !f_comm->wait_context; });
-            debug_info("[LFI] End With threads");
-        }
-        else
-        {
-            debug_info("[LFI] Start Without threads");
-            std::unique_lock global_lock(f_comm->m_ep.mutex_ep, std::defer_lock);
-            std::unique_lock comm_lock(f_comm->comm_mutex);
+        debug_info("[LFI] Start Without threads");
+        std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+        std::unique_lock request_lock(request.mutex);
 
-            while (f_comm->wait_context)
-            {
-                if (global_lock.try_lock()){
-                    while (f_comm->wait_context)
-                    {
-                        progress(f_comm->m_ep);
-                    }
-                    global_lock.unlock();
-                }else{
-                    if (f_comm->wait_context){
-                        f_comm->comm_cv.wait_for(comm_lock, std::chrono::milliseconds(10));
-                    }
+        while (request.wait_context)
+        {
+            if (global_lock.try_lock()){
+                while (request.wait_context)
+                {
+                    progress(request.m_comm.m_ep);
+                }
+                global_lock.unlock();
+            }else{
+                if (request.wait_context){
+                    request.cv.wait_for(request_lock, std::chrono::milliseconds(10));
                 }
             }
-            debug_info("[LFI] End Without threads");
-
         }
-        f_comm->wait_context = true;
+        debug_info("[LFI] End Without threads");
     }
 
     fabric_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag)
@@ -203,6 +192,7 @@ namespace LFI
             msg.error = -1;
             return msg;
         }
+        fabric_request request(*comm);
 
         // tag format 24 bits rank_peer 24 bits rank_self_in_peer 16 bits tag
         uint64_t aux_rank_peer = comm->rank_peer;
@@ -210,19 +200,22 @@ namespace LFI
         uint64_t aux_tag = tag;
         uint64_t tag_send = (aux_rank_peer << 40) | (aux_rank_self_in_peer << 16) | aux_tag;
 
-        comm->context.rank = comm->rank_peer;
-
-        debug_info("[LFI] Start size " << size << " rank_peer " << comm->rank_peer << " rank_self_in_peer " << comm->rank_self_in_peer << " tag " << tag << " send_context " << (void *)&comm->context);
+        debug_info("[LFI] Start size " << size << " rank_peer " << comm->rank_peer << " rank_self_in_peer " << comm->rank_self_in_peer << " tag " << tag << " send_context " << (void *)&request.context);
 
         if (size > comm->m_ep.info->tx_attr->inject_size)
         {
             fid_ep *p_tx_ep = comm->m_ep.use_scalable_ep ? comm->m_ep.tx_ep : comm->m_ep.ep;
             do
             {
-                ret = fi_tsend(p_tx_ep, buffer, size, NULL, comm->fi_addr, tag_send, &comm->context);
+                ret = fi_tsend(p_tx_ep, buffer, size, NULL, comm->fi_addr, tag_send, &request.context);
 
-                if (ret == -FI_EAGAIN)
-                    progress(comm->m_ep);
+                if (ret == -FI_EAGAIN){
+                    std::unique_lock global_lock(comm->m_ep.mutex_ep, std::defer_lock);
+                    if (global_lock.try_lock()){
+                        progress(comm->m_ep);
+                        global_lock.unlock();
+                    }
+                }
             } while (ret == -FI_EAGAIN);
 
             if (ret)
@@ -234,7 +227,7 @@ namespace LFI
 
             debug_info("[LFI] Waiting on rank_peer " << comm->rank_peer);
 
-            wait(comm);
+            wait(request);
         }
         else
         {
@@ -243,8 +236,13 @@ namespace LFI
             {
                 ret = fi_tinject(p_tx_ep, buffer, size, comm->fi_addr, tag_send);
 
-                if (ret == -FI_EAGAIN)
-                    progress(comm->m_ep);
+                if (ret == -FI_EAGAIN){
+                    std::unique_lock global_lock(comm->m_ep.mutex_ep, std::defer_lock);
+                    if (global_lock.try_lock()){
+                        progress(comm->m_ep);
+                        global_lock.unlock();
+                    }
+                }
             } while (ret == -FI_EAGAIN);
             debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << comm->rank_peer);
         }
@@ -271,6 +269,7 @@ namespace LFI
             msg.error = -1;
             return msg;
         }
+        fabric_request request(*comm);
 
         uint64_t mask = 0;
         // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
@@ -279,8 +278,6 @@ namespace LFI
         uint64_t aux_tag = tag;
         uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
 
-        comm->context.rank = comm->rank_peer;
-
         if (comm->rank_peer == FABRIC_ANY_RANK)
         {
             // mask = 0x0000'00FF'FFFF'0000;
@@ -288,15 +285,20 @@ namespace LFI
             mask = 0xFFFF'FFFF'FFFF'0000;
         }
 
-        debug_info("[LFI] Start size " << size << " rank_peer " << comm->rank_peer << " rank_self_in_peer " << comm->rank_self_in_peer << " tag " << tag << " recv_context " << (void *)&comm->context);
+        debug_info("[LFI] Start size " << size << " rank_peer " << comm->rank_peer << " rank_self_in_peer " << comm->rank_self_in_peer << " tag " << tag << " recv_context " << (void *)&request.context);
 
         fid_ep *p_rx_ep = comm->m_ep.use_scalable_ep ? comm->m_ep.rx_ep : comm->m_ep.ep;
         do
         {
-            ret = fi_trecv(p_rx_ep, buffer, size, NULL, comm->fi_addr, tag_recv, mask, &comm->context);
+            ret = fi_trecv(p_rx_ep, buffer, size, NULL, comm->fi_addr, tag_recv, mask, &request.context);
 
-            if (ret == -FI_EAGAIN)
-                progress(comm->m_ep);
+            if (ret == -FI_EAGAIN){
+                std::unique_lock global_lock(comm->m_ep.mutex_ep, std::defer_lock);
+                if (global_lock.try_lock()){
+                    progress(comm->m_ep);
+                    global_lock.unlock();
+                }
+            }
         } while (ret == -FI_EAGAIN);
 
         if (ret)
@@ -308,14 +310,14 @@ namespace LFI
 
         debug_info("[LFI] Waiting on rank_peer " << comm->rank_peer);
 
-        wait(comm);
+        wait(request);
 
         msg.size = size;
-        // msg.error = comm->context.entry.err;
+        // msg.error = request.context.entry.err;
 
-        msg.tag = comm->context.entry.tag & 0x0000'0000'0000'FFFF;
-        msg.rank_self_in_peer = (comm->context.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-        msg.rank_peer = (comm->context.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+        msg.tag = request.entry.tag & 0x0000'0000'0000'FFFF;
+        msg.rank_self_in_peer = (request.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
+        msg.rank_peer = (request.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
 
         debug_info("[LFI] msg size " << msg.size << " rank_peer " << msg.rank_peer << " rank_self_in_peer " << msg.rank_self_in_peer << " tag " << msg.tag << " error " << msg.error);
         debug_info("[LFI] End = " << size);

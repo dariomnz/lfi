@@ -39,14 +39,6 @@ namespace LFI
 
     struct fabric_ep;
 
-    struct fabric_context
-    {
-        // context necesary for fabric interface
-        struct fi_context context;
-        uint32_t rank;
-        struct fi_cq_tagged_entry entry;
-    };
-
     struct fabric_comm
     {
         uint32_t rank_peer;
@@ -56,12 +48,23 @@ namespace LFI
 
         fabric_ep &m_ep;
 
-        std::recursive_mutex comm_mutex;
-        std::condition_variable_any comm_cv;
-        std::atomic_bool wait_context = true;
-        fabric_context context;
-
         fabric_comm(fabric_ep &ep) : m_ep(ep) {}
+    };
+
+    struct fabric_request
+    {
+        // context necesary for fabric interface
+        struct fi_context context;
+
+        fabric_comm& m_comm;
+        std::recursive_mutex mutex;
+        std::condition_variable_any cv;
+        std::atomic_bool wait_context = true;
+        
+        fi_cq_tagged_entry entry;
+        fabric_request(fabric_comm &comm) : m_comm(comm) {}
+
+        static fabric_request Create(uint32_t comm_id);
     };
 
     struct fabric_ep
@@ -138,7 +141,7 @@ namespace LFI
 
         // fabric_send_recv
     public:
-        static void wait(fabric_comm *fabric_comm);
+        static void wait(fabric_request &request);
         static fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
         static fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
 
