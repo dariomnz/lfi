@@ -29,11 +29,11 @@ extern "C"
 {
 #endif
 
-    int lfi_server_create(char *serv_addr, int port);
+    int lfi_server_create(const char *serv_addr, int *port);
     int lfi_server_accept(int id);
     int lfi_server_close(int id);
 
-    int lfi_client_create(char *serv_addr, int port);
+    int lfi_client_create(const char *serv_addr, int port);
     int lfi_client_close(int id);
 
     ssize_t lfi_send(int id, const void *data, size_t size);

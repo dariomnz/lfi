@@ -28,19 +28,19 @@
 extern "C" {
 #endif
 
-int lfi_server_create(char* serv_addr, int port)
+int lfi_server_create(const char* serv_addr, int* port)
 {
     int ret = -1;
     std::string addr = "";
     if (serv_addr != nullptr)
         addr = serv_addr;
     debug_info("("<<addr<<", "<<port<<")>> Begin");
-    ret = LFI::socket::server_init(addr, port);
+    ret = LFI::socket::server_init(addr, *port);
     debug_info("("<<addr<<", "<<port<<")="<<ret<<" >> End");
     return ret;
 }
 
-int lfi_client_create(char* serv_addr, int port)
+int lfi_client_create(const char* serv_addr, int port)
 {
     int out = -1;
     int client_socket;
