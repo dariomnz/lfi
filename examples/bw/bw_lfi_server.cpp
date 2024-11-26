@@ -88,10 +88,11 @@ int main(int argc, char *argv[])
         }
         print("Server accept client "<<new_socket);
         std::thread([new_socket, &tests](){
-           
+            int ret = 0;
             for (auto &test : tests)
             {
-                run_test(new_socket, test);
+                ret = run_test(new_socket, test);
+                if (ret < 0) break;
             }
             lfi_client_close(new_socket);
         }).detach();

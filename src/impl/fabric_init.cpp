@@ -30,10 +30,10 @@ namespace LFI
 {
     LFI::~LFI()
     {
-        std::unique_lock<std::mutex> lock(m_init_mutex);
+        std::unique_lock<std::mutex> lock(m_mutex);
 
         debug_info("[LFI] Start");
-        destroy_thread_cq();
+        ft_thread_destroy();
 
         if (shm_ep.initialized()){
             destroy(shm_ep);            
@@ -70,17 +70,13 @@ namespace LFI
         return 0;
     }
 
-    int LFI::init(fabric_ep &fabric_ep, bool have_threads)
+    int LFI::init(fabric_ep &fabric_ep)
     {
         int ret;
         struct fi_cq_attr cq_attr = {};
         struct fi_av_attr av_attr = {};
 
         debug_info("[LFI] Start");
-
-        LFI &lfi = LFI::get_instance();
-
-        lfi.have_thread = have_threads;
 
         ret = fi_getinfo(fi_version(), NULL, NULL, 0,
                          fabric_ep.hints, &fabric_ep.info);
@@ -255,7 +251,7 @@ namespace LFI
         // Create FABRIC_ANY_RANK
         // lfi::any_comm(fabric_ep);
 
-        ret = init_thread_cq();
+        ret = ft_thread_start();
 
         debug_info("[LFI] End = " << ret);
 
@@ -385,16 +381,37 @@ namespace LFI
         debug_info("[LFI] Start");
 
         LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
+        std::unique_lock<std::mutex> lock(lfi.m_mutex);
 
         fabric_comm *comm = get_comm(id);
         if (comm == nullptr){
             return -1;
         }
 
-        remove_addr(*comm);
+        if (!comm->is_canceled){
+            remove_addr(*comm);
+        }
 
         lfi.m_comms.erase(comm->rank_peer);
+
+        debug_info("[LFI] End = " << ret);
+
+        return ret;
+    }
+
+    int LFI::cancel_comm(uint32_t id)
+    {
+        int ret = 0;
+        debug_info("[LFI] Start");
+
+        fabric_comm *comm = get_comm(id);
+        if (comm == nullptr){
+            return -1;
+        }
+
+        comm->is_canceled = true;
+
+        remove_addr(*comm);
 
         debug_info("[LFI] End = " << ret);
 
@@ -466,7 +483,7 @@ namespace LFI
         debug_info("[LFI] Start");
         
         LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
+        std::unique_lock<std::mutex> lock(lfi.m_mutex);
 
         // First comunicate the identifier
         std::string host_id = ns::get_host_name() + " " + ns::get_host_ip();
@@ -507,7 +524,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm, false);
+        ret = init_endpoints(is_shm);
         if (ret < 0)
         {
             print_error("init_endpoints");
@@ -602,7 +619,7 @@ namespace LFI
         debug_info("[LFI] Start");
 
         LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_init_mutex);
+        std::unique_lock<std::mutex> lock(lfi.m_mutex);
 
         // First comunicate the identifier
         std::string host_id = ns::get_host_name() + " " + ns::get_host_ip();
@@ -643,7 +660,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm, false);
+        ret = init_endpoints(is_shm);
         if (ret < 0)
         {
             print_error("init_endpoints");
@@ -733,7 +750,7 @@ namespace LFI
         return ret;
     }
 
-    int LFI::init_endpoints(bool is_shm, bool have_threads)
+    int LFI::init_endpoints(bool is_shm)
     {
         int ret = 0;
         LFI &lfi = LFI::get_instance();
@@ -745,11 +762,11 @@ namespace LFI
                 return 0;
             }
             set_hints(lfi.shm_ep, "shm");
-            ret = init(lfi.shm_ep, have_threads);
+            ret = init(lfi.shm_ep);
             if (ret < 0)
             {
                 set_hints(lfi.shm_ep, "sm2");
-                ret = init(lfi.shm_ep, have_threads);
+                ret = init(lfi.shm_ep);
             }
         }
         else
@@ -759,7 +776,7 @@ namespace LFI
                 return 0;
             }
             set_hints(lfi.peer_ep, "");
-            ret = init(lfi.peer_ep, have_threads);
+            ret = init(lfi.peer_ep);
         }
         debug_info("[LFI] End = " << ret);
         return ret;

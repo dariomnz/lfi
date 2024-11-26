@@ -32,7 +32,7 @@ int run_test(std::vector<int>& ids, bw_test &test)
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
-    debug_info("Start run_test id "<<id<<" size "<<test.test_size);
+    debug_info("Start run_test size "<<test.test_size);
     MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
@@ -63,7 +63,7 @@ int run_test(std::vector<int>& ids, bw_test &test)
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
     
-    debug_info("End run_test id "<<id<<" size "<<test.test_size);
+    debug_info("End run_test size "<<test.test_size);
 
     return 0;
 }
@@ -107,7 +107,11 @@ int main(int argc, char *argv[])
 
     for (auto &test : tests)
     {
-        run_test(client_fds, test);
+        ret = run_test(client_fds, test);
+        if (ret < 0){
+            MPI_Abort(MPI_COMM_WORLD, -1);
+            break;
+        }
         print_test(test);
     }
 

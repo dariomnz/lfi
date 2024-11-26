@@ -31,11 +31,16 @@ namespace LFI
     public:
         env()
         {
-            // LFI_THREADS
-            char *env_fabric_threads = std::getenv("LFI_THREADS");
-            if ((env_fabric_threads != NULL) && (std::strlen(env_fabric_threads) > 0))
+            // LFI_FAULT_TOLERANCE
+            char *env_lfi_fault_tolerance = std::getenv("LFI_FAULT_TOLERANCE");
+            if ((env_lfi_fault_tolerance != NULL) && (std::strlen(env_lfi_fault_tolerance) > 0))
             {
-                LFI_threads = atoi(env_fabric_threads);
+                LFI_fault_tolerance = (atoi(env_lfi_fault_tolerance) != 0);
+            }
+            char *env_lfi_fault_tolerance_time = std::getenv("LFI_FAULT_TOLERANCE_TIME");
+            if ((env_lfi_fault_tolerance_time != NULL) && (std::strlen(env_lfi_fault_tolerance_time) > 0))
+            {
+                LFI_fault_tolerance_time = atoi(env_lfi_fault_tolerance_time);
             }
         }
         // Delete copy constructor
@@ -46,7 +51,8 @@ namespace LFI
         env(env &&) = delete;
         // Delete move assignment operator
         env &operator=(env &&) = delete;
-        int LFI_threads = 10;
+        bool LFI_fault_tolerance = true;
+        int LFI_fault_tolerance_time = 5;
 
     public:
         static env &get_instance()
