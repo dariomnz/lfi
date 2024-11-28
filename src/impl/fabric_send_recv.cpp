@@ -179,10 +179,15 @@ namespace LFI
         return false;
     }
 
-    // The pointer must not be nullptr
     void LFI::wait(fabric_request &request, int32_t timeout_ms)
     {
-        debug_info("[LFI] Start");
+        debug_info("[LFI] Start "<<request.to_string());
+
+        // Check cancelled comm
+        if (request.m_comm.is_canceled){
+            return;
+        }
+
         std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
         std::unique_lock request_lock(request.mutex);
         decltype(std::chrono::high_resolution_clock::now()) start;
@@ -219,15 +224,15 @@ namespace LFI
         }
         if (env::get_instance().LFI_fault_tolerance && !is_canceled){
             std::unique_lock lock(request.m_comm.ft_mutex);
-            debug_info("[LFI] erase request "<<std::hex<<&request<<std::dec<<" in comm "<<request.m_comm.rank_peer);
+            debug_info("[LFI] erase request "<<request.to_string()<<" in comm "<<request.m_comm.rank_peer);
             request.m_comm.ft_requests.erase(&request);
         }
-        debug_info("[LFI] End wait "<<std::hex<<&request<<std::dec);
+        debug_info("[LFI] End wait "<<request.to_string());
     }
 
     int LFI::cancel(fabric_request &request){
         // The inject is not cancelled
-        debug_info("[LFI] Start "<<std::hex<<&request<<std::dec);
+        debug_info("[LFI] Start "<<request.to_string());
         if (request.is_inject) return 0;
 
         fid_ep *p_ep = nullptr;
@@ -239,7 +244,7 @@ namespace LFI
         // Cancel request and notify 
         int ret = 0;
         
-        //    Ignore return value 
+        // Ignore return value 
         // ref: https://github.com/ofiwg/libfabric/issues/7795
         fi_cancel(&p_ep->fid, &request);
         debug_info("fi_cancel ret "<<ret<<" "<<fi_strerror(ret));
@@ -316,6 +321,12 @@ namespace LFI
         int ret;
         fabric_msg msg = {};
 
+        // Check cancelled comm
+        if (request.m_comm.is_canceled){
+            msg.error = -1;
+            return msg;
+        }
+
         // tag format 24 bits rank_peer 24 bits rank_self_in_peer 16 bits tag
         uint64_t aux_rank_peer = request.m_comm.rank_peer;
         uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
@@ -331,7 +342,10 @@ namespace LFI
             request.wait_context = true;
             do
             {
-                ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_send, &request.context);
+                {
+                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
+                    ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_send, &request.context);
+                }
 
                 if (ret == -FI_EAGAIN){
                     std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
@@ -357,7 +371,10 @@ namespace LFI
             request.is_inject = true;
             do
             {
-                ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm.fi_addr, tag_send);
+                {
+                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
+                    ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm.fi_addr, tag_send);
+                }
 
                 if (ret == -FI_EAGAIN){
                     std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
@@ -394,6 +411,12 @@ namespace LFI
         int ret;
         fabric_msg msg = {};
 
+        // Check cancelled comm
+        if (request.m_comm.is_canceled){
+            msg.error = -1;
+            return msg;
+        }
+
         uint64_t mask = 0;
         // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
         uint64_t aux_rank_peer = request.m_comm.rank_peer;
@@ -415,7 +438,10 @@ namespace LFI
         request.is_send = false;
         do
         {
-            ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, &request.context);
+            {
+                std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
+                ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, &request.context);
+            }
 
             if (ret == -FI_EAGAIN){
                 std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);

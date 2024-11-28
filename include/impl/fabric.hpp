@@ -107,6 +107,7 @@ namespace LFI
         std::atomic_bool enable_ep = false;
 
         std::mutex mutex_ep;
+        std::mutex mutex_send_recv;
 
         bool initialized() { return enable_ep; }
     };
