@@ -67,17 +67,21 @@ namespace LFI
     {
         int ret = 0;
         LFI &lfi = LFI::get_instance();
-        int seconds_to_wait = env::get_instance().LFI_fault_tolerance_time;
+        int ms_to_wait = env::get_instance().LFI_fault_tolerance_time * 1000;
         std::unique_lock<std::mutex> lock(lfi.ft_mutex);
         std::vector<uint32_t> comms_with_err;
         comms_with_err.reserve(100);
         std::vector<fabric_request> requests;
         int index = 0;
         debug_info("[LFI] Start");
+        auto start_loop = std::chrono::high_resolution_clock::now();
 
         while (lfi.ft_is_running)
         {
-            if (lfi.ft_cv.wait_for(lock, std::chrono::seconds(seconds_to_wait), [&lfi]
+            int32_t elapsed_ms_loop = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_loop).count(); 
+            start_loop = std::chrono::high_resolution_clock::now();
+            ms_to_wait = std::max(0, env::get_instance().LFI_fault_tolerance_time * 1000 - elapsed_ms_loop);
+            if (lfi.ft_cv.wait_for(lock, std::chrono::milliseconds(ms_to_wait), [&lfi]
                                         { return !lfi.ft_is_running; }))
             {
                 break;
@@ -117,7 +121,7 @@ namespace LFI
                     if (comm.ft_error) continue;
                     int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
         
-                    int timeout_ms = std::max(0, seconds_to_wait*1000 - elapsed_ms);
+                    int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000 - elapsed_ms);
                     auto& send_request = requests[index++];
                     debug_info("[LFI] wait ft send ack comm "<<id<<" "<<&send_request);
                     wait(send_request, timeout_ms);
