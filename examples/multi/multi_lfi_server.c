@@ -36,7 +36,8 @@ int main(void)
     char* hello = "Hello from server";
 
     // Creating socket file descriptor
-    if ((server_fd = lfi_server_create(NULL, PORT)) < 0) {
+    int port = PORT;
+    if ((server_fd = lfi_server_create(NULL, &port)) < 0) {
         perror("lfi server failed");
         exit(EXIT_FAILURE);
     }
