@@ -95,9 +95,10 @@ namespace LFI
                 requests.reserve(lfi.m_comms.size()*2);
                 for (auto &[id, comm] : lfi.m_comms)
                 {
+                    int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000);
                     auto& send_request = requests.emplace_back(comm);
                     debug_info("[LFI] Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
-                    msg = async_send(&ack, sizeof(ack), 65535, send_request);
+                    msg = async_send(&ack, sizeof(ack), 65535, send_request, timeout_ms);
                     if (msg.error < 0){
                         comm.ft_error = true;
                         comms_with_err.push_back(id);
@@ -106,7 +107,7 @@ namespace LFI
                     }
                     auto& recv_request = requests.emplace_back(comm);
                     debug_info("[LFI] Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
-                    msg = async_recv(&ack, sizeof(ack), 65535, recv_request);
+                    msg = async_recv(&ack, sizeof(ack), 65535, recv_request, timeout_ms);
                     if (msg.error < 0){
                         comm.ft_error = true;
                         comms_with_err.push_back(id);
@@ -148,13 +149,10 @@ namespace LFI
                         debug_info("[LFI] cancel "<<request->to_string());
                         lfi.cancel(*request);
                         debug_info("[LFI] canceled "<<request->to_string());
-                        // lfi.wait(*request);
                     }
                     
-                    // comms_lock.unlock();
                     debug_info("[LFI] close comm with error "<<id);
-                    lfi.cancel_comm(id);
-                    // comms_lock.lock();
+                    comm->is_canceled = true;
                 }
                 comms_with_err.clear();
                 

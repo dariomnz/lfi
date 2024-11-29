@@ -222,6 +222,7 @@ namespace LFI
                 request_lock.lock();
             }
         }
+        request_lock.unlock();
         if (env::get_instance().LFI_fault_tolerance && !is_canceled){
             std::unique_lock lock(request.m_comm.ft_mutex);
             debug_info("[LFI] erase request "<<request.to_string()<<" in comm "<<request.m_comm.rank_peer);
@@ -316,7 +317,7 @@ namespace LFI
         return msg;
     }
 
-    fabric_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, fabric_request& request)
+    fabric_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, fabric_request& request, int32_t timeout_ms)
     {
         int ret;
         fabric_msg msg = {};
@@ -327,6 +328,10 @@ namespace LFI
             return msg;
         }
 
+        decltype(std::chrono::high_resolution_clock::now()) start;
+        if (timeout_ms >= 0){
+            start = std::chrono::high_resolution_clock::now();
+        }
         // tag format 24 bits rank_peer 24 bits rank_self_in_peer 16 bits tag
         uint64_t aux_rank_peer = request.m_comm.rank_peer;
         uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
@@ -352,6 +357,19 @@ namespace LFI
                     if (global_lock.try_lock()){
                         progress(request.m_comm.m_ep);
                         global_lock.unlock();
+                    }
+                    
+                    if (timeout_ms >= 0){
+                        int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
+                        if (elapsed_ms >= timeout_ms){
+                            msg.error = -1;
+                            return msg;
+                        }
+                    }
+
+                    if (request.m_comm.is_canceled){
+                        msg.error = -1;
+                        return msg;
                     }
                 }
             } while (ret == -FI_EAGAIN);
@@ -382,6 +400,19 @@ namespace LFI
                         progress(request.m_comm.m_ep);
                         global_lock.unlock();
                     }
+                    
+                    if (timeout_ms >= 0){
+                        int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
+                        if (elapsed_ms >= timeout_ms){
+                            msg.error = -1;
+                            return msg;
+                        }
+                    }
+
+                    if (request.m_comm.is_canceled){
+                        msg.error = -1;
+                        return msg;
+                    }
                 }
             } while (ret == -FI_EAGAIN);
 
@@ -406,7 +437,7 @@ namespace LFI
         return msg;
     }
 
-    fabric_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, fabric_request& request)
+    fabric_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, fabric_request& request, int32_t timeout_ms)
     {
         int ret;
         fabric_msg msg = {};
@@ -418,6 +449,10 @@ namespace LFI
         }
 
         uint64_t mask = 0;
+        decltype(std::chrono::high_resolution_clock::now()) start;
+        if (timeout_ms >= 0){
+            start = std::chrono::high_resolution_clock::now();
+        }
         // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
         uint64_t aux_rank_peer = request.m_comm.rank_peer;
         uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
@@ -448,6 +483,19 @@ namespace LFI
                 if (global_lock.try_lock()){
                     progress(request.m_comm.m_ep);
                     global_lock.unlock();
+                }
+                
+                if (timeout_ms >= 0){
+                    int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
+                    if (elapsed_ms >= timeout_ms){
+                        msg.error = -1;
+                        return msg;
+                    }
+                }
+
+                if (request.m_comm.is_canceled){
+                    msg.error = -1;
+                    return msg;
                 }
             }
         } while (ret == -FI_EAGAIN);

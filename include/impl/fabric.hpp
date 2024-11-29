@@ -140,7 +140,6 @@ namespace LFI
     public:
         static fabric_comm *get_comm(uint32_t id);
         static int close_comm(uint32_t id);
-        static int cancel_comm(uint32_t id);
         static int get_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &out_addr);
         static int register_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &addr);
         static int remove_addr(fabric_comm &fabric_comm);
@@ -158,8 +157,8 @@ namespace LFI
         static int progress(fabric_ep &fabric_ep);
         static void wait(fabric_request &request, int32_t timeout_ms = -1);
         static int cancel(fabric_request &request);
-        static fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request);
-        static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request);
+        static fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
+        static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         static fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
         static fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
 

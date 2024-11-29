@@ -388,30 +388,9 @@ namespace LFI
             return -1;
         }
 
-        if (!comm->is_canceled){
-            remove_addr(*comm);
-        }
+        remove_addr(*comm);
 
         lfi.m_comms.erase(comm->rank_peer);
-
-        debug_info("[LFI] End = " << ret);
-
-        return ret;
-    }
-
-    int LFI::cancel_comm(uint32_t id)
-    {
-        int ret = 0;
-        debug_info("[LFI] Start");
-
-        fabric_comm *comm = get_comm(id);
-        if (comm == nullptr){
-            return -1;
-        }
-
-        comm->is_canceled = true;
-
-        remove_addr(*comm);
 
         debug_info("[LFI] End = " << ret);
 
@@ -468,9 +447,9 @@ namespace LFI
         
         debug_info("[LFI] remove fi_addr = " << fabric_comm.fi_addr);
         ret = fi_av_remove(fabric_comm.m_ep.av, &fabric_comm.fi_addr, 1, 0);
-        if (ret < 0)
+        if (ret != FI_SUCCESS)
         {
-            printf("av remove error %d\n", ret);
+            print("av remove error "<<ret<<" "<<fi_strerror(ret));
             return ret;
         }
         debug_info("[LFI] End = " << ret);
