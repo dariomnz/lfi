@@ -24,6 +24,7 @@ else()
 endif()
 
 add_subdirectory(src)
+add_subdirectory(ld_preload)
 
 option(BUILD_EXAMPLES "Build the examples" OFF)
 if(BUILD_EXAMPLES)
