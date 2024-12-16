@@ -42,6 +42,11 @@ namespace LFI
             {
                 LFI_fault_tolerance_time = atoi(env_lfi_fault_tolerance_time);
             }
+            char *env_lfi_port = std::getenv("LFI_PORT");
+            if ((env_lfi_port != NULL) && (std::strlen(env_lfi_port) > 0))
+            {
+                LFI_port = atoi(env_lfi_port);
+            }
         }
         // Delete copy constructor
         env(const env &) = delete;
@@ -53,6 +58,7 @@ namespace LFI
         env &operator=(env &&) = delete;
         bool LFI_fault_tolerance = true;
         int LFI_fault_tolerance_time = 5;
+        int LFI_port = 56789;
 
     public:
         static env &get_instance()

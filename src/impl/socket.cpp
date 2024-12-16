@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "impl/debug.hpp"
+#include "impl/proxy.hpp"
 
 namespace LFI {
 int socket::server_init(const std::string& addr, int& port) {
@@ -33,7 +34,7 @@ int socket::server_init(const std::string& addr, int& port) {
     debug_info(">> Begin");
     int socket = socket::open();
     if (socket < 0) {
-        print("Error opening a socket in addr " << addr << " port " << port);
+        print_error("Error opening a socket in addr " << addr << " port " << port);
         return socket;
     }
 
@@ -43,19 +44,19 @@ int socket::server_init(const std::string& addr, int& port) {
     server_addr.sin_family = AF_INET;
     if (!addr.empty()) {
         debug_info("Socket bind to "<<addr);
-        if (::inet_pton(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
-            print("Error: Invalid IP address or conversion error in addr '" << addr << "'");
+        if (PROXY(inet_pton)(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
+            print_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
             return -1;
         }
     } else {
         debug_info("Socket bind to INADDR_ANY");
         server_addr.sin_addr.s_addr = INADDR_ANY;
     }
-    server_addr.sin_port = ::htons(port);
+    server_addr.sin_port = PROXY(htons)(port);
 
-    ret = ::bind(socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    ret = PROXY(bind)(socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if (ret < 0) {
-        print("ERROR: bind fails");
+        print_error("ERROR: bind fails");
         socket::close(socket);
         return ret;
     }
@@ -63,15 +64,15 @@ int socket::server_init(const std::string& addr, int& port) {
     // listen
     debug_info("Socket listen");
 
-    ret = ::listen(socket, 20);
+    ret = PROXY(listen)(socket, 20);
     if (ret < 0) {
-        print("ERROR: listen fails");
+        print_error("ERROR: listen fails");
         socket::close(socket);
         return ret;
     }
     socklen_t len = sizeof(server_addr);
-    ::getsockname(socket, (struct sockaddr*)&server_addr, &len);
-    port = ntohs(server_addr.sin_port);
+    PROXY(getsockname)(socket, (struct sockaddr*)&server_addr, &len);
+    port = PROXY(ntohs)(server_addr.sin_port);
 
     debug_info("available at " << port);
 
@@ -91,9 +92,9 @@ int socket::client_init(const std::string& addr, int port) {
     hints.ai_socktype = SOCK_STREAM;  // TCP socket
 
     // Get address information
-    int status = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &hints, &res);
+    int status = PROXY(getaddrinfo)(addr.c_str(), std::to_string(port).c_str(), &hints, &res);
     if (status != 0) {
-        print("getaddrinfo error: " << gai_strerror(status));
+        print_error("getaddrinfo error: " << gai_strerror(status));
         return -1;
     }
 
@@ -104,8 +105,8 @@ int socket::client_init(const std::string& addr, int port) {
             return socket;
         }
         // Attempt to connect
-        if ((ret = connect(socket, p->ai_addr, p->ai_addrlen)) == -1) {
-            perror("connect");
+        if ((ret = PROXY(connect)(socket, p->ai_addr, p->ai_addrlen)) == -1) {
+            print_error("connect "<<addr<<" port "<<port);
             socket::close(socket);
             continue;
         }
@@ -116,7 +117,7 @@ int socket::client_init(const std::string& addr, int port) {
     }
 
     // Free the linked list created by getaddrinfo
-    freeaddrinfo(res);
+    PROXY(freeaddrinfo)(res);
 
     // If no valid connection was made
     if (ret == -1) {
@@ -147,19 +148,19 @@ int socket::open() {
     // Socket init
     debug_info("Socket init");
 
-    out_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    out_socket = PROXY(socket)(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (out_socket < 0) {
-        print("ERROR: socket fails");
+        print_error("ERROR: socket fails");
         return out_socket;
     }
 
-    // tcp_nodalay
+    // tcp_nodelay
     debug_info("TCP nodelay");
 
     val = 1;
-    ret = ::setsockopt(out_socket, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
+    ret = PROXY(setsockopt)(out_socket, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
     if (ret < 0) {
-        print("ERROR: setsockopt fails");
+        print_error("ERROR: setsockopt fails");
         socket::close(out_socket);
         return ret;
     }
@@ -168,9 +169,9 @@ int socket::open() {
     debug_info("Socket reuseaddr");
 
     val = 1;
-    ret = ::setsockopt(out_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&val, sizeof(int));
+    ret = PROXY(setsockopt)(out_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&val, sizeof(int));
     if (ret < 0) {
-        print("ERROR: setsockopt fails");
+        print_error("ERROR: setsockopt fails");
         socket::close(out_socket);
         return ret;
     }
@@ -186,17 +187,17 @@ int socket::accept(int socket) {
     // Accept
     debug_info(">> Begin");
 
-    new_socket = ::accept(socket, (sockaddr*)&client_addr, &size);
+    new_socket = PROXY(accept)(socket, (sockaddr*)&client_addr, &size);
     if (new_socket < 0) {
-        print("ERROR: accept fails");
+        print_error("ERROR: accept fails");
         return -1;
     }
 
     // tcp_nodelay
     flag = 1;
-    ret = ::setsockopt(new_socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+    ret = PROXY(setsockopt)(new_socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
     if (ret < 0) {
-        perror("setsockopt: ");
+        print_error("setsockopt: ");
         socket::close(new_socket);
         return -1;
     }
@@ -218,7 +219,7 @@ int socket::accept(int socket) {
 int socket::close(int socket) {
     int ret = -1;
     debug_info(">> Begin");
-    ret = ::close(socket);
+    ret = PROXY(close)(socket);
     debug_info(">> End = "<<ret);
     return ret;
 }
@@ -230,7 +231,7 @@ ssize_t socket::send(int socket, const void* data, size_t len) {
     debug_info(">> Begin");
 
     do {
-        r = ::send(socket, buffer, l, 0);
+        r = PROXY(send)(socket, buffer, l, 0);
         if (r < 0) return r; /* fail */
 
         l = l - r;
@@ -249,7 +250,7 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
     char* buffer = static_cast<char*>(data);
 
     do {
-        r = ::recv(socket, buffer, l, 0);
+        r = PROXY(recv)(socket, buffer, l, 0);
         if (r < 0) return r; /* fail */
 
         l = l - r;

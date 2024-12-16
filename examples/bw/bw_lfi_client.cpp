@@ -42,7 +42,7 @@ int run_test(std::vector<int>& ids, bw_test &test)
             debug_info("count "<<i<<" lfi_send("<<id<<", data.data(), "<<test_size<<")");
             data_send = lfi_send(id, data.data(), test_size);
             if (data_send != test_size){
-                print("Error lfi_send = "<<data_send);
+                print("Error lfi_send = "<<data_send<<" "<<lfi_strerror(data_send));
                 return -1;
             }
             test.size += data_send;
@@ -55,7 +55,7 @@ int run_test(std::vector<int>& ids, bw_test &test)
         debug_info("ack lfi_recv("<<id<<", ack, "<<sizeof(ack)<<")");
         data_recv = lfi_recv(id, &ack, sizeof(ack));
         if (data_recv != sizeof(ack)){
-            print("Error lfi_recv = "<<data_recv);
+            print("Error lfi_recv = "<<data_recv<<" "<<lfi_strerror(data_recv));
             return -1;
         }
     }

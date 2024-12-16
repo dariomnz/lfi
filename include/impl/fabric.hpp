@@ -30,14 +30,47 @@
 #include <mutex>
 #include <condition_variable>
 #include <unordered_map>
+#include <unordered_set>
 #include <thread>
 #include <atomic>
 #include <vector>
 #include <sstream>
-#include <set>
+
+#define DECLARE_LFI_ERROR(name, num, msg) \
+    static constexpr const int name = num; \
+    static constexpr const char* name##_str = msg;
+
+#define CASE_STR_ERROR(name) \
+    case name: return name##_str;
 
 namespace LFI
 {
+    // Error codes
+    DECLARE_LFI_ERROR(LFI_SUCCESS,          0, "Success");
+    DECLARE_LFI_ERROR(LFI_ERROR,            1, "Error");
+    DECLARE_LFI_ERROR(LFI_TIMEOUT,          2, "Timeout");
+    DECLARE_LFI_ERROR(LFI_CANCELED,         3, "Canceled");
+    DECLARE_LFI_ERROR(LFI_CANCELED_COMM,    4, "Canceled COMM");
+    DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND,   5, "COMM not found");
+
+    static constexpr const char * lfi_strerror(int error)
+    {
+        switch (error)
+        {
+            CASE_STR_ERROR(LFI_SUCCESS);
+            CASE_STR_ERROR(LFI_ERROR);
+            CASE_STR_ERROR(LFI_TIMEOUT);
+            CASE_STR_ERROR(LFI_CANCELED);
+            CASE_STR_ERROR(LFI_CANCELED_COMM);
+            CASE_STR_ERROR(LFI_COMM_NOT_FOUND);
+        default: return "Unknown";
+        }
+    }
+
+    // Reserved tags
+    #define LFI_TAG_FT 65535
+    #define LFI_TAG_RECV_LD_PRELOAD 65534
+
     // Forward declaration
     struct fabric_ep;
     struct fabric_comm;
@@ -64,9 +97,9 @@ namespace LFI
         std::string to_string()
         {
             std::stringstream out;
-            out << "Request "<<std::hex<<this<<std::endl;
-            out << "  is_send   "<<std::dec<<is_send<<std::endl;
-            out << "  is_inject "<<std::dec<<is_inject<<std::endl;
+            out << "Request "<<std::hex<<this;
+            out << "  is_send   "<<std::dec<<is_send;
+            out << "  is_inject "<<std::dec<<is_inject;
             return out.str();
         }
 
@@ -84,7 +117,7 @@ namespace LFI
 
         // For fault tolerance
         std::mutex ft_mutex;
-        std::set<fabric_request*> ft_requests;
+        std::unordered_set<fabric_request*> ft_requests;
         bool ft_error = false;
 
         bool is_canceled = false;
@@ -135,7 +168,7 @@ namespace LFI
         static int set_hints(fabric_ep &fabric_ep, const std::string &prov);
         static int init(fabric_ep &fabric);
         static int destroy(fabric_ep &fabric_ep);
-        static fabric_comm &create_comm(fabric_ep &fabric_ep);
+        static fabric_comm &create_comm(fabric_ep &fabric_ep, int32_t comm_id = -1);
 
     public:
         static fabric_comm *get_comm(uint32_t id);
@@ -144,18 +177,18 @@ namespace LFI
         static int register_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &addr);
         static int remove_addr(fabric_comm &fabric_comm);
 
-        static int init_server(int socket);
-        static int init_client(int socket);
+        static int init_server(int socket, int32_t comm_id = -1);
+        static int init_client(int socket, int32_t comm_id = -1);
 
         static int init_endpoints(bool is_shm);
-        static fabric_comm &init_comm(bool is_shm);
+        static fabric_comm &init_comm(bool is_shm, int32_t comm_id = -1);
 
         // fabric_send_recv
     private:
-        static inline bool wait_check_timeout(fabric_request &request, int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
+        static inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
     public:
         static int progress(fabric_ep &fabric_ep);
-        static void wait(fabric_request &request, int32_t timeout_ms = -1);
+        static int wait(fabric_request &request, int32_t timeout_ms = -1);
         static int cancel(fabric_request &request);
         static fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);

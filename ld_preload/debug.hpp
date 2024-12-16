@@ -25,13 +25,18 @@
 #include <ostream>
 #include <sstream>
 #include <cstring>
+#include <mutex>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/epoll.h>
 
 #ifdef DEBUG
-#define debug(out_format) std::cerr << "[" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl;
+#define debug(out_format)                                                                                                          \
+    {                                                                                                                              \
+        std::unique_lock internal_debug_lock(::LFI::get_lock());                                                                                \
+        std::cerr << "[" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl << std::flush; \
+    }
 #else
 #define debug(out_format)
 #endif
@@ -81,6 +86,36 @@ std::string getAcceptFlags(int flags)
     }
 
     return result;
+}
+
+std::string sockaddr_to_str(const struct sockaddr *addr)
+{
+    if (addr == nullptr)
+    {
+        return "";
+    }
+
+    char buffer[INET6_ADDRSTRLEN] = {};
+    switch (addr->sa_family)
+    {
+    case AF_INET:
+    {
+        // IPv4
+        const struct sockaddr_in *addr_in = reinterpret_cast<const struct sockaddr_in *>(addr);
+        inet_ntop(AF_INET, &(addr_in->sin_addr), buffer, sizeof(buffer));
+        return buffer;
+    }
+    case AF_INET6:
+    {
+        // IPv6
+        const struct sockaddr_in6 *addr_in6 = reinterpret_cast<const struct sockaddr_in6 *>(addr);
+        inet_ntop(AF_INET6, &(addr_in6->sin6_addr), buffer, sizeof(buffer));
+        return buffer;
+    }
+    }
+
+    throw std::runtime_error("In sockaddr_to_str, addr->sa_family not AF_INET or AF_INET6");
+    return "";
 }
 
 std::ostream &operator<<(std::ostream &os, const struct sockaddr *addr)
@@ -304,7 +339,7 @@ std::string getSocketOptionName(int level, int optname)
             CASE_STR_RET(SO_NETNS_COOKIE)
             CASE_STR_RET(SO_BUF_LOCK)
         default:
-            return "Unknown socket option";
+            return "Unknown socket option " + std::to_string(optname);
         }
     }
     else if (level == IPPROTO_TCP)
@@ -336,11 +371,23 @@ std::string getSocketOptionName(int level, int optname)
             CASE_STR_RET(TCP_FASTOPEN)
             CASE_STR_RET(TCP_TIMESTAMP)
             CASE_STR_RET(TCP_NOTSENT_LOWAT)
+            CASE_STR_RET(TCP_CC_INFO)
+            CASE_STR_RET(TCP_SAVE_SYN)
+            CASE_STR_RET(TCP_SAVED_SYN)
+            CASE_STR_RET(TCP_REPAIR_WINDOW)
+            CASE_STR_RET(TCP_FASTOPEN_CONNECT)
+            CASE_STR_RET(TCP_ULP)
+            CASE_STR_RET(TCP_MD5SIG_EXT)
+            CASE_STR_RET(TCP_FASTOPEN_KEY)
+            CASE_STR_RET(TCP_FASTOPEN_NO_COOKIE)
+            CASE_STR_RET(TCP_ZEROCOPY_RECEIVE)
+            CASE_STR_RET(TCP_INQ)
+            CASE_STR_RET(TCP_TX_DELAY)
         default:
-            return "Unknown TCP option";
+            return "Unknown TCP option " + std::to_string(optname);
         }
     }
-    return "Unknown option";
+    return "Unknown option " + std::to_string(optname);
 }
 
 std::string getSocketOptval(const void *optval, socklen_t optlen)
@@ -572,6 +619,18 @@ std::string interpretEpollEvents(uint32_t events)
     return result;
 }
 
+std::string getEPollop(int op)
+{
+    switch (op)
+    {
+        CASE_STR_RET(EPOLL_CTL_ADD);
+        CASE_STR_RET(EPOLL_CTL_DEL);
+        CASE_STR_RET(EPOLL_CTL_MOD);
+    default:
+        return "";
+    }
+}
+
 std::string getEPollEventStr(const struct epoll_event *events, int maxevents)
 {
     if (!events)
@@ -587,15 +646,12 @@ std::string getEPollEventStr(const struct epoll_event *events, int maxevents)
         out << "Epolle[" << i << "]:";
         out << "Events: " << interpretEpollEvents(events[i].events) << ", ";
 
-        out << "Data: ";
-        if (events[i].data.fd != 0)
-        {
-            out << "FD: " << events[i].data.fd << ", ";
-        }
-        else
-        {
-            out << "ptr: " << events[i].data.ptr << ", ";
-        }
+        out << "Data:";
+        out << " ptr " << events[i].data.ptr;
+        out << " fd " << events[i].data.fd;
+        out << " u32 " << events[i].data.u32;
+        out << " u64 " << events[i].data.u64;
+        out << " ";
     }
 
     return out.str();

@@ -146,7 +146,7 @@ namespace LFI
             fabric_request *request = static_cast<fabric_request *>(err.op_context);
             std::unique_lock lock(request->mutex);
             request->wait_context = false;
-            request->error = -1;
+            request->error = -LFI_CANCELED;
             request->cv.notify_all();
             return ret;
         }
@@ -166,45 +166,46 @@ namespace LFI
         return ret;
     }
 
-    bool LFI::wait_check_timeout(fabric_request &request, int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start)
+    bool LFI::wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start)
     {
-        int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
+        int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count();
+        debug_info("[LFI] Check timeout of "<<timeout_ms<<" ms with elapsed "<<elapsed_ms<<" ms")
         if (elapsed_ms >= timeout_ms){
-            int ret = cancel(request);
-            if (ret < 0){
-                print("TODO: check error in fi_cancel");
-            }
+            // int ret = cancel(request);
+            // if (ret < 0){
+            //     print("TODO: check error in fi_cancel");
+            // }
             return true;
         }
         return false;
     }
 
-    void LFI::wait(fabric_request &request, int32_t timeout_ms)
+    int LFI::wait(fabric_request &request, int32_t timeout_ms)
     {
-        debug_info("[LFI] Start "<<request.to_string());
+        debug_info("[LFI] Start "<<request.to_string()<<" timeout_ms "<<timeout_ms);
 
         // Check cancelled comm
         if (request.m_comm.is_canceled){
-            return;
+            return -LFI_CANCELED;
         }
 
         std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
         std::unique_lock request_lock(request.mutex);
         decltype(std::chrono::high_resolution_clock::now()) start;
-        bool is_canceled = false;
+        bool is_timeout = false;
         if (timeout_ms >= 0){
             start = std::chrono::high_resolution_clock::now();
         }
 
-        while (request.wait_context)
+        while (request.wait_context && !is_timeout)
         {
             if (global_lock.try_lock()){
-                while (request.wait_context)
+                while (request.wait_context && !is_timeout)
                 {
                     request_lock.unlock();
                     progress(request.m_comm.m_ep);
                     if (timeout_ms >= 0){
-                        is_canceled = wait_check_timeout(request, timeout_ms, start);
+                        is_timeout = wait_check_timeout(timeout_ms, start);
                     }
                     request_lock.lock();
                 }
@@ -215,20 +216,24 @@ namespace LFI
                 }
             }
             if(timeout_ms >= 0){
-                if (is_canceled) continue;
-                
-                request_lock.unlock();
-                is_canceled = wait_check_timeout(request, timeout_ms, start);
-                request_lock.lock();
+                if (is_timeout) continue;
+                is_timeout = wait_check_timeout(timeout_ms, start);
             }
         }
         request_lock.unlock();
-        if (env::get_instance().LFI_fault_tolerance && !is_canceled){
+
+        if (is_timeout){
+            request.error = -LFI_TIMEOUT;
+            return -LFI_TIMEOUT;
+        }
+
+        if (env::get_instance().LFI_fault_tolerance){
             std::unique_lock lock(request.m_comm.ft_mutex);
             debug_info("[LFI] erase request "<<request.to_string()<<" in comm "<<request.m_comm.rank_peer);
             request.m_comm.ft_requests.erase(&request);
         }
         debug_info("[LFI] End wait "<<request.to_string());
+        return LFI_SUCCESS;
     }
 
     int LFI::cancel(fabric_request &request){
@@ -260,7 +265,7 @@ namespace LFI
 
         std::unique_lock lock(request.mutex);
         request.wait_context = false;
-        request.error = -1;
+        request.error = -LFI_CANCELED;
         request.cv.notify_all();
         
         debug_info("[LFI] End "<<std::hex<<&request<<std::dec);
@@ -274,7 +279,7 @@ namespace LFI
         // Check if comm exists
         fabric_comm *comm = get_comm(comm_id);
         if (comm == nullptr){
-            msg.error = -1;
+            msg.error = -LFI_COMM_NOT_FOUND;
             return msg;
         }
         fabric_request request(*comm);
@@ -299,7 +304,7 @@ namespace LFI
         // Check if comm exists
         fabric_comm *comm = get_comm(comm_id);
         if (comm == nullptr){
-            msg.error = -1;
+            msg.error = -LFI_COMM_NOT_FOUND;
             return msg;
         }
         fabric_request request(*comm);
@@ -313,6 +318,7 @@ namespace LFI
         wait(request);
 
         msg.error = request.error;
+        msg.size = request.entry.len;
 
         return msg;
     }
@@ -324,7 +330,7 @@ namespace LFI
 
         // Check cancelled comm
         if (request.m_comm.is_canceled){
-            msg.error = -1;
+            msg.error = -LFI_CANCELED_COMM;
             return msg;
         }
 
@@ -362,13 +368,13 @@ namespace LFI
                     if (timeout_ms >= 0){
                         int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
                         if (elapsed_ms >= timeout_ms){
-                            msg.error = -1;
+                            msg.error = -LFI_TIMEOUT;
                             return msg;
                         }
                     }
 
                     if (request.m_comm.is_canceled){
-                        msg.error = -1;
+                        msg.error = -LFI_CANCELED_COMM;
                         return msg;
                     }
                 }
@@ -404,13 +410,13 @@ namespace LFI
                     if (timeout_ms >= 0){
                         int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
                         if (elapsed_ms >= timeout_ms){
-                            msg.error = -1;
+                            msg.error = -LFI_TIMEOUT;
                             return msg;
                         }
                     }
 
                     if (request.m_comm.is_canceled){
-                        msg.error = -1;
+                        msg.error = -LFI_CANCELED_COMM;
                         return msg;
                     }
                 }
@@ -423,7 +429,7 @@ namespace LFI
         if (ret != 0)
         {
             printf("error posting send buffer (%d)\n", ret);
-            msg.error = -1;
+            msg.error = -LFI_ERROR;
             return msg;
         }
 
@@ -444,7 +450,7 @@ namespace LFI
 
         // Check cancelled comm
         if (request.m_comm.is_canceled){
-            msg.error = -1;
+            msg.error = -LFI_CANCELED_COMM;
             return msg;
         }
 
@@ -488,13 +494,13 @@ namespace LFI
                 if (timeout_ms >= 0){
                     int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
                     if (elapsed_ms >= timeout_ms){
-                        msg.error = -1;
+                        msg.error = -LFI_TIMEOUT;
                         return msg;
                     }
                 }
 
                 if (request.m_comm.is_canceled){
-                    msg.error = -1;
+                    msg.error = -LFI_CANCELED_COMM;
                     return msg;
                 }
             }
@@ -503,7 +509,7 @@ namespace LFI
         if (ret != 0)
         {
             printf("error posting recv buffer (%d)\n", ret);
-            msg.error = -1;
+            msg.error = -LFI_ERROR;
             return msg;
         }
 

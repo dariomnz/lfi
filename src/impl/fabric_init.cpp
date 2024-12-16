@@ -348,17 +348,24 @@ namespace LFI
         return ret;
     }
 
-    fabric_comm &LFI::create_comm(fabric_ep &fabric_ep)
+    fabric_comm &LFI::create_comm(fabric_ep &fabric_ep, int32_t comm_id)
     {
         static uint32_t rank_counter = 0;
+        uint32_t new_id = rank_counter;
 
         debug_info("[LFI] Start");
         LFI &lfi = LFI::get_instance();
-
+        if (comm_id >= 0){
+            if(lfi.m_comms.find(comm_id) == lfi.m_comms.end()){
+                new_id = comm_id;
+            }else{
+                throw std::runtime_error("Want to create a comm with a id that exits");
+            }
+        }
         auto [key, inserted] = lfi.m_comms.emplace(std::piecewise_construct,
-                                                   std::forward_as_tuple(rank_counter),
+                                                   std::forward_as_tuple(new_id),
                                                    std::forward_as_tuple(fabric_ep));
-        key->second.rank_peer = rank_counter;
+        key->second.rank_peer = new_id;
         rank_counter++;
         debug_info("[LFI] rank_peer " << key->second.rank_peer);
         debug_info("[LFI] End");
@@ -456,7 +463,7 @@ namespace LFI
         return ret;
     }
 
-    int LFI::init_server(int socket)
+    int LFI::init_server(int socket, int32_t comm_id)
     {
         int ret;
         debug_info("[LFI] Start");
@@ -510,7 +517,7 @@ namespace LFI
             return ret;
         }
 
-        fabric_comm &comm = init_comm(is_shm);
+        fabric_comm &comm = init_comm(is_shm, comm_id);
         
         // Exchange ranks
         ret = socket::recv(socket, &comm.rank_self_in_peer, sizeof(comm.rank_self_in_peer));
@@ -592,7 +599,7 @@ namespace LFI
         return ret;
     }
 
-    int LFI::init_client(int socket)
+    int LFI::init_client(int socket, int32_t comm_id)
     {
         int ret;
         debug_info("[LFI] Start");
@@ -646,7 +653,7 @@ namespace LFI
             return ret;
         }
 
-        fabric_comm &comm = init_comm(is_shm);
+        fabric_comm &comm = init_comm(is_shm, comm_id);
 
         // Exchange ranks
         ret = socket::send(socket, &comm.rank_peer, sizeof(comm.rank_peer));
@@ -761,16 +768,16 @@ namespace LFI
         return ret;
     }
 
-    fabric_comm &LFI::init_comm(bool is_shm)
+    fabric_comm &LFI::init_comm(bool is_shm, int32_t comm_id)
     {
         LFI &lfi = LFI::get_instance();
         if (is_shm)
         {
-            return create_comm(lfi.shm_ep);
+            return create_comm(lfi.shm_ep, comm_id);
         }
         else
         {
-            return create_comm(lfi.peer_ep);
+            return create_comm(lfi.peer_ep, comm_id);
         }
     }
 } // namespace LFI

@@ -140,6 +140,12 @@ int lfi_client_close(int id)
     return ret;
 }
 
+
+const char* lfi_strerror(int error)
+{
+    return LFI::lfi_strerror(std::abs(error));
+}
+
 #ifdef __cplusplus
 }
 #endif

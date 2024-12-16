@@ -95,10 +95,11 @@ namespace LFI
                 requests.reserve(lfi.m_comms.size()*2);
                 for (auto &[id, comm] : lfi.m_comms)
                 {
+                    if (comm.is_canceled) continue;
                     int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000);
                     auto& send_request = requests.emplace_back(comm);
                     debug_info("[LFI] Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
-                    msg = async_send(&ack, sizeof(ack), 65535, send_request, timeout_ms);
+                    msg = async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
                     if (msg.error < 0){
                         comm.ft_error = true;
                         comms_with_err.push_back(id);
@@ -107,7 +108,7 @@ namespace LFI
                     }
                     auto& recv_request = requests.emplace_back(comm);
                     debug_info("[LFI] Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
-                    msg = async_recv(&ack, sizeof(ack), 65535, recv_request, timeout_ms);
+                    msg = async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
                     if (msg.error < 0){
                         comm.ft_error = true;
                         comms_with_err.push_back(id);
@@ -119,16 +120,22 @@ namespace LFI
                 auto start = std::chrono::high_resolution_clock::now();
                 for (auto &[id, comm] : lfi.m_comms)
                 {
-                    if (comm.ft_error) continue;
+                    if (comm.is_canceled || comm.ft_error) continue;
                     int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
         
                     int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000 - elapsed_ms);
                     auto& send_request = requests[index++];
                     debug_info("[LFI] wait ft send ack comm "<<id<<" "<<&send_request);
-                    wait(send_request, timeout_ms);
+                    ret = wait(send_request, timeout_ms);
+                    if (ret == - LFI_TIMEOUT){
+                        cancel(send_request);
+                    }
                     auto& recv_request = requests[index++];
                     debug_info("[LFI] wait ft recv ack comm "<<id<<" "<<&recv_request);
-                    wait(recv_request, timeout_ms);
+                    ret = wait(recv_request, timeout_ms);
+                    if (ret == - LFI_TIMEOUT){
+                        cancel(recv_request);
+                    }
                     debug_info("[LFI] wait ft ack comm errors "<<send_request.error<<" "<<recv_request.error);
                     if (send_request.error < 0 || recv_request.error < 0){
                         comms_with_err.push_back(id);
@@ -150,6 +157,7 @@ namespace LFI
                         lfi.cancel(*request);
                         debug_info("[LFI] canceled "<<request->to_string());
                     }
+                    comm->ft_requests.clear();
                     
                     debug_info("[LFI] close comm with error "<<id);
                     comm->is_canceled = true;

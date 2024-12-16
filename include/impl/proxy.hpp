@@ -24,9 +24,10 @@
 #include <dlfcn.h>
 #include <string>
 #include <stdexcept>
+#include <debug.hpp>
 
 #define PROXY(func) \
-    ::lookupSymbol<func>(#func)
+    ::lookupSymbol<::func>(#func)
 
 template <auto T>
 auto lookupSymbol(const char *name)
@@ -36,10 +37,9 @@ auto lookupSymbol(const char *name)
     if (symbol == nullptr)
     {
         symbol = (return_type)::dlsym(RTLD_NEXT, name);
-
         if (!symbol)
         {
-            std::string errormsg = "failed to find symbol '";
+            std::string errormsg = "dlsym failed to find symbol '";
             errormsg += name;
             errormsg += "'";
             throw std::runtime_error(errormsg);
