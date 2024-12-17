@@ -88,6 +88,11 @@ namespace LFI
         out << "  buf: " << entry.buf << std::endl;
         out << "  data: " << entry.data << std::endl;
         out << "  tag: " << entry.tag << std::endl;
+        if (entry.flags & FI_RECV){
+            out << "    real_tag: " << (entry.tag & 0x0000'0000'0000'FFFF) << std::endl;
+            out << "    rank_peer: " << ((entry.tag & 0x0000'00FF'FFFF'0000) >> 16) << std::endl;
+            out << "    rank_self_in_peer: " << ((entry.tag & 0xFFFF'FF00'0000'0000) >> 40) << std::endl;
+        }
         return out.str();
     }
 
@@ -102,6 +107,9 @@ namespace LFI
         out << "  buf: " << entry.buf << std::endl;
         out << "  data: " << entry.data << std::endl;
         out << "  tag: " << entry.tag << std::endl;
+        out << "    real_tag: " << (entry.tag & 0x0000'0000'0000'FFFF) << std::endl;
+        out << "    rank_peer: " << ((entry.tag & 0x0000'00FF'FFFF'0000) >> 16) << std::endl;
+        out << "    rank_self_in_peer: " << ((entry.tag & 0xFFFF'FF00'0000'0000) >> 40) << std::endl;
         out << "  olen: " << entry.olen << std::endl;
         out << "  err: " << entry.err << " " << fi_strerror(entry.err) << std::endl;
         out << "  prov_errno: " << entry.prov_errno << " " << fi_cq_strerror(cq, entry.prov_errno, entry.err_data, NULL, 0) << std::endl;
@@ -169,7 +177,7 @@ namespace LFI
     bool LFI::wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start)
     {
         int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count();
-        debug_info("[LFI] Check timeout of "<<timeout_ms<<" ms with elapsed "<<elapsed_ms<<" ms")
+        // debug_info("[LFI] Check timeout of "<<timeout_ms<<" ms with elapsed "<<elapsed_ms<<" ms")
         if (elapsed_ms >= timeout_ms){
             // int ret = cancel(request);
             // if (ret < 0){
@@ -221,9 +229,10 @@ namespace LFI
             }
         }
         request_lock.unlock();
-
-        if (is_timeout){
+        // Return timeout only if is not completed and timeout
+        if (is_timeout && request.wait_context){
             request.error = -LFI_TIMEOUT;
+            debug_info("[LFI] End wait with timeout "<<request.to_string());
             return -LFI_TIMEOUT;
         }
 
@@ -232,6 +241,8 @@ namespace LFI
             debug_info("[LFI] erase request "<<request.to_string()<<" in comm "<<request.m_comm.rank_peer);
             request.m_comm.ft_requests.erase(&request);
         }
+
+        request.error = LFI_SUCCESS;
         debug_info("[LFI] End wait "<<request.to_string());
         return LFI_SUCCESS;
     }
@@ -255,10 +266,9 @@ namespace LFI
         fi_cancel(&p_ep->fid, &request);
         debug_info("fi_cancel ret "<<ret<<" "<<fi_strerror(ret));
 
-        // Try one progress to read the canceled
+        // Try one progress to read the canceled and not accumulate errors
         std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
         if (global_lock.try_lock()){
-            // print("do progress");
             progress(request.m_comm.m_ep);
             global_lock.unlock();
         }
@@ -275,6 +285,13 @@ namespace LFI
     fabric_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag)
     {
         fabric_msg msg = {};
+        debug_info("[LFI] Start");
+
+        // Check if any_comm in send is error
+        if (comm_id == LFI_ANY_COMM_SHM || comm_id == LFI_ANY_COMM_PEER){
+            msg.error = -LFI_ERROR;
+            return msg;
+        }
 
         // Check if comm exists
         fabric_comm *comm = get_comm(comm_id);
@@ -294,12 +311,19 @@ namespace LFI
 
         msg.error = request.error;
 
+        debug_info("[LFI] End");
         return msg;
     }
 
     fabric_msg LFI::recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag)
     {
         fabric_msg msg = {};
+        debug_info("[LFI] Start");
+
+        // Check if any_comm, is necesary to be any
+        if (comm_id == LFI_ANY_COMM_SHM || comm_id == LFI_ANY_COMM_PEER){
+            return any_recv(buffer, size, tag);
+        }
 
         // Check if comm exists
         fabric_comm *comm = get_comm(comm_id);
@@ -320,7 +344,68 @@ namespace LFI
         msg.error = request.error;
         msg.size = request.entry.len;
 
+        debug_info("[LFI] End");
         return msg;
+    }
+
+    fabric_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
+    {
+        fabric_msg peer_msg = {}, shm_msg = {};
+        debug_info("[LFI] Start");
+
+        // For the shm
+        fabric_comm *comm = get_comm(LFI_ANY_COMM_SHM);
+        if (comm == nullptr){
+            throw std::runtime_error("There are no LFI_ANY_COMM_SHM. This should not happend");
+        }
+        fabric_request shm_request(*comm);
+        // For the peer
+        comm = get_comm(LFI_ANY_COMM_PEER);
+        if (comm == nullptr){
+            throw std::runtime_error("There are no LFI_ANY_COMM_PEER. This should not happend");
+        }
+        fabric_request peer_request(*comm);
+        
+        // TODO: check first one and then the other for cases when the two complete and we only want one
+        shm_msg = async_recv(buffer, size, tag, shm_request);
+        if (shm_msg.error < 0){
+            return shm_msg;
+        }
+        peer_msg = async_recv(buffer, size, tag, peer_request);
+        if (peer_msg.error < 0){
+            return peer_msg;
+        }
+        
+        bool finish = false;
+        int ret = 0;
+        while(!finish){
+            ret = wait(shm_request, 0);
+            if (ret != -LFI_TIMEOUT){
+                shm_msg.error = shm_request.error;
+                shm_msg.size = shm_request.entry.len;
+                const auto tag = shm_request.entry.tag;
+                shm_msg.rank_self_in_peer = (tag & 0xFFFF'FF00'0000'0000) >> 40;
+                shm_msg.rank_peer = (tag & 0x0000'00FF'FFFF'0000) >> 16;
+                // Cancel the other
+                cancel(peer_request);
+                debug_info("[LFI] End shm");
+                return shm_msg;
+            }
+            ret = wait(peer_request, 0);
+            if (ret != -LFI_TIMEOUT){
+                peer_msg.error = peer_request.error;
+                peer_msg.size = peer_request.entry.len;
+                const auto tag = peer_request.entry.tag;
+                peer_msg.rank_self_in_peer = (tag & 0xFFFF'FF00'0000'0000) >> 40;
+                peer_msg.rank_peer = (tag & 0x0000'00FF'FFFF'0000) >> 16;
+                // Cancel the other
+                cancel(shm_request);
+                debug_info("[LFI] End peer");
+                return peer_msg;
+            }
+        }
+
+        throw std::runtime_error("Unrechable");
     }
 
     fabric_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, fabric_request& request, int32_t timeout_ms)
@@ -331,6 +416,13 @@ namespace LFI
         // Check cancelled comm
         if (request.m_comm.is_canceled){
             msg.error = -LFI_CANCELED_COMM;
+            return msg;
+        }
+
+        // Check if any_comm in send is error
+        if (request.m_comm.rank_peer == LFI_ANY_COMM_SHM || request.m_comm.rank_peer == LFI_ANY_COMM_PEER)
+        {
+            msg.error = -LFI_ERROR;
             return msg;
         }
 
@@ -465,7 +557,7 @@ namespace LFI
         uint64_t aux_tag = tag;
         uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
 
-        if (request.m_comm.rank_peer == FABRIC_ANY_RANK)
+        if (request.m_comm.rank_peer == LFI_ANY_COMM_SHM || request.m_comm.rank_peer == LFI_ANY_COMM_PEER)
         {
             // mask = 0x0000'00FF'FFFF'0000;
             // mask = 0xFFFF'FF00'0000'0000;

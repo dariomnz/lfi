@@ -248,8 +248,6 @@ namespace LFI
         }
 
         fabric_ep.enable_ep = true;
-        // Create FABRIC_ANY_RANK
-        // lfi::any_comm(fabric_ep);
 
         ret = ft_thread_start();
 
@@ -367,6 +365,21 @@ namespace LFI
                                                    std::forward_as_tuple(fabric_ep));
         key->second.rank_peer = new_id;
         rank_counter++;
+        debug_info("[LFI] rank_peer " << key->second.rank_peer);
+        debug_info("[LFI] End");
+        return key->second;
+    }
+
+    fabric_comm &LFI::create_any_comm(fabric_ep &fabric_ep, uint32_t comm_id)
+    {
+        uint32_t new_id = comm_id;
+
+        debug_info("[LFI] Start");
+        LFI &lfi = LFI::get_instance();
+        auto [key, inserted] = lfi.m_comms.emplace(std::piecewise_construct,
+                                                   std::forward_as_tuple(new_id),
+                                                   std::forward_as_tuple(fabric_ep));
+        key->second.rank_peer = new_id;
         debug_info("[LFI] rank_peer " << key->second.rank_peer);
         debug_info("[LFI] End");
         return key->second;
@@ -510,7 +523,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm);
+        ret = init_endpoints();
         if (ret < 0)
         {
             print_error("init_endpoints");
@@ -646,7 +659,7 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints(is_shm);
+        ret = init_endpoints();
         if (ret < 0)
         {
             print_error("init_endpoints");
@@ -736,33 +749,37 @@ namespace LFI
         return ret;
     }
 
-    int LFI::init_endpoints(bool is_shm)
+    int LFI::init_endpoints()
     {
         int ret = 0;
         LFI &lfi = LFI::get_instance();
         debug_info("[LFI] Start");
-        if (is_shm)
+        if (!lfi.shm_ep.initialized())
         {
-            if (lfi.shm_ep.initialized())
-            {
-                return 0;
-            }
             set_hints(lfi.shm_ep, "shm");
             ret = init(lfi.shm_ep);
             if (ret < 0)
             {
                 set_hints(lfi.shm_ep, "sm2");
                 ret = init(lfi.shm_ep);
+                if (ret < 0)
+                {
+                    return ret;
+                }
             }
+            // Create FABRIC_ANY_COMM for shm_ep
+            LFI::create_any_comm(lfi.shm_ep, LFI_ANY_COMM_SHM);
         }
-        else
+        if (!lfi.peer_ep.initialized())
         {
-            if (lfi.peer_ep.initialized())
-            {
-                return 0;
-            }
             set_hints(lfi.peer_ep, "");
             ret = init(lfi.peer_ep);
+            if (ret < 0)
+            {
+                return ret;
+            }
+            // Create FABRIC_ANY_COMM for peer_ep
+            LFI::create_any_comm(lfi.peer_ep, LFI_ANY_COMM_PEER);
         }
         debug_info("[LFI] End = " << ret);
         return ret;

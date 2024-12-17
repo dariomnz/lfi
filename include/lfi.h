@@ -38,9 +38,11 @@ extern "C"
 
     ssize_t lfi_send(int id, const void *data, size_t size);
     ssize_t lfi_recv(int id, void *data, size_t size);
+    ssize_t lfi_any_recv(void *data, size_t size, int* out_source);
 
     ssize_t lfi_tsend(int id, const void *data, size_t size, int tag);
     ssize_t lfi_trecv(int id, void *data, size_t size, int tag);
+    ssize_t lfi_any_trecv(void *data, size_t size, int tag, int* out_source);
 
     const char* lfi_strerror(int error);
 

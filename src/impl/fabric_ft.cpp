@@ -95,6 +95,7 @@ namespace LFI
                 requests.reserve(lfi.m_comms.size()*2);
                 for (auto &[id, comm] : lfi.m_comms)
                 {
+                    if (comm.rank_peer == LFI_ANY_COMM_SHM || comm.rank_peer == LFI_ANY_COMM_PEER) continue;
                     if (comm.is_canceled) continue;
                     int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000);
                     auto& send_request = requests.emplace_back(comm);
@@ -120,6 +121,7 @@ namespace LFI
                 auto start = std::chrono::high_resolution_clock::now();
                 for (auto &[id, comm] : lfi.m_comms)
                 {
+                    if (comm.rank_peer == LFI_ANY_COMM_SHM || comm.rank_peer == LFI_ANY_COMM_PEER) continue;
                     if (comm.is_canceled || comm.ft_error) continue;
                     int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
         

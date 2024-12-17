@@ -14,6 +14,8 @@ set(EXAMPLES_BW
     bw_socket_server
     bw_lfi_client
     bw_lfi_server
+    bw_lfi_any_comm_client
+    bw_lfi_any_comm_server
     bw_mpi_client
     bw_mpi_server
 )

@@ -98,8 +98,8 @@ namespace LFI
         {
             std::stringstream out;
             out << "Request "<<std::hex<<this;
-            out << "  is_send   "<<std::dec<<is_send;
-            out << "  is_inject "<<std::dec<<is_inject;
+            if (is_send){ out << " is_send "; }
+            if (is_inject){ out << "is_inject"; }
             return out.str();
         }
 
@@ -111,7 +111,7 @@ namespace LFI
         uint32_t rank_peer;
         uint32_t rank_self_in_peer;
 
-        fi_addr_t fi_addr;
+        fi_addr_t fi_addr = FI_ADDR_UNSPEC;
 
         fabric_ep &m_ep;
 
@@ -138,9 +138,10 @@ namespace LFI
         struct fid_av *av = nullptr;
         struct fid_cq *cq = nullptr;
         std::atomic_bool enable_ep = false;
+        bool is_shm = false;
 
-        std::mutex mutex_ep;
-        std::mutex mutex_send_recv;
+        std::mutex mutex_ep = {};
+        std::mutex mutex_send_recv = {};
 
         bool initialized() { return enable_ep; }
     };
@@ -157,7 +158,9 @@ namespace LFI
     class LFI
     {
         // Constants
-        constexpr static const uint32_t FABRIC_ANY_RANK = 0xFFFFFFFF;
+        constexpr static const uint32_t LFI_ANY_COMM = 0xFFFFFF;
+        constexpr static const uint32_t LFI_ANY_COMM_PEER = LFI_ANY_COMM - 1;
+        constexpr static const uint32_t LFI_ANY_COMM_SHM = LFI_ANY_COMM - 2;
 
         // Secure destroy when closing app
         // fabric_init
@@ -169,6 +172,7 @@ namespace LFI
         static int init(fabric_ep &fabric);
         static int destroy(fabric_ep &fabric_ep);
         static fabric_comm &create_comm(fabric_ep &fabric_ep, int32_t comm_id = -1);
+        static fabric_comm &create_any_comm(fabric_ep &fabric_ep, uint32_t comm_id);
 
     public:
         static fabric_comm *get_comm(uint32_t id);
@@ -180,7 +184,7 @@ namespace LFI
         static int init_server(int socket, int32_t comm_id = -1);
         static int init_client(int socket, int32_t comm_id = -1);
 
-        static int init_endpoints(bool is_shm);
+        static int init_endpoints();
         static fabric_comm &init_comm(bool is_shm, int32_t comm_id = -1);
 
         // fabric_send_recv
@@ -194,6 +198,7 @@ namespace LFI
         static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         static fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
         static fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
+        static fabric_msg any_recv(void *buffer, size_t size, uint32_t tag);
 
         // fabric_ft for fault tolerance
     public:
@@ -203,8 +208,8 @@ namespace LFI
 
         // Variables
     public:
-        fabric_ep shm_ep;
-        fabric_ep peer_ep;
+        fabric_ep shm_ep = {.is_shm = true};
+        fabric_ep peer_ep = {.is_shm = false};
 
         std::mutex m_mutex;
         std::unordered_map<uint32_t, fabric_comm> m_comms;

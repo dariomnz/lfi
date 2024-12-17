@@ -118,6 +118,33 @@ ssize_t lfi_trecv(int id, void *data, size_t size, int tag)
     return ret;
 }
 
+ssize_t lfi_any_recv(void *data, size_t size, int *out_source)
+{
+    return lfi_any_trecv(data, size, 0, out_source);
+}
+
+ssize_t lfi_any_trecv(void *data, size_t size, int tag, int *out_source)
+{
+    ssize_t ret = -1;
+    LFI::fabric_msg msg;
+    debug_info("("<<data<<", "<<size<<")>> Begin");
+
+    msg = LFI::LFI::any_recv(data, size, tag);
+    if (msg.error < 0){
+        ret = msg.error;
+        if (out_source != NULL){
+            (*out_source) = msg.rank_peer;
+        }
+    }else{
+        ret = msg.size;
+        if (out_source != NULL){
+            (*out_source) = msg.rank_peer;
+        }
+    }
+    debug_info("("<<data<<", "<<size<<")= ret "<<ret<<" id "<<(out_source ? *out_source : -1)<<" >> End");
+    return ret;
+}
+
 int lfi_server_close(int id)
 {
     int ret = -1;

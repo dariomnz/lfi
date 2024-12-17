@@ -42,6 +42,7 @@ namespace bw_examples
     {
         std::atomic_uint64_t test_size = 0;
         std::atomic_uint64_t test_count = 0;
+        std::atomic_uint64_t test_tag = 0;
 
         std::atomic_uint64_t size = 0;
         std::atomic_uint64_t nanosec = 0;
@@ -59,6 +60,7 @@ namespace bw_examples
             {
                 tests[i].test_size = 1ull << i;
                 tests[i].test_count = 10;
+                tests[i].test_tag = 1000+i;
             }
         }
         return tests;
