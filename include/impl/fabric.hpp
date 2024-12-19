@@ -94,6 +94,12 @@ namespace LFI
         fabric_request(fabric_comm &comm) : m_comm(comm) {}
         fabric_request(const fabric_request &&request) : m_comm(request.m_comm) {}
 
+        void reset()
+        {
+            wait_context = true;
+            error = 0;
+        }
+
         std::string to_string()
         {
             std::stringstream out;
@@ -191,7 +197,7 @@ namespace LFI
     private:
         static inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
     public:
-        static int progress(fabric_ep &fabric_ep);
+        static int progress(fabric_request &request);
         static int wait(fabric_request &request, int32_t timeout_ms = -1);
         static int cancel(fabric_request &request);
         static fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);

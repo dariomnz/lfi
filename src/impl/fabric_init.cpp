@@ -380,6 +380,7 @@ namespace LFI
                                                    std::forward_as_tuple(new_id),
                                                    std::forward_as_tuple(fabric_ep));
         key->second.rank_peer = new_id;
+        key->second.rank_self_in_peer = new_id;
         debug_info("[LFI] rank_peer " << key->second.rank_peer);
         debug_info("[LFI] End");
         return key->second;

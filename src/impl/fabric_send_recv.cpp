@@ -127,7 +127,7 @@ namespace LFI
         return fabric_request{*comm};
     }
 
-    int LFI::progress(fabric_ep &fabric_ep)
+    int LFI::progress(fabric_request &request)
     {
         int ret;
         const int comp_count = 8;
@@ -135,7 +135,7 @@ namespace LFI
         // sizeof(comp)
         
         // Libfabric progress
-        ret = fi_cq_read(fabric_ep.cq, comp, comp_count);
+        ret = fi_cq_read(request.m_comm.m_ep.cq, comp, comp_count);
         if (ret == -FI_EAGAIN)
         {
             return 0;
@@ -146,16 +146,19 @@ namespace LFI
         {
             debug_info("[Error] fi_cq_read "<<ret<<" "<<fi_strerror(ret));
             fi_cq_err_entry err;
-            fi_cq_readerr(fabric_ep.cq, &err, 0);
-            debug_info(fi_cq_err_entry_to_string(err, fabric_ep.cq));
+            fi_cq_readerr(request.m_comm.m_ep.cq, &err, 0);
+            debug_info(fi_cq_err_entry_to_string(err, request.m_comm.m_ep.cq));
 
-            if (std::abs(err.err) == FI_ECANCELED) return ret;
-
-            fabric_request *request = static_cast<fabric_request *>(err.op_context);
-            std::unique_lock lock(request->mutex);
-            request->wait_context = false;
-            request->error = -LFI_CANCELED;
-            request->cv.notify_all();
+            if (std::abs(err.err) == FI_ECANCELED && err.op_context != (void*)(&request)) return ret;
+            
+            // Only report when the ptr to the request is the same as the actual request when canceled
+            // because it can be free because the canceled is not always waited 
+            fabric_request *request_p = static_cast<fabric_request *>(err.op_context);
+            std::unique_lock lock(request_p->mutex);
+            debug_info("[Error] "<<request_p->to_string()<<" cancelled");
+            request_p->wait_context = false;
+            request_p->error = -LFI_CANCELED;
+            request_p->cv.notify_all();
             return ret;
         }
 
@@ -211,7 +214,7 @@ namespace LFI
                 while (request.wait_context && !is_timeout)
                 {
                     request_lock.unlock();
-                    progress(request.m_comm.m_ep);
+                    progress(request);
                     if (timeout_ms >= 0){
                         is_timeout = wait_check_timeout(timeout_ms, start);
                     }
@@ -242,7 +245,6 @@ namespace LFI
             request.m_comm.ft_requests.erase(&request);
         }
 
-        request.error = LFI_SUCCESS;
         debug_info("[LFI] End wait "<<request.to_string());
         return LFI_SUCCESS;
     }
@@ -266,17 +268,25 @@ namespace LFI
         fi_cancel(&p_ep->fid, &request);
         debug_info("fi_cancel ret "<<ret<<" "<<fi_strerror(ret));
 
-        // Try one progress to read the canceled and not accumulate errors
-        std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-        if (global_lock.try_lock()){
-            progress(request.m_comm.m_ep);
-            global_lock.unlock();
+        if (request.is_send == true){
+            // Try one progress to read the canceled and not accumulate errors
+            std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+            if (global_lock.try_lock()){
+                progress(request);
+                global_lock.unlock();
+            }
+            
+            // Check if completed to no report error
+            if (request.wait_context){
+                std::unique_lock lock(request.mutex);
+                request.wait_context = false;
+                request.error = -LFI_CANCELED;
+                request.cv.notify_all();
+            }
+        }else{
+            // For the recvs wait to the completion of the cancel
+            ret = wait(request);
         }
-
-        std::unique_lock lock(request.mutex);
-        request.wait_context = false;
-        request.error = -LFI_CANCELED;
-        request.cv.notify_all();
         
         debug_info("[LFI] End "<<std::hex<<&request<<std::dec);
         return ret;
@@ -367,45 +377,53 @@ namespace LFI
         fabric_request peer_request(*comm);
         
         // TODO: check first one and then the other for cases when the two complete and we only want one
-        shm_msg = async_recv(buffer, size, tag, shm_request);
-        if (shm_msg.error < 0){
-            return shm_msg;
-        }
-        peer_msg = async_recv(buffer, size, tag, peer_request);
-        if (peer_msg.error < 0){
-            return peer_msg;
-        }
-        
+        fabric_request* request = nullptr;
         bool finish = false;
         int ret = 0;
         while(!finish){
+            // Try a recv in shm
+            shm_msg = async_recv(buffer, size, tag, shm_request);
+            if (shm_msg.error < 0){
+                return shm_msg;
+            }
             ret = wait(shm_request, 0);
             if (ret != -LFI_TIMEOUT){
-                shm_msg.error = shm_request.error;
-                shm_msg.size = shm_request.entry.len;
-                const auto tag = shm_request.entry.tag;
-                shm_msg.rank_self_in_peer = (tag & 0xFFFF'FF00'0000'0000) >> 40;
-                shm_msg.rank_peer = (tag & 0x0000'00FF'FFFF'0000) >> 16;
-                // Cancel the other
-                cancel(peer_request);
-                debug_info("[LFI] End shm");
-                return shm_msg;
+                request = &shm_request;
+                break;
+            }
+            // it can be succesfully completed in the cancel
+            ret = cancel(shm_request);
+            if (ret < 0 || shm_request.error == 0){
+                request = &shm_request;
+                break;
+            }
+
+            // Try a recv in peer
+            peer_msg = async_recv(buffer, size, tag, peer_request);
+            if (peer_msg.error < 0){
+                return peer_msg;
             }
             ret = wait(peer_request, 0);
             if (ret != -LFI_TIMEOUT){
-                peer_msg.error = peer_request.error;
-                peer_msg.size = peer_request.entry.len;
-                const auto tag = peer_request.entry.tag;
-                peer_msg.rank_self_in_peer = (tag & 0xFFFF'FF00'0000'0000) >> 40;
-                peer_msg.rank_peer = (tag & 0x0000'00FF'FFFF'0000) >> 16;
-                // Cancel the other
-                cancel(shm_request);
-                debug_info("[LFI] End peer");
-                return peer_msg;
+                request = &peer_request;
+                break;
+            }
+            // it can be succesfully completed in the cancel
+            ret = cancel(peer_request);
+            if (ret < 0 || peer_request.error == 0){
+                request = &peer_request;
+                break;
             }
         }
-
-        throw std::runtime_error("Unrechable");
+        
+        fabric_msg msg;
+        msg.error = request->error;
+        msg.size = request->entry.len;
+        msg.tag = request->entry.tag & 0x0000'0000'0000'FFFF;
+        msg.rank_self_in_peer = (request->entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
+        msg.rank_peer = (request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+        debug_info("[LFI] End");
+        return msg;
     }
 
     fabric_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, fabric_request& request, int32_t timeout_ms)
@@ -425,6 +443,8 @@ namespace LFI
             msg.error = -LFI_ERROR;
             return msg;
         }
+
+        request.reset();
 
         decltype(std::chrono::high_resolution_clock::now()) start;
         if (timeout_ms >= 0){
@@ -453,7 +473,7 @@ namespace LFI
                 if (ret == -FI_EAGAIN){
                     std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
                     if (global_lock.try_lock()){
-                        progress(request.m_comm.m_ep);
+                        progress(request);
                         global_lock.unlock();
                     }
                     
@@ -495,7 +515,7 @@ namespace LFI
                 if (ret == -FI_EAGAIN){
                     std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
                     if (global_lock.try_lock()){
-                        progress(request.m_comm.m_ep);
+                        progress(request);
                         global_lock.unlock();
                     }
                     
@@ -546,6 +566,7 @@ namespace LFI
             return msg;
         }
 
+        request.reset();
         uint64_t mask = 0;
         decltype(std::chrono::high_resolution_clock::now()) start;
         if (timeout_ms >= 0){
@@ -579,7 +600,7 @@ namespace LFI
             if (ret == -FI_EAGAIN){
                 std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
                 if (global_lock.try_lock()){
-                    progress(request.m_comm.m_ep);
+                    progress(request);
                     global_lock.unlock();
                 }
                 
