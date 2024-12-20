@@ -367,27 +367,25 @@ namespace LFI
 #ifndef LFI_ANY_RECV_WITHOUT_PEEK 
     fabric_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
     {
-        fabric_msg peer_msg = {}, shm_msg = {};
+        fabric_msg msg = {};
         debug_info("[LFI] Start");
 
-        fabric_msg* recv_msg = nullptr;
         bool finish = false;
         while(!finish){
             // Try a recv in shm
-            peer_msg = recv_peek(LFI_ANY_COMM_SHM, buffer, size, tag);
-            if (peer_msg.error != -LFI_PEEK_NO_MSG){
-                recv_msg = &peer_msg;
+            msg = recv_peek(LFI_ANY_COMM_SHM, buffer, size, tag);
+            if (msg.error != -LFI_PEEK_NO_MSG){
                 break;
             }
-            shm_msg = recv_peek(LFI_ANY_COMM_PEER, buffer, size, tag);
-            if (peer_msg.error != -LFI_PEEK_NO_MSG){
-                recv_msg = &peer_msg;
+            // Try a recv in peer
+            msg = recv_peek(LFI_ANY_COMM_PEER, buffer, size, tag);
+            if (msg.error != -LFI_PEEK_NO_MSG){
                 break;
             }
         }
         
         debug_info("[LFI] End");
-        return *recv_msg;
+        return msg;
     }
 #else
     fabric_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
@@ -695,7 +693,6 @@ namespace LFI
             return msg;
         }
 
-        request.reset();
         uint64_t mask = 0;
         // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
         uint64_t aux_rank_peer = request.m_comm.rank_peer;
@@ -713,7 +710,7 @@ namespace LFI
         debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer " << request.m_comm.rank_self_in_peer << " tag " << tag << " recv_context " << (void *)&request.context);
 
         fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
-        request.wait_context = true;
+        request.reset();
         iovec iov = {
             .iov_base=buffer,
             .iov_len=size,
@@ -752,7 +749,7 @@ namespace LFI
 
         if (ret != 0)
         {
-            printf("error posting recv buffer (%d)\n", ret);
+            printf("error PEEK recv buffer (%d)\n", ret);
             msg.error = -LFI_ERROR;
             return msg;
         }
@@ -769,6 +766,7 @@ namespace LFI
         // If the PEEK request is successfully we need to claim the content
         if (request.error == 0){
             debug_info("[LFI] successfully PEEK, now CLAIM data");
+            request.reset();
             do
             {
                 {
@@ -792,7 +790,7 @@ namespace LFI
 
             if (ret != 0)
             {
-                printf("error posting recv buffer (%d)\n", ret);
+                printf("error CLAIM recv buffer (%d)\n", ret);
                 msg.error = -LFI_ERROR;
                 return msg;
             }
