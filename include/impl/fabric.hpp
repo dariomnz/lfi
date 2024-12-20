@@ -52,6 +52,7 @@ namespace LFI
     DECLARE_LFI_ERROR(LFI_CANCELED,         3, "Canceled");
     DECLARE_LFI_ERROR(LFI_CANCELED_COMM,    4, "Canceled COMM");
     DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND,   5, "COMM not found");
+    DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG,      6, "No msg encounter");
 
     static constexpr const char * lfi_strerror(int error)
     {
@@ -63,6 +64,7 @@ namespace LFI
             CASE_STR_ERROR(LFI_CANCELED);
             CASE_STR_ERROR(LFI_CANCELED_COMM);
             CASE_STR_ERROR(LFI_COMM_NOT_FOUND);
+            CASE_STR_ERROR(LFI_PEEK_NO_MSG);
         default: return "Unknown";
         }
     }
@@ -204,6 +206,7 @@ namespace LFI
         static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         static fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
         static fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
+        static fabric_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
         static fabric_msg any_recv(void *buffer, size_t size, uint32_t tag);
 
         // fabric_ft for fault tolerance

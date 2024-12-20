@@ -155,9 +155,15 @@ namespace LFI
             // because it can be free because the canceled is not always waited 
             fabric_request *request_p = static_cast<fabric_request *>(err.op_context);
             std::unique_lock lock(request_p->mutex);
-            debug_info("[Error] "<<request_p->to_string()<<" cancelled");
+            debug_info("[Error] "<<request_p->to_string()<<" cq error");
             request_p->wait_context = false;
-            request_p->error = -LFI_CANCELED;
+            if (std::abs(err.err) == FI_ECANCELED){
+                request_p->error = -LFI_CANCELED;
+            }else if (std::abs(err.err) == FI_ENOMSG){
+                request_p->error = -LFI_PEEK_NO_MSG;
+            }else{
+                request_p->error = -LFI_ERROR;
+            }
             request_p->cv.notify_all();
             return ret;
         }
@@ -358,6 +364,32 @@ namespace LFI
         return msg;
     }
 
+#ifndef LFI_ANY_RECV_WITHOUT_PEEK 
+    fabric_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
+    {
+        fabric_msg peer_msg = {}, shm_msg = {};
+        debug_info("[LFI] Start");
+
+        fabric_msg* recv_msg = nullptr;
+        bool finish = false;
+        while(!finish){
+            // Try a recv in shm
+            peer_msg = recv_peek(LFI_ANY_COMM_SHM, buffer, size, tag);
+            if (peer_msg.error != -LFI_PEEK_NO_MSG){
+                recv_msg = &peer_msg;
+                break;
+            }
+            shm_msg = recv_peek(LFI_ANY_COMM_PEER, buffer, size, tag);
+            if (peer_msg.error != -LFI_PEEK_NO_MSG){
+                recv_msg = &peer_msg;
+                break;
+            }
+        }
+        
+        debug_info("[LFI] End");
+        return *recv_msg;
+    }
+#else
     fabric_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
     {
         fabric_msg peer_msg = {}, shm_msg = {};
@@ -376,7 +408,6 @@ namespace LFI
         }
         fabric_request peer_request(*comm);
         
-        // TODO: check first one and then the other for cases when the two complete and we only want one
         fabric_request* request = nullptr;
         bool finish = false;
         int ret = 0;
@@ -425,6 +456,7 @@ namespace LFI
         debug_info("[LFI] End");
         return msg;
     }
+#endif
 
     fabric_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, fabric_request& request, int32_t timeout_ms)
     {
@@ -638,6 +670,147 @@ namespace LFI
         msg.tag = tag_recv & 0x0000'0000'0000'FFFF;
         msg.rank_self_in_peer = (tag_recv & 0xFFFF'FF00'0000'0000) >> 40;
         msg.rank_peer = (tag_recv & 0x0000'00FF'FFFF'0000) >> 16;
+
+        debug_info("[LFI] msg size " << msg.size << " rank_peer " << msg.rank_peer << " rank_self_in_peer " << msg.rank_self_in_peer << " tag " << msg.tag << " error " << msg.error);
+        debug_info("[LFI] End = " << size);
+        return msg;
+    }
+
+    fabric_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag)
+    {
+        int ret;
+        fabric_msg msg = {};
+
+        // Check if comm exists
+        fabric_comm *comm = get_comm(comm_id);
+        if (comm == nullptr){
+            msg.error = -LFI_COMM_NOT_FOUND;
+            return msg;
+        }
+        fabric_request request(*comm);
+
+        // Check cancelled comm
+        if (request.m_comm.is_canceled){
+            msg.error = -LFI_CANCELED_COMM;
+            return msg;
+        }
+
+        request.reset();
+        uint64_t mask = 0;
+        // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
+        uint64_t aux_rank_peer = request.m_comm.rank_peer;
+        uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
+        uint64_t aux_tag = tag;
+        uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
+
+        if (request.m_comm.rank_peer == LFI_ANY_COMM_SHM || request.m_comm.rank_peer == LFI_ANY_COMM_PEER)
+        {
+            // mask = 0x0000'00FF'FFFF'0000;
+            // mask = 0xFFFF'FF00'0000'0000;
+            mask = 0xFFFF'FFFF'FFFF'0000;
+        }
+
+        debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer " << request.m_comm.rank_self_in_peer << " tag " << tag << " recv_context " << (void *)&request.context);
+
+        fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
+        request.wait_context = true;
+        iovec iov = {
+            .iov_base=buffer,
+            .iov_len=size,
+        };
+        fi_msg_tagged  msg_to_peek = { 
+            .msg_iov = &iov,
+            .desc = nullptr,
+            .iov_count = 1,
+            .addr = request.m_comm.fi_addr,
+            .tag = tag_recv,
+            .ignore = mask,
+            .context = &request.context,
+            .data = 0,
+        };
+        // First we PEEK with CLAIM to only generate one match
+        do
+        {
+            {
+                std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
+                ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
+            }
+
+            if (ret == -FI_EAGAIN){
+                std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                if (global_lock.try_lock()){
+                    progress(request);
+                    global_lock.unlock();
+                }
+                
+                if (request.m_comm.is_canceled){
+                    msg.error = -LFI_CANCELED_COMM;
+                    return msg;
+                }
+            }
+        } while (ret == -FI_EAGAIN);
+
+        if (ret != 0)
+        {
+            printf("error posting recv buffer (%d)\n", ret);
+            msg.error = -LFI_ERROR;
+            return msg;
+        }
+
+        debug_info("[LFI] Waiting for " << request.to_string());
+
+        ret = wait(request);
+        if (ret != 0)
+        {
+            printf("error waiting recv peek (%d)\n", ret);
+            msg.error = -LFI_ERROR;
+            return msg;
+        }
+        // If the PEEK request is successfully we need to claim the content
+        if (request.error == 0){
+            debug_info("[LFI] successfully PEEK, now CLAIM data");
+            do
+            {
+                {
+                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
+                    ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
+                }
+
+                if (ret == -FI_EAGAIN){
+                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                    if (global_lock.try_lock()){
+                        progress(request);
+                        global_lock.unlock();
+                    }
+                    
+                    if (request.m_comm.is_canceled){
+                        msg.error = -LFI_CANCELED_COMM;
+                        return msg;
+                    }
+                }
+            } while (ret == -FI_EAGAIN);
+
+            if (ret != 0)
+            {
+                printf("error posting recv buffer (%d)\n", ret);
+                msg.error = -LFI_ERROR;
+                return msg;
+            }
+
+            ret = wait(request);
+            if (ret != 0)
+            {
+                printf("error waiting recv claim (%d)\n", ret);
+                msg.error = -LFI_ERROR;
+                return msg;
+            }
+        }
+
+        msg.size = size;
+        msg.error = request.error;
+        msg.tag = request.entry.tag & 0x0000'0000'0000'FFFF;
+        msg.rank_self_in_peer = (request.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
+        msg.rank_peer = (request.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
 
         debug_info("[LFI] msg size " << msg.size << " rank_peer " << msg.rank_peer << " rank_self_in_peer " << msg.rank_self_in_peer << " tag " << msg.tag << " error " << msg.error);
         debug_info("[LFI] End = " << size);
