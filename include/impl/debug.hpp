@@ -21,52 +21,60 @@
 
 #pragma once
 
+#include <cstring>
 #include <iostream>
 #include <mutex>
-#include <cstring>
+#include <thread>
 
-namespace LFI
-{
-    constexpr const char *file_name(const char *path)
-    {
-        const char *file = path;
-        while (*path)
-        {
-            if (*path++ == '/')
-            {
-                file = path;
-            }
+namespace LFI {
+constexpr const char *file_name(const char *path) {
+    const char *file = path;
+    while (*path) {
+        if (*path++ == '/') {
+            file = path;
         }
-        return file;
     }
+    return file;
+}
 
-    static inline std::mutex &get_lock()
-    {
+class debug_lock {
+   public:
+    static std::mutex &get_lock() {
         static std::mutex mutex;
         return mutex;
     }
+};
 
-#define print_error(out_format)                                                                                                                                             \
-    {                                                                                                                                                                       \
-        std::unique_lock internal_debug_lock(::LFI::get_lock());                                                                                                                   \
-        std::cerr << "[ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << " : " << std::strerror(errno) << std::endl << std::flush; \
+#define print_error(out_format)                                                                                    \
+    {                                                                                                              \
+        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                       \
+        std::cerr << std::dec << "[ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ \
+                  << "] [" << std::this_thread::get_id() << "] " << out_format << " : " << std::strerror(errno)    \
+                  << std::endl                                                                                     \
+                  << std::flush;                                                                                   \
     }
 
 #ifdef DEBUG
-#define debug_error(out_format)                                                                                                            \
-    {                                                                                                                                      \
-        std::unique_lock internal_debug_lock(::LFI::get_lock());                                                                                  \
-        std::cerr << "[ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl << std::flush; \
+#define debug_error(out_format)                                                                                    \
+    {                                                                                                              \
+        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                       \
+        std::cerr << std::dec << "[ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ \
+                  << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl                        \
+                  << std::flush;                                                                                   \
     }
-#define debug_warning(out_format)                                                                                                            \
-    {                                                                                                                                        \
-        std::unique_lock internal_debug_lock(::LFI::get_lock());                                                                                    \
-        std::cerr << "[WARNING] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl << std::flush; \
+#define debug_warning(out_format)                                                                                    \
+    {                                                                                                                \
+        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                         \
+        std::cerr << std::dec << "[WARNING] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ \
+                  << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl                          \
+                  << std::flush;                                                                                     \
     }
-#define debug_info(out_format)                                                                                                            \
-    {                                                                                                                                     \
-        std::unique_lock internal_debug_lock(::LFI::get_lock());                                                                                 \
-        std::cerr << "[INFO] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl << std::flush; \
+#define debug_info(out_format)                                                                                    \
+    {                                                                                                             \
+        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                      \
+        std::cerr << std::dec << "[INFO] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ \
+                  << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl                       \
+                  << std::flush;                                                                                  \
     }
 #else
 #define debug_error(out_format)
@@ -74,6 +82,10 @@ namespace LFI
 #define debug_info(out_format)
 #endif
 
-#define print(out_format) std::cerr << out_format << std::endl << std::flush;
+#define print(out_format)                                                    \
+    {                                                                        \
+        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock()); \
+        std::cerr << std::dec << out_format << std::endl << std::flush;      \
+    }
 
-} // namespace LFI
+}  // namespace LFI
