@@ -37,15 +37,29 @@ namespace LFI
             {
                 LFI_fault_tolerance = (atoi(env_lfi_fault_tolerance) != 0);
             }
+            // LFI_FAULT_TOLERANCE_TIME
             char *env_lfi_fault_tolerance_time = std::getenv("LFI_FAULT_TOLERANCE_TIME");
             if ((env_lfi_fault_tolerance_time != NULL) && (std::strlen(env_lfi_fault_tolerance_time) > 0))
             {
                 LFI_fault_tolerance_time = atoi(env_lfi_fault_tolerance_time);
             }
+            // LFI_PORT
             char *env_lfi_port = std::getenv("LFI_PORT");
             if ((env_lfi_port != NULL) && (std::strlen(env_lfi_port) > 0))
             {
                 LFI_port = atoi(env_lfi_port);
+            }
+            // LFI_MS_WAIT_SLEEP
+            char *env_lfi_ms_wait_sleep = std::getenv("LFI_MS_WAIT_SLEEP");
+            if ((env_lfi_ms_wait_sleep != NULL) && (std::strlen(env_lfi_ms_wait_sleep) > 0))
+            {
+                LFI_ms_wait_sleep = atoi(env_lfi_ms_wait_sleep);
+            }
+            // LFI_USE_INJECT
+            char *env_lfi_use_inject = std::getenv("LFI_USE_INJECT");
+            if ((env_lfi_use_inject != NULL) && (std::strlen(env_lfi_use_inject) > 0))
+            {
+                LFI_use_inject = (atoi(env_lfi_use_inject) != 0);
             }
         }
         // Delete copy constructor
@@ -59,6 +73,8 @@ namespace LFI
         bool LFI_fault_tolerance = true;
         int LFI_fault_tolerance_time = 5;
         int LFI_port = 56789;
+        int LFI_ms_wait_sleep = 10;
+        bool LFI_use_inject = false;
 
     public:
         static env &get_instance()
