@@ -12,16 +12,12 @@ add_compile_options("-fPIC" "-O3" "-g" "-g3" "-ggdb" "-Wall" "-Wextra")
 
 link_libraries("pthread" "dl")
 
-# Libfabric include
-find_library(LIBFABRIC_LIBRARY NAMES fabric PATHS /usr/lib /usr/local/lib ${LIBFABRIC_PATH}/lib)
-find_path(LIBFABRIC_INCLUDE_DIR rdma/fabric.h PATHS /usr/include /usr/local/include ${LIBFABRIC_PATH}/include)
-
-if(LIBFABRIC_LIBRARY AND LIBFABRIC_INCLUDE_DIR)
-    include_directories(${LIBFABRIC_INCLUDE_DIR})
-    link_libraries(${LIBFABRIC_LIBRARY})
-else()
-    message(FATAL_ERROR "libfabric not found.  Make sure it is installed on your system. Or the LIBFABRIC_PATH is set correctly")
-endif()
+# add_compile_options(-fsanitize=thread)
+# add_link_options(-fsanitize=thread)
+# add_compile_options(-fsanitize=address)
+# add_link_options(-fsanitize=address)
+# add_compile_options(-fsanitize=undefined)
+# add_link_options(-fsanitize=undefined)
 
 add_subdirectory(src)
 add_subdirectory(ld_preload)
