@@ -23,6 +23,7 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "lfi.h"
+#include "impl/fabric.hpp"
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 
@@ -88,6 +89,7 @@ int main(int argc, char *argv[])
     std::thread([&tests, &clients_to_launch_thread](){
         int ack = 0;
         int iter = 0;
+        std::unique_ptr<LFI::fabric_request> shm_request, peer_request;
         while(iter < max_clients){
             while(clients_to_launch_thread == 0){
                 std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -95,11 +97,56 @@ int main(int argc, char *argv[])
             clients_to_launch_thread--;
             print("Start recv any ack");
             int source = -1;
-            ssize_t any_recv = lfi_any_recv(&ack, sizeof(ack), &source);
-            if (any_recv != sizeof(ack)){
-                print("Error lfi_any_recv = " << any_recv << " " << lfi_strerror(any_recv));
+
+            if (!shm_request){
+                // Check if comm exists
+                LFI::fabric_comm *shm_comm = LFI::LFI::get_comm(LFI::LFI::LFI_ANY_COMM_SHM);
+                if (shm_comm == nullptr){
+                    return -1;
+                }
+                shm_request = std::make_unique<LFI::fabric_request>(*shm_comm);
+
+                LFI::fabric_msg msg = LFI::LFI::async_recv(&ack, sizeof(ack), 0, *shm_request);
+                if (msg.error < 0){
+                    return -1;
+                }
+            }
+
+            if (!peer_request){
+                // Check if comm exists
+                LFI::fabric_comm *peer_comm = LFI::LFI::get_comm(LFI::LFI::LFI_ANY_COMM_PEER);
+                if (peer_comm == nullptr){
+                    return -1;
+                }
+                peer_request = std::make_unique<LFI::fabric_request>(*peer_comm);
+
+                LFI::fabric_msg msg = LFI::LFI::async_recv(&ack, sizeof(ack), 0, *peer_request);
+                if (msg.error < 0){
+                    return -1;
+                }
+            }
+
+            std::vector<std::reference_wrapper<LFI::fabric_request>> requests = {*shm_request, *peer_request};
+
+            int completed = LFI::LFI::wait_num(requests, 1);
+
+            print("Completed wait_num with "<<completed);
+            if (completed == 0){
+                source = (shm_request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+                shm_request.release();
+            } else if (completed == 1){
+                source = (peer_request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+                peer_request.release();
+            } else {
+                print("Error in wait_num")
                 exit(1);
             }
+            
+            // ssize_t any_recv = lfi_any_shm_recv(&ack, sizeof(ack), &source);
+            // if (any_recv != sizeof(ack)){
+            //     print("Error lfi_any_recv = " << any_recv << " " << lfi_strerror(any_recv));
+            //     exit(1);
+            // }
             print("Start test for client "<<source);
             std::thread([id = source, &tests](){
                 int ret = 0;
@@ -111,6 +158,7 @@ int main(int argc, char *argv[])
                 lfi_client_close(id);
             }).detach(); 
         }
+        return 0;
         }).detach();
     while (iter < max_clients)
     {

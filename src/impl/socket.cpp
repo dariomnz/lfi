@@ -82,7 +82,7 @@ int socket::server_init(const std::string& addr, int& port) {
 
 int socket::client_init(const std::string& addr, int port) {
     int ret = -1;
-    int socket;
+    int socket = -1;
     debug_info(">> Begin");
 
     struct addrinfo hints = {};

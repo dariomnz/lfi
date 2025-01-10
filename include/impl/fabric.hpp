@@ -35,6 +35,7 @@
 #include <atomic>
 #include <vector>
 #include <sstream>
+#include <optional>
 
 #define DECLARE_LFI_ERROR(name, num, msg) \
     static constexpr const int name = num; \
@@ -77,6 +78,20 @@ namespace LFI
     struct fabric_ep;
     struct fabric_comm;
 
+    enum class wait_endpoint {
+        NONE,
+        SHM,
+        PEER,
+        ALL,
+    };
+
+    struct wait_struct {
+        wait_endpoint wait_type = wait_endpoint::NONE;
+        std::mutex wait_mutex = {};
+        std::condition_variable wait_cv = {};
+        int wait_count = 0;
+    };
+
     struct fabric_request
     {
         // context necesary for fabric interface
@@ -92,6 +107,7 @@ namespace LFI
         bool is_inject = false;
         
         fi_cq_tagged_entry entry = {};
+        std::optional<std::reference_wrapper<wait_struct>> shared_wait_struct = {};
         fabric_request() = delete;
         fabric_request(fabric_comm &comm) : m_comm(comm) {}
         fabric_request(const fabric_request &&request) : m_comm(request.m_comm) {}
@@ -101,6 +117,8 @@ namespace LFI
             wait_context = true;
             error = 0;
         }
+
+        bool is_completed() { return !wait_context; }
 
         std::string to_string()
         {
@@ -152,6 +170,17 @@ namespace LFI
         std::mutex mutex_send_recv = {};
 
         bool initialized() { return enable_ep; }
+
+        bool operator==(const fabric_ep& other) const {
+            if (this->use_scalable_ep != other.use_scalable_ep) return false;
+
+            if (this->use_scalable_ep){
+                return this->rx_ep == other.rx_ep && this->tx_ep == other.tx_ep;
+            }else{
+                return this->ep == other.ep;
+            }
+            return false;
+        }
     };
 
     struct fabric_msg
@@ -161,10 +190,23 @@ namespace LFI
         uint32_t rank_self_in_peer = 0;
         uint32_t tag = 0;
         int32_t error = 0;
+
+        std::string to_string()
+        {
+            std::stringstream out;
+            out << "fabric_msg "<<
+            " size " << size <<
+            " rank_peer " << rank_peer <<
+            " rank_self_in_peer " << rank_self_in_peer <<
+            " tag " << tag <<
+            " error " << error;
+            return out.str();
+        }
     };
 
     class LFI
     {
+    public:
         // Constants
         constexpr static const uint32_t LFI_ANY_COMM = 0xFFFFFF;
         constexpr static const uint32_t LFI_ANY_COMM_PEER = LFI_ANY_COMM - 1;
@@ -172,7 +214,6 @@ namespace LFI
 
         // Secure destroy when closing app
         // fabric_init
-    public:
         ~LFI();
 
     private:
@@ -201,13 +242,14 @@ namespace LFI
     public:
         static int progress(fabric_request &request);
         static int wait(fabric_request &request, int32_t timeout_ms = -1);
+        static int wait_num(std::vector<std::reference_wrapper<fabric_request>> &request, int how_many);
         static int cancel(fabric_request &request);
         static fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         static fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
         static fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
         static fabric_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
-        static fabric_msg any_recv(void *buffer, size_t size, uint32_t tag);
+        static std::pair<fabric_msg, fabric_msg> any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag);
 
         // fabric_ft for fault tolerance
     public:
