@@ -275,8 +275,10 @@ namespace LFI
             auto &request = request_ref.get();
             std::scoped_lock l(request.mutex, shared_wait.wait_mutex);
             request.shared_wait_struct = shared_wait;
+            debug_info(request.to_string());
+            debug_info("Request comm "<<request.m_comm.rank_peer);
             if (request.is_completed()){
-                debug_info(request.to_string()<<" already completed");
+                debug_info("Request already completed");
                 shared_wait.wait_count--;
             }
             if (request.m_comm.m_ep == lfi.shm_ep){
@@ -406,7 +408,7 @@ namespace LFI
         debug_info("[LFI] Start");
 
         // Check if any_comm in send is error
-        if (comm_id == LFI_ANY_COMM_SHM || comm_id == LFI_ANY_COMM_PEER){
+        if (comm_id == ANY_COMM_SHM || comm_id == ANY_COMM_PEER){
             msg.error = -LFI_ERROR;
             return msg;
         }
@@ -470,7 +472,7 @@ namespace LFI
         debug_info("[LFI] Start");
 
         // For the shm
-        fabric_comm *comm = get_comm(LFI_ANY_COMM_SHM);
+        fabric_comm *comm = get_comm(ANY_COMM_SHM);
         if (comm == nullptr){
             throw std::runtime_error("There are no LFI_ANY_COMM_SHM. This should not happend");
         }
@@ -481,7 +483,7 @@ namespace LFI
             return {shm_msg, peer_msg};
         }
         // For the peer
-        comm = get_comm(LFI_ANY_COMM_PEER);
+        comm = get_comm(ANY_COMM_PEER);
         if (comm == nullptr){
             throw std::runtime_error("There are no LFI_ANY_COMM_PEER. This should not happend");
         }
@@ -629,7 +631,7 @@ namespace LFI
         }
 
         // Check if any_comm in send is error
-        if (request.m_comm.rank_peer == LFI_ANY_COMM_SHM || request.m_comm.rank_peer == LFI_ANY_COMM_PEER)
+        if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER)
         {
             msg.error = -LFI_ERROR;
             return msg;
@@ -770,7 +772,7 @@ namespace LFI
         uint64_t aux_tag = tag;
         uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
 
-        if (request.m_comm.rank_peer == LFI_ANY_COMM_SHM || request.m_comm.rank_peer == LFI_ANY_COMM_PEER)
+        if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER)
         {
             // mask = 0x0000'00FF'FFFF'0000;
             // mask = 0xFFFF'FF00'0000'0000;
@@ -862,7 +864,7 @@ namespace LFI
         uint64_t aux_tag = tag;
         uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
 
-        if (request.m_comm.rank_peer == LFI_ANY_COMM_SHM || request.m_comm.rank_peer == LFI_ANY_COMM_PEER)
+        if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER)
         {
             // mask = 0x0000'00FF'FFFF'0000;
             // mask = 0xFFFF'FF00'0000'0000;

@@ -769,7 +769,7 @@ namespace LFI
                 }
             }
             // Create FABRIC_ANY_COMM for shm_ep
-            LFI::create_any_comm(lfi.shm_ep, LFI_ANY_COMM_SHM);
+            LFI::create_any_comm(lfi.shm_ep, ANY_COMM_SHM);
         }
         if (!lfi.peer_ep.initialized())
         {
@@ -780,7 +780,7 @@ namespace LFI
                 return ret;
             }
             // Create FABRIC_ANY_COMM for peer_ep
-            LFI::create_any_comm(lfi.peer_ep, LFI_ANY_COMM_PEER);
+            LFI::create_any_comm(lfi.peer_ep, ANY_COMM_PEER);
         }
         debug_info("[LFI] End = " << ret);
         return ret;

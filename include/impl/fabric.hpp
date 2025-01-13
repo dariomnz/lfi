@@ -36,6 +36,7 @@
 #include <vector>
 #include <sstream>
 #include <optional>
+#include "lfi_async.h"
 
 #define DECLARE_LFI_ERROR(name, num, msg) \
     static constexpr const int name = num; \
@@ -204,14 +205,13 @@ namespace LFI
         }
     };
 
+    // Constants
+    constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
+    constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
+
     class LFI
     {
     public:
-        // Constants
-        constexpr static const uint32_t LFI_ANY_COMM = 0xFFFFFF;
-        constexpr static const uint32_t LFI_ANY_COMM_PEER = LFI_ANY_COMM - 1;
-        constexpr static const uint32_t LFI_ANY_COMM_SHM = LFI_ANY_COMM - 2;
-
         // Secure destroy when closing app
         // fabric_init
         ~LFI();
