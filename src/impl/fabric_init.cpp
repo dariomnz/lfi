@@ -48,6 +48,10 @@ namespace LFI
     {
         debug_info("[LFI] Start");
 
+        if (fabric_ep.hints != nullptr){
+            fi_freeinfo(fabric_ep.hints);
+        }
+
         fabric_ep.hints = fi_allocinfo();
         if (!fabric_ep.hints)
             return -FI_ENOMEM;
