@@ -28,6 +28,12 @@
 
 namespace LFI
 {
+    LFI::LFI()
+    {
+        if (init_endpoints() < 0)
+            throw std::runtime_error("LFI cannot init the endpoints");
+    }
+
     LFI::~LFI()
     {
         std::unique_lock<std::mutex> lock(m_mutex);
@@ -350,25 +356,30 @@ namespace LFI
         return ret;
     }
 
+    uint32_t LFI::reserve_comm()
+    {
+        return m_rank_counter.fetch_add(1);
+    }
+
     fabric_comm &LFI::create_comm(fabric_ep &fabric_ep, int32_t comm_id)
     {
-        static uint32_t rank_counter = 0;
-        uint32_t new_id = rank_counter;
-
+        uint32_t new_id = comm_id;
+        
+        std::unique_lock lock(m_mutex);
         debug_info("[LFI] Start");
-        LFI &lfi = LFI::get_instance();
         if (comm_id >= 0){
-            if(lfi.m_comms.find(comm_id) == lfi.m_comms.end()){
+            if(m_comms.find(comm_id) == m_comms.end()){
                 new_id = comm_id;
             }else{
                 throw std::runtime_error("Want to create a comm with a id that exits");
             }
+        }else{
+            new_id = reserve_comm();
         }
-        auto [key, inserted] = lfi.m_comms.emplace(std::piecewise_construct,
+        auto [key, inserted] = m_comms.emplace(std::piecewise_construct,
                                                    std::forward_as_tuple(new_id),
                                                    std::forward_as_tuple(fabric_ep));
         key->second.rank_peer = new_id;
-        rank_counter++;
         debug_info("[LFI] rank_peer " << key->second.rank_peer);
         debug_info("[LFI] End");
         return key->second;
@@ -379,12 +390,12 @@ namespace LFI
         uint32_t new_id = comm_id;
 
         debug_info("[LFI] Start");
-        LFI &lfi = LFI::get_instance();
-        auto [key, inserted] = lfi.m_comms.emplace(std::piecewise_construct,
+        auto [key, inserted] = m_comms.emplace(std::piecewise_construct,
                                                    std::forward_as_tuple(new_id),
                                                    std::forward_as_tuple(fabric_ep));
         key->second.rank_peer = new_id;
         key->second.rank_self_in_peer = new_id;
+        key->second.is_ready = true;
         debug_info("[LFI] rank_peer " << key->second.rank_peer);
         debug_info("[LFI] End");
         return key->second;
@@ -392,12 +403,39 @@ namespace LFI
 
     fabric_comm *LFI::get_comm(uint32_t id)
     {
-        LFI &lfi = LFI::get_instance();
-        if (lfi.m_comms.find(id) == lfi.m_comms.end())
+        debug_info("[LFI] Start "<<id);
+        std::unique_lock lock(m_mutex);
+        auto it = m_comms.find(id);
+        if (it == m_comms.end() || (it != m_comms.end() && !it->second.is_ready))
         {
-            return nullptr;
+            // If fail or not ready check if is in fut comm and retry
+            std::unique_lock fut_lock(m_fut_mutex);
+
+            auto fut_it = m_fut_comms.find(id);
+            if (fut_it == m_fut_comms.end()){
+                debug_info("[LFI] End not found in futs");
+                return nullptr;
+            }
+
+            auto& fut = fut_it->second;
+
+            if (fut.valid()){
+                fut.get();
+            }
+
+            m_fut_comms.erase(id);
+
+            // Retry search
+            it = m_comms.find(id);
+            if (it == m_comms.end())
+            {
+                debug_info("[LFI] End not found in comms nor futs");
+                return nullptr;
+            }
         }
-        return &lfi.m_comms.at(id);
+
+        debug_info("[LFI] End found");
+        return &it->second;
     }
 
     int LFI::close_comm(uint32_t id)
@@ -405,17 +443,16 @@ namespace LFI
         int ret = 0;
         debug_info("[LFI] Start");
 
-        LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_mutex);
 
         fabric_comm *comm = get_comm(id);
         if (comm == nullptr){
             return -1;
         }
 
+        std::unique_lock<std::mutex> lock(m_mutex);
         remove_addr(*comm);
 
-        lfi.m_comms.erase(comm->rank_peer);
+        m_comms.erase(comm->rank_peer);
 
         debug_info("[LFI] End = " << ret);
 
@@ -485,9 +522,6 @@ namespace LFI
     {
         int ret;
         debug_info("[LFI] Start");
-        
-        LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_mutex);
 
         // First comunicate the identifier
         std::string host_id = ns::get_host_name() + " " + ns::get_host_ip();
@@ -528,13 +562,6 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints();
-        if (ret < 0)
-        {
-            print_error("init_endpoints");
-            return ret;
-        }
-
         fabric_comm &comm = init_comm(is_shm, comm_id);
         
         // Exchange ranks
@@ -598,6 +625,7 @@ namespace LFI
         }
 
         ret = comm.rank_peer;
+        comm.is_ready = true;
 
         // Do a send recv because some providers need it
         int buf = 123;
@@ -621,9 +649,6 @@ namespace LFI
     {
         int ret;
         debug_info("[LFI] Start");
-
-        LFI &lfi = LFI::get_instance();
-        std::unique_lock<std::mutex> lock(lfi.m_mutex);
 
         // First comunicate the identifier
         std::string host_id = ns::get_host_name() + " " + ns::get_host_ip();
@@ -664,13 +689,6 @@ namespace LFI
 
         // Initialize endpoints
         bool is_shm = host_id == peer_id;
-        ret = init_endpoints();
-        if (ret < 0)
-        {
-            print_error("init_endpoints");
-            return ret;
-        }
-
         fabric_comm &comm = init_comm(is_shm, comm_id);
 
         // Exchange ranks
@@ -735,6 +753,7 @@ namespace LFI
         }
 
         ret = comm.rank_peer;
+        comm.is_ready = true;
         
         // Do a recv send because some providers need it
         int buf = 123;
@@ -757,34 +776,33 @@ namespace LFI
     int LFI::init_endpoints()
     {
         int ret = 0;
-        LFI &lfi = LFI::get_instance();
         debug_info("[LFI] Start");
-        if (!lfi.shm_ep.initialized())
+        if (!shm_ep.initialized())
         {
-            set_hints(lfi.shm_ep, "shm");
-            ret = init(lfi.shm_ep);
+            set_hints(shm_ep, "shm");
+            ret = init(shm_ep);
             if (ret < 0)
             {
-                set_hints(lfi.shm_ep, "sm2");
-                ret = init(lfi.shm_ep);
+                set_hints(shm_ep, "sm2");
+                ret = init(shm_ep);
                 if (ret < 0)
                 {
                     return ret;
                 }
             }
             // Create FABRIC_ANY_COMM for shm_ep
-            LFI::create_any_comm(lfi.shm_ep, ANY_COMM_SHM);
+            LFI::create_any_comm(shm_ep, ANY_COMM_SHM);
         }
-        if (!lfi.peer_ep.initialized())
+        if (!peer_ep.initialized())
         {
-            set_hints(lfi.peer_ep, "");
-            ret = init(lfi.peer_ep);
+            set_hints(peer_ep, "");
+            ret = init(peer_ep);
             if (ret < 0)
             {
                 return ret;
             }
             // Create FABRIC_ANY_COMM for peer_ep
-            LFI::create_any_comm(lfi.peer_ep, ANY_COMM_PEER);
+            LFI::create_any_comm(peer_ep, ANY_COMM_PEER);
         }
         debug_info("[LFI] End = " << ret);
         return ret;
@@ -792,14 +810,13 @@ namespace LFI
 
     fabric_comm &LFI::init_comm(bool is_shm, int32_t comm_id)
     {
-        LFI &lfi = LFI::get_instance();
         if (is_shm)
         {
-            return create_comm(lfi.shm_ep, comm_id);
+            return create_comm(shm_ep, comm_id);
         }
         else
         {
-            return create_comm(lfi.peer_ep, comm_id);
+            return create_comm(peer_ep, comm_id);
         }
     }
 } // namespace LFI

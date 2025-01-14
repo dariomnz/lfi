@@ -36,6 +36,7 @@
 #include <vector>
 #include <sstream>
 #include <optional>
+#include <future>
 #include "lfi_async.h"
 
 #define DECLARE_LFI_ERROR(name, num, msg) \
@@ -129,8 +130,6 @@ namespace LFI
             if (is_inject){ out << "is_inject"; }
             return out.str();
         }
-
-        static fabric_request Create(uint32_t comm_id);
     };
 
     struct fabric_comm
@@ -148,6 +147,8 @@ namespace LFI
         bool ft_error = false;
 
         bool is_canceled = false;
+
+        std::atomic_bool is_ready = false;
 
         fabric_comm(fabric_ep &ep) : m_ep(ep) {}
     };
@@ -214,56 +215,61 @@ namespace LFI
     public:
         // Secure destroy when closing app
         // fabric_init
+        LFI();
         ~LFI();
 
     private:
-        static int set_hints(fabric_ep &fabric_ep, const std::string &prov);
-        static int init(fabric_ep &fabric);
-        static int destroy(fabric_ep &fabric_ep);
-        static fabric_comm &create_comm(fabric_ep &fabric_ep, int32_t comm_id = -1);
-        static fabric_comm &create_any_comm(fabric_ep &fabric_ep, uint32_t comm_id);
+        int set_hints(fabric_ep &fabric_ep, const std::string &prov);
+        int init(fabric_ep &fabric);
+        int destroy(fabric_ep &fabric_ep);
+        fabric_comm &create_comm(fabric_ep &fabric_ep, int32_t comm_id = -1);
+        fabric_comm &create_any_comm(fabric_ep &fabric_ep, uint32_t comm_id);
 
     public:
-        static fabric_comm *get_comm(uint32_t id);
-        static int close_comm(uint32_t id);
-        static int get_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &out_addr);
-        static int register_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &addr);
-        static int remove_addr(fabric_comm &fabric_comm);
+        uint32_t reserve_comm();
+        fabric_comm *get_comm(uint32_t id);
+        int close_comm(uint32_t id);
+        int get_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &out_addr);
+        int register_addr(fabric_comm &fabric_comm, std::vector<uint8_t> &addr);
+        int remove_addr(fabric_comm &fabric_comm);
 
-        static int init_server(int socket, int32_t comm_id = -1);
-        static int init_client(int socket, int32_t comm_id = -1);
+        int init_server(int socket, int32_t comm_id = -1);
+        int init_client(int socket, int32_t comm_id = -1);
 
-        static int init_endpoints();
-        static fabric_comm &init_comm(bool is_shm, int32_t comm_id = -1);
+        int init_endpoints();
+        fabric_comm &init_comm(bool is_shm, int32_t comm_id = -1);
 
         // fabric_send_recv
     private:
-        static inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
+        inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
     public:
-        static int progress(fabric_request &request);
-        static int wait(fabric_request &request, int32_t timeout_ms = -1);
-        static int wait_num(std::vector<std::reference_wrapper<fabric_request>> &request, int how_many);
-        static int cancel(fabric_request &request);
-        static fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
-        static fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
-        static fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
-        static fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
-        static fabric_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
-        static std::pair<fabric_msg, fabric_msg> any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag);
+        int progress(fabric_request &request);
+        int wait(fabric_request &request, int32_t timeout_ms = -1);
+        int wait_num(std::vector<std::reference_wrapper<fabric_request>> &request, int how_many);
+        int cancel(fabric_request &request);
+        fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
+        fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
+        fabric_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
+        fabric_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
+        fabric_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
+        std::pair<fabric_msg, fabric_msg> any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag);
 
         // fabric_ft for fault tolerance
     public:
-        static int ft_thread_start();
+        int ft_thread_start();
         static int ft_thread_loop();
-        static int ft_thread_destroy();
+        int ft_thread_destroy();
 
         // Variables
     public:
         fabric_ep shm_ep = {.is_shm = true};
         fabric_ep peer_ep = {.is_shm = false};
 
+        std::mutex m_fut_mutex;
+        std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
         std::mutex m_mutex;
         std::unordered_map<uint32_t, fabric_comm> m_comms;
+        std::atomic_uint32_t m_rank_counter = {0};
 
         // Fault tolerance
         std::thread ft_thread;

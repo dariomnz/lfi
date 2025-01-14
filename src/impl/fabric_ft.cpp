@@ -28,36 +28,34 @@ namespace LFI
 
     int LFI::ft_thread_start()
     {
-        LFI &lfi = LFI::get_instance();
         if (!env::get_instance().LFI_fault_tolerance)
             return 0;
 
         debug_info("[LFI] Start");
         {
-            std::lock_guard<std::mutex> lock(lfi.ft_mutex);
-            if (lfi.ft_is_running) return 0;
-            lfi.ft_is_running = true;
+            std::lock_guard<std::mutex> lock(ft_mutex);
+            if (ft_is_running) return 0;
+            ft_is_running = true;
         }
-        lfi.ft_thread = std::thread(ft_thread_loop);
+        ft_thread = std::thread(ft_thread_loop);
         debug_info("[LFI] End");
         return 0;
     }
 
     int LFI::ft_thread_destroy()
     {
-        LFI &lfi = LFI::get_instance();
         if (!env::get_instance().LFI_fault_tolerance)
             return 0;
 
         debug_info("[LFI] Start");
 
         {
-            std::lock_guard<std::mutex> lock(lfi.ft_mutex);
-            if (!lfi.ft_is_running) return 0;
-            lfi.ft_is_running = false;
+            std::lock_guard<std::mutex> lock(ft_mutex);
+            if (!ft_is_running) return 0;
+            ft_is_running = false;
         }
-        lfi.ft_cv.notify_one();
-        lfi.ft_thread.join();
+        ft_cv.notify_one();
+        ft_thread.join();
 
         debug_info("[LFI] End");
         return 0;
@@ -88,65 +86,67 @@ namespace LFI
             }
             ft_lock.unlock();
             // Start the requests
-            std::unique_lock comms_lock(lfi.m_mutex);
             int ack = 0;
             fabric_msg msg;
             index = 0;
             requests.reserve(lfi.m_comms.size()*2);
-            for (auto &[id, comm] : lfi.m_comms)
             {
-                if (comm.rank_peer == ANY_COMM_SHM || comm.rank_peer == ANY_COMM_PEER) continue;
-                if (comm.is_canceled) continue;
-                int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000);
-                {   
-                    auto [it, _] = requests.emplace(index++, comm);
-                    auto& send_request = it->second;
-                    debug_info("[LFI] Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
-                    msg = async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
-                    if (msg.error < 0){
-                        comm.ft_error = true;
-                        comms_with_err.push_back(id);
-                        debug_info("[LFI] Error in Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
-                        continue;
-                    }
-                }
+                std::unique_lock comms_lock(lfi.m_mutex);
+                for (auto &[id, comm] : lfi.m_comms)
                 {
-                    auto [it, _] = requests.emplace(index++, comm);
-                    auto& recv_request = it->second;
-                    debug_info("[LFI] Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
-                    msg = async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
-                    if (msg.error < 0){
-                        comm.ft_error = true;
-                        comms_with_err.push_back(id);
-                        debug_info("[LFI] Error in Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
-                        continue;
+                    if (comm.rank_peer == ANY_COMM_SHM || comm.rank_peer == ANY_COMM_PEER) continue;
+                    if (comm.is_canceled) continue;
+                    int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000);
+                    {   
+                        auto [it, _] = requests.emplace(index++, comm);
+                        auto& send_request = it->second;
+                        debug_info("[LFI] Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
+                        msg = lfi.async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
+                        if (msg.error < 0){
+                            comm.ft_error = true;
+                            comms_with_err.push_back(id);
+                            debug_info("[LFI] Error in Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
+                            continue;
+                        }
                     }
-                }
-            }   
-            index = 0;
-            auto start = std::chrono::high_resolution_clock::now();
-            for (auto &[id, comm] : lfi.m_comms)
-            {
-                if (comm.rank_peer == ANY_COMM_SHM || comm.rank_peer == ANY_COMM_PEER) continue;
-                if (comm.is_canceled || comm.ft_error) continue;
-                int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
-    
-                int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000 - elapsed_ms);
-                auto& send_request = requests.at(index++);
-                debug_info("[LFI] wait ft send ack comm "<<id<<" "<<&send_request);
-                ret = wait(send_request, timeout_ms);
-                if (ret == - LFI_TIMEOUT){
-                    cancel(send_request);
-                }
-                auto& recv_request = requests.at(index++);
-                debug_info("[LFI] wait ft recv ack comm "<<id<<" "<<&recv_request);
-                ret = wait(recv_request, timeout_ms);
-                if (ret == - LFI_TIMEOUT){
-                    cancel(recv_request);
-                }
-                debug_info("[LFI] wait ft ack comm errors "<<send_request.error<<" "<<recv_request.error);
-                if (send_request.error < 0 || recv_request.error < 0){
-                    comms_with_err.push_back(id);
+                    {
+                        auto [it, _] = requests.emplace(index++, comm);
+                        auto& recv_request = it->second;
+                        debug_info("[LFI] Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
+                        msg = lfi.async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
+                        if (msg.error < 0){
+                            comm.ft_error = true;
+                            comms_with_err.push_back(id);
+                            debug_info("[LFI] Error in Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
+                            continue;
+                        }
+                    }
+                }   
+                index = 0;
+                auto start = std::chrono::high_resolution_clock::now();
+                for (auto &[id, comm] : lfi.m_comms)
+                {
+                    if (comm.rank_peer == ANY_COMM_SHM || comm.rank_peer == ANY_COMM_PEER) continue;
+                    if (comm.is_canceled || comm.ft_error) continue;
+                    int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
+        
+                    int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000 - elapsed_ms);
+                    auto& send_request = requests.at(index++);
+                    debug_info("[LFI] wait ft send ack comm "<<id<<" "<<&send_request);
+                    ret = lfi.wait(send_request, timeout_ms);
+                    if (ret == - LFI_TIMEOUT){
+                        lfi.cancel(send_request);
+                    }
+                    auto& recv_request = requests.at(index++);
+                    debug_info("[LFI] wait ft recv ack comm "<<id<<" "<<&recv_request);
+                    ret = lfi.wait(recv_request, timeout_ms);
+                    if (ret == - LFI_TIMEOUT){
+                        lfi.cancel(recv_request);
+                    }
+                    debug_info("[LFI] wait ft ack comm errors "<<send_request.error<<" "<<recv_request.error);
+                    if (send_request.error < 0 || recv_request.error < 0){
+                        comms_with_err.push_back(id);
+                    }
                 }
             }
             for (auto &id : comms_with_err)

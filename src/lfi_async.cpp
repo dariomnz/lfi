@@ -33,8 +33,7 @@ lfi_request* lfi_request_create(int id)
 {
     debug_info("("<<id<<")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    std::unique_lock lock(lfi.m_mutex);
-    LFI::fabric_comm *comm = LFI::LFI::get_comm(id);
+    LFI::fabric_comm *comm = lfi.get_comm(id);
     if (comm == nullptr){
         debug_info("("<<id<<")="<<nullptr<<" >> End");
         return nullptr;
@@ -113,9 +112,10 @@ ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag
     ssize_t ret = 0;
     debug_info("("<<req<<", "<<data<<", "<<size<<", "<<tag<<")>> Begin");
     if (req == nullptr) return -1;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::fabric_request *request = reinterpret_cast<LFI::fabric_request*>(req);
     debug_info(request->to_string());
-    LFI::fabric_msg msg = LFI::LFI::async_send(data, size, tag, *request);
+    LFI::fabric_msg msg = lfi.async_send(data, size, tag, *request);
     if (msg.error < 0){
         ret = msg.error;
     }else{
@@ -130,9 +130,10 @@ ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag)
     ssize_t ret = 0;
     debug_info("("<<req<<", "<<data<<", "<<size<<", "<<tag<<")>> Begin");
     if (req == nullptr) return -1;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::fabric_request *request = reinterpret_cast<LFI::fabric_request*>(req);
     debug_info(request->to_string());
-    LFI::fabric_msg msg = LFI::LFI::async_recv(data, size, tag, *request);
+    LFI::fabric_msg msg = lfi.async_recv(data, size, tag, *request);
     if (msg.error < 0){
         ret = msg.error;
     }else{
@@ -146,9 +147,10 @@ ssize_t lfi_wait(lfi_request *req)
 {
     debug_info("("<<req<<")>> Begin");
     if (req == nullptr) return -1;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::fabric_request *request = reinterpret_cast<LFI::fabric_request*>(req);
     debug_info(request->to_string());
-    const auto ret = LFI::LFI::wait(*request);
+    const auto ret = lfi.wait(*request);
     debug_info("("<<req<<")="<<ret<<" >> End");
     return ret;
 }
@@ -157,6 +159,7 @@ ssize_t lfi_wait_many(lfi_request* reqs[], size_t size, size_t how_many)
 {
     debug_info("("<<reqs<<", "<<size<<", "<<how_many<<")>> Begin");
     if (reqs == nullptr) return -1;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::fabric_request **requests = reinterpret_cast<LFI::fabric_request**>(reqs);
     std::vector<std::reference_wrapper<LFI::fabric_request>> v_requests;
     v_requests.reserve(size);
@@ -166,7 +169,7 @@ ssize_t lfi_wait_many(lfi_request* reqs[], size_t size, size_t how_many)
         v_requests.emplace_back(*requests[i]);
         debug_info(requests[i]->to_string());
     }
-    const ssize_t ret = LFI::LFI::wait_num(v_requests, how_many);
+    const ssize_t ret = lfi.wait_num(v_requests, how_many);
     debug_info("("<<reqs<<", "<<size<<", "<<how_many<<")="<<ret<<">> End");
     return ret;
 }
@@ -175,9 +178,10 @@ ssize_t lfi_cancel(lfi_request *req)
 {
     debug_info("("<<req<<")>> Begin");
     if (req == nullptr) return -1;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::fabric_request *request = reinterpret_cast<LFI::fabric_request*>(req);
     debug_info(request->to_string());
-    const auto ret = LFI::LFI::cancel(*request);
+    const auto ret = lfi.cancel(*request);
     debug_info("("<<req<<")="<<ret<<" >> End");
     return ret;
 }

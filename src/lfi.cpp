@@ -51,7 +51,8 @@ int lfi_client_create(const char* serv_addr, int port)
     if (client_socket < 0){
         print_error("socket::client_init ("<<serv_addr<<", "<<port<<")");
     }
-    out = LFI::LFI::init_client(client_socket);
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    out = lfi.init_client(client_socket);
 
     // TODO handle error in close
     LFI::socket::close(client_socket);
@@ -62,7 +63,7 @@ int lfi_client_create(const char* serv_addr, int port)
 
 int lfi_server_accept(int socket)
 {
-    int out = -1;
+    uint32_t out = -1;
     int client_socket;
     debug_info("("<<socket<<") >> Begin");
 
@@ -70,10 +71,23 @@ int lfi_server_accept(int socket)
     if (client_socket < 0){
         print_error("socket::client_init ("<<socket<<")");
     }
-    out = LFI::LFI::init_server(client_socket);
+    LFI::LFI& lfi = LFI::LFI::get_instance();
 
-    // TODO handle error in close
-    LFI::socket::close(client_socket);
+    out = lfi.reserve_comm();
+    
+    std::unique_lock fut_lock(lfi.m_fut_mutex);
+    lfi.m_fut_comms.emplace(out,
+        std::async(std::launch::async, [client_socket, &lfi](){
+            int ret = lfi.init_server(client_socket);
+            uint32_t out = 0;
+            if (ret >= 0){
+                out = ret;
+            }
+            // TODO handle error in close
+            LFI::socket::close(client_socket);
+            return out;
+        })
+    );
 
     debug_info("("<<socket<<")="<<out<<" >> End");
     return out;
@@ -89,7 +103,8 @@ ssize_t lfi_tsend(int id, const void *data, size_t size, int tag)
     ssize_t ret = -1;
     LFI::fabric_msg msg;
     debug_info("("<<id<<", "<<data<<", "<<size<<", "<<tag<<")>> Begin");
-    msg = LFI::LFI::send(id, data, size, tag);
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    msg = lfi.send(id, data, size, tag);
     if (msg.error < 0){
         ret = msg.error;
     }else{
@@ -109,7 +124,8 @@ ssize_t lfi_trecv(int id, void *data, size_t size, int tag)
     ssize_t ret = -1;
     LFI::fabric_msg msg;
     debug_info("("<<id<<", "<<data<<", "<<size<<", "<<tag<<")>> Begin");
-    msg = LFI::LFI::recv(id, data, size, tag);
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    msg = lfi.recv(id, data, size, tag);
     if (msg.error < 0){
         ret = msg.error;
     }else{
@@ -129,7 +145,8 @@ ssize_t lfi_any_trecv(void *data1, void *data2, size_t size, int tag, int *out_s
     ssize_t ret = -1;
     debug_info("("<<data1<<", "<<data2<<", "<<size<<", "<<tag<<")>> Begin");
 
-    auto [shm_msg, peer_msg] = LFI::LFI::any_recv(data1, data2, size, tag);
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    auto [shm_msg, peer_msg] = lfi.any_recv(data1, data2, size, tag);
 
     if (shm_msg.error < 0 && peer_msg.error < 0){
         ret = shm_msg.error;
@@ -187,7 +204,8 @@ int lfi_client_close(int id)
     int ret = -1;
     debug_info("("<<id<<") >> Begin");
 
-    ret = LFI::LFI::close_comm(id);
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    ret = lfi.close_comm(id);
 
     debug_info("("<<id<<")="<<ret<<" >> End");
     return ret;

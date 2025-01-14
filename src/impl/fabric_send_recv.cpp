@@ -118,15 +118,6 @@ namespace LFI
         return out.str();
     }
 
-    fabric_request fabric_request::Create(uint32_t comm_id) {
-        LFI& lfi = LFI::get_instance();
-        fabric_comm *comm = lfi.get_comm(comm_id);
-        if (comm == nullptr){
-            throw std::runtime_error("fabric_comm not found");
-        }
-        return fabric_request{*comm};
-    }
-
     int LFI::progress(fabric_request &request)
     {
         int ret;
@@ -268,7 +259,6 @@ namespace LFI
         wait_struct shared_wait = {.wait_count = how_many};
         int wait_shm_ep = 0, wait_peer_ep = 0;
         std::optional<std::reference_wrapper<fabric_request>> one_shm_rq, one_peer_rq;
-        LFI& lfi = LFI::get_instance();
         // Set up the wait
         for (auto &request_ref : requests)
         {
@@ -281,10 +271,10 @@ namespace LFI
                 debug_info("Request already completed");
                 shared_wait.wait_count--;
             }
-            if (request.m_comm.m_ep == lfi.shm_ep){
+            if (request.m_comm.m_ep == shm_ep){
                 wait_shm_ep++;
                 one_shm_rq = request_ref;
-            }else if (request.m_comm.m_ep == lfi.peer_ep){
+            }else if (request.m_comm.m_ep == peer_ep){
                 wait_peer_ep++;
                 one_peer_rq = request_ref;
             }
@@ -303,16 +293,16 @@ namespace LFI
         }
 
         std::unique_lock wait_lock(shared_wait.wait_mutex);
-        std::unique_lock shm_lock(lfi.shm_ep.mutex_ep, std::defer_lock);
-        std::unique_lock peer_lock(lfi.peer_ep.mutex_ep, std::defer_lock);
+        std::unique_lock shm_lock(shm_ep.mutex_ep, std::defer_lock);
+        std::unique_lock peer_lock(peer_ep.mutex_ep, std::defer_lock);
         bool made_progress = false;
         while(shared_wait.wait_count > 0){
-            debug_info("shared_wait.wait_count "<<shared_wait.wait_count);
+            // debug_info("shared_wait.wait_count "<<shared_wait.wait_count);
             made_progress = false;
             if (shared_wait.wait_type == wait_endpoint::ALL ||
                 shared_wait.wait_type == wait_endpoint::SHM) {
                 if (shm_lock.try_lock()){
-                    debug_info("progress shm");
+                    // debug_info("progress shm");
                     wait_lock.unlock();
                     progress(one_shm_rq.value());
                     wait_lock.lock();
@@ -323,7 +313,7 @@ namespace LFI
             if (shared_wait.wait_type == wait_endpoint::ALL ||
                 shared_wait.wait_type == wait_endpoint::PEER) {
                 if (peer_lock.try_lock()){
-                    debug_info("progress peer");
+                    // debug_info("progress peer");
                     wait_lock.unlock();
                     progress(one_peer_rq.value());
                     wait_lock.lock();
@@ -332,7 +322,7 @@ namespace LFI
                 }
             }
             if (!made_progress){
-                debug_info("wait");
+                // debug_info("wait");
                 shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(env::get_instance().LFI_ms_wait_sleep));
             }
         }
