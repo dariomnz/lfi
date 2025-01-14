@@ -96,15 +96,15 @@ namespace LFI
     struct fabric_request
     {
         // context necesary for fabric interface
-        struct fi_context context;
+        struct fi_context context = {};
 
         fabric_comm& m_comm;
-        std::mutex mutex;
-        std::condition_variable cv;
+        std::mutex mutex = {};
+        std::condition_variable cv = {};
         bool wait_context = true;
         int error = 0;
 
-        bool is_send;
+        bool is_send = false;
         bool is_inject = false;
         
         fi_cq_tagged_entry entry = {};
