@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
 
     auto &tests = get_test_vector();
 
-    print("Server start accepting " << LFI::ns::get_host_name() << " :");
+    std::cout << "Server start accepting " << LFI::ns::get_host_name() << " :" << std::endl;
     int iter = 0;
     std::atomic_int clients_to_launch_thread = 0;
     std::thread([&tests, &clients_to_launch_thread]() {
@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
 
             int completed = lfi_wait_many(requests, 2, 1);
 
-            print("Completed wait_num with " << completed);
+            std::cout << "Completed wait_num with " << completed << std::endl;
             if (completed == 0) {
                 source = lfi_request_source(shm_request.get());
                 shm_request.release();
@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
             //     print("Error lfi_any_recv = " << any_recv << " " << lfi_strerror(any_recv));
             //     exit(1);
             // }
-            print("Start test for client " << source);
+            std::cout << "Start test for client " << source << std::endl;
             std::thread([id = source, &tests]() {
                 int ret = 0;
                 for (auto &test : tests) {
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
                     if (ret < 0) break;
                 }
                 lfi_client_close(id);
-                print("End test for client " << id);
+                std::cout << "End test for client " << id << std::endl;
             }).detach();
         }
         return 0;
@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
             perror("accept");
             exit(EXIT_FAILURE);
         }
-        print("Server accept client " << new_socket);
+        std::cout << "Server accept client " << new_socket << std::endl;
         clients_to_launch_thread++;
         // std::thread([new_socket, &tests]()
         //             {

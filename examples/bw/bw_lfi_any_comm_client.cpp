@@ -90,6 +90,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
 
     client_fds.resize(servers.size());
+    auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < servers.size(); i++)
     {
         if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT)) < 0) {
@@ -98,12 +99,11 @@ int main(int argc, char *argv[])
             return -1;
         }
     }
-    
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>((std::chrono::high_resolution_clock::now() - start)).count() / 1000.0f;
+    std::cout << "Time to connect to "<<servers.size()<<" servers "<<elapsed<<" sec, per server "<<elapsed/servers.size()<<" sec"<<std::endl;
 
+    std::cout << "Send ack to start test" << std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
-
-    
-    print("Send ack to start test");
     int ack = 0;
     ssize_t data_send = 0;
     for (auto &id : client_fds)
