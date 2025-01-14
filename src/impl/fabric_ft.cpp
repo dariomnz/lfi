@@ -71,7 +71,7 @@ namespace LFI
         std::unique_lock<std::mutex> ft_lock(lfi.ft_mutex);
         std::vector<uint32_t> comms_with_err;
         comms_with_err.reserve(100);
-        std::vector<fabric_request> requests;
+        std::unordered_map<int, fabric_request> requests;
         int index = 0;
         debug_info("[LFI] Start");
         auto start_loop = std::chrono::high_resolution_clock::now();
@@ -91,29 +91,36 @@ namespace LFI
             std::unique_lock comms_lock(lfi.m_mutex);
             int ack = 0;
             fabric_msg msg;
+            index = 0;
             requests.reserve(lfi.m_comms.size()*2);
             for (auto &[id, comm] : lfi.m_comms)
             {
                 if (comm.rank_peer == ANY_COMM_SHM || comm.rank_peer == ANY_COMM_PEER) continue;
                 if (comm.is_canceled) continue;
                 int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000);
-                auto& send_request = requests.emplace_back(comm);
-                debug_info("[LFI] Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
-                msg = async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
-                if (msg.error < 0){
-                    comm.ft_error = true;
-                    comms_with_err.push_back(id);
-                    debug_info("[LFI] Error in Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
-                    continue;
+                {   
+                    auto [it, _] = requests.emplace(index++, comm);
+                    auto& send_request = it->second;
+                    debug_info("[LFI] Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
+                    msg = async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
+                    if (msg.error < 0){
+                        comm.ft_error = true;
+                        comms_with_err.push_back(id);
+                        debug_info("[LFI] Error in Send ft ack comm "<<id<<" "<<std::hex<<&send_request<<std::dec);
+                        continue;
+                    }
                 }
-                auto& recv_request = requests.emplace_back(comm);
-                debug_info("[LFI] Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
-                msg = async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
-                if (msg.error < 0){
-                    comm.ft_error = true;
-                    comms_with_err.push_back(id);
-                    debug_info("[LFI] Error in Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
-                    continue;
+                {
+                    auto [it, _] = requests.emplace(index++, comm);
+                    auto& recv_request = it->second;
+                    debug_info("[LFI] Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
+                    msg = async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
+                    if (msg.error < 0){
+                        comm.ft_error = true;
+                        comms_with_err.push_back(id);
+                        debug_info("[LFI] Error in Recv ft ack comm "<<id<<" "<<std::hex<<&recv_request<<std::dec);
+                        continue;
+                    }
                 }
             }   
             index = 0;
@@ -125,13 +132,13 @@ namespace LFI
                 int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start).count(); 
     
                 int timeout_ms = std::max(0, env::get_instance().LFI_fault_tolerance_time*1000 - elapsed_ms);
-                auto& send_request = requests[index++];
+                auto& send_request = requests.at(index++);
                 debug_info("[LFI] wait ft send ack comm "<<id<<" "<<&send_request);
                 ret = wait(send_request, timeout_ms);
                 if (ret == - LFI_TIMEOUT){
                     cancel(send_request);
                 }
-                auto& recv_request = requests[index++];
+                auto& recv_request = requests.at(index++);
                 debug_info("[LFI] wait ft recv ack comm "<<id<<" "<<&recv_request);
                 ret = wait(recv_request, timeout_ms);
                 if (ret == - LFI_TIMEOUT){
