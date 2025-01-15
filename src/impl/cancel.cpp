@@ -29,7 +29,10 @@ namespace LFI {
 int LFI::cancel(lfi_request &request) {
     // The inject is not cancelled
     debug_info("[LFI] Start " << request.to_string());
-    if (request.is_inject || request.is_completed()) return 0;
+    {
+        std::unique_lock request_lock(request.mutex);
+        if (request.is_inject || request.is_completed()) return 0;
+    }
 
     fid_ep *p_ep = nullptr;
     if (request.is_send) {
