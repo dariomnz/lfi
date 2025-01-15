@@ -61,6 +61,12 @@ namespace LFI
             {
                 LFI_use_inject = (atoi(env_lfi_use_inject) != 0);
             }
+            // LFI_ASYNC_CONNECTION
+            char *env_lfi_async_connection = std::getenv("LFI_ASYNC_CONNECTION");
+            if ((env_lfi_async_connection != NULL) && (std::strlen(env_lfi_async_connection) > 0))
+            {
+                LFI_async_connection = (atoi(env_lfi_async_connection) != 0);
+            }
         }
         // Delete copy constructor
         env(const env &) = delete;
@@ -75,6 +81,7 @@ namespace LFI
         int LFI_port = 56789;
         int LFI_ms_wait_sleep = 10;
         bool LFI_use_inject = false;
+        bool LFI_async_connection = true;
 
     public:
         static env &get_instance()

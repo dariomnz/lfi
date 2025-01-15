@@ -24,6 +24,7 @@
 #include "impl/fabric.hpp"
 #include "impl/socket.hpp"
 #include "impl/debug.hpp"
+#include "impl/env.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,10 +53,26 @@ int lfi_client_create(const char* serv_addr, int port)
         print_error("socket::client_init ("<<serv_addr<<", "<<port<<")");
     }
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    out = lfi.init_client(client_socket);
 
-    // TODO handle error in close
-    LFI::socket::close(client_socket);
+    out = lfi.reserve_comm();
+    
+    auto func = [client_socket, out, &lfi](){
+                int ret = lfi.init_client(client_socket, out);
+                uint32_t out = 0;
+                if (ret >= 0){
+                    out = ret;
+                }
+                // TODO handle error in close
+                LFI::socket::close(client_socket);
+                return out;
+            };
+
+    if (LFI::env::get_instance().LFI_async_connection){
+        std::unique_lock fut_lock(lfi.m_fut_mutex);
+        lfi.m_fut_comms.emplace(out, std::async(std::launch::async, func));
+    }else{
+        func();
+    }
 
     debug_info("("<<serv_addr<<", "<<port<<")="<<out<<" >> End");
     return out;
@@ -74,20 +91,23 @@ int lfi_server_accept(int socket)
     LFI::LFI& lfi = LFI::LFI::get_instance();
 
     out = lfi.reserve_comm();
-    
-    std::unique_lock fut_lock(lfi.m_fut_mutex);
-    lfi.m_fut_comms.emplace(out,
-        std::async(std::launch::async, [client_socket, out, &lfi](){
-            int ret = lfi.init_server(client_socket, out);
-            uint32_t out = 0;
-            if (ret >= 0){
-                out = ret;
-            }
-            // TODO handle error in close
-            LFI::socket::close(client_socket);
-            return out;
-        })
-    );
+    auto func = [client_socket, out, &lfi](){
+                int ret = lfi.init_server(client_socket, out);
+                uint32_t out = 0;
+                if (ret >= 0){
+                    out = ret;
+                }
+                // TODO handle error in close
+                LFI::socket::close(client_socket);
+                return out;
+            };
+
+    if (LFI::env::get_instance().LFI_async_connection){
+        std::unique_lock fut_lock(lfi.m_fut_mutex);
+        lfi.m_fut_comms.emplace(out, std::async(std::launch::async, func));
+    }else{
+        func();
+    }
 
     debug_info("("<<socket<<")="<<out<<" >> End");
     return out;
