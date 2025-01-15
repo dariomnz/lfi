@@ -33,7 +33,7 @@ namespace LFI
 
         debug_info("[LFI] Start");
         {
-            std::lock_guard<std::mutex> lock(ft_mutex);
+            std::unique_lock lock(ft_mutex);
             if (ft_is_running) return 0;
             ft_is_running = true;
         }
@@ -50,7 +50,7 @@ namespace LFI
         debug_info("[LFI] Start");
 
         {
-            std::lock_guard<std::mutex> lock(ft_mutex);
+            std::unique_lock lock(ft_mutex);
             if (!ft_is_running) return 0;
             ft_is_running = false;
         }
@@ -66,7 +66,7 @@ namespace LFI
         int ret = 0;
         LFI &lfi = LFI::get_instance();
         int ms_to_wait = env::get_instance().LFI_fault_tolerance_time * 1000;
-        std::unique_lock<std::mutex> ft_lock(lfi.ft_mutex);
+        std::unique_lock ft_lock(lfi.ft_mutex);
         std::vector<uint32_t> comms_with_err;
         comms_with_err.reserve(100);
         std::unordered_map<int, fabric_request> requests;
@@ -91,7 +91,7 @@ namespace LFI
             index = 0;
             requests.reserve(lfi.m_comms.size()*2);
             {
-                std::unique_lock comms_lock(lfi.m_mutex);
+                std::unique_lock comms_lock(lfi.m_comms_mutex);
                 for (auto &[id, comm] : lfi.m_comms)
                 {
                     if (comm.rank_peer == ANY_COMM_SHM || comm.rank_peer == ANY_COMM_PEER) continue;

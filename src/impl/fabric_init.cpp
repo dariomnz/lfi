@@ -36,8 +36,6 @@ namespace LFI
 
     LFI::~LFI()
     {
-        std::unique_lock<std::mutex> lock(m_mutex);
-
         debug_info("[LFI] Start");
         ft_thread_destroy();
 
@@ -365,7 +363,7 @@ namespace LFI
     {
         uint32_t new_id = comm_id;
         
-        std::unique_lock lock(m_mutex);
+        std::unique_lock comms_lock(m_comms_mutex);
         debug_info("[LFI] Start");
         if (comm_id >= 0){
             if(m_comms.find(comm_id) == m_comms.end()){
@@ -404,7 +402,7 @@ namespace LFI
     fabric_comm *LFI::get_comm(uint32_t id)
     {
         debug_info("[LFI] Start "<<id);
-        std::unique_lock lock(m_mutex);
+        std::unique_lock comms_lock(m_comms_mutex);
         auto it = m_comms.find(id);
         if (it == m_comms.end() || (it != m_comms.end() && !it->second.is_ready))
         {
@@ -420,7 +418,11 @@ namespace LFI
             auto& fut = fut_it->second;
 
             if (fut.valid()){
+                fut_lock.unlock();
+                comms_lock.unlock();
                 fut.get();
+                comms_lock.lock();
+                fut_lock.lock();
             }
 
             m_fut_comms.erase(id);
@@ -449,9 +451,9 @@ namespace LFI
             return -1;
         }
 
-        std::unique_lock<std::mutex> lock(m_mutex);
         remove_addr(*comm);
 
+        std::unique_lock comms_lock(m_comms_mutex);
         m_comms.erase(comm->rank_peer);
 
         debug_info("[LFI] End = " << ret);

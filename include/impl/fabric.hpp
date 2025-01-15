@@ -169,7 +169,6 @@ namespace LFI
         bool is_shm = false;
 
         std::mutex mutex_ep = {};
-        std::mutex mutex_send_recv = {};
 
         bool initialized() { return enable_ep; }
 
@@ -267,7 +266,7 @@ namespace LFI
 
         std::mutex m_fut_mutex;
         std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
-        std::mutex m_mutex;
+        std::mutex m_comms_mutex;
         std::unordered_map<uint32_t, fabric_comm> m_comms;
         std::atomic_uint32_t m_rank_counter = {0};
 

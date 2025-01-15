@@ -138,12 +138,12 @@ namespace LFI
             fi_cq_readerr(request.m_comm.m_ep.cq, &err, 0);
             debug_info(fi_cq_err_entry_to_string(err, request.m_comm.m_ep.cq));
 
-            if (std::abs(err.err) == FI_ECANCELED && err.op_context != (void*)(&request)) return ret;
-            
             // Only report when the ptr to the request is the same as the actual request when canceled
             // because it can be free because the canceled is not always waited 
+            if (std::abs(err.err) == FI_ECANCELED && err.op_context != (void*)(&request)) return ret;
+            
             fabric_request *request_p = static_cast<fabric_request *>(err.op_context);
-            std::unique_lock lock(request_p->mutex);
+            std::unique_lock request_lock(request_p->mutex);
             debug_info("[Error] "<<request_p->to_string()<<" cq error");
             request_p->wait_context = false;
             if (std::abs(err.err) == FI_ECANCELED){
@@ -163,14 +163,14 @@ namespace LFI
             fabric_request *request = static_cast<fabric_request *>(comp[i].op_context);
             debug_info(fi_cq_tagged_entry_to_string(comp[i]));
 
-            std::unique_lock lock(request->mutex);
+            std::unique_lock request_lock(request->mutex);
             request->entry = comp[i];
             request->error = LFI_SUCCESS;
             request->wait_context = false;
             request->cv.notify_all();
             if (request->shared_wait_struct.has_value()){
                 auto &shared_wait_struct = request->shared_wait_struct.value().get();
-                std::unique_lock l(shared_wait_struct.wait_mutex);
+                std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
                 shared_wait_struct.wait_count--;
                 if (shared_wait_struct.wait_count <= 0){
                     shared_wait_struct.wait_cv.notify_all();
@@ -203,7 +203,7 @@ namespace LFI
             return -LFI_CANCELED;
         }
 
-        std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+        std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
         std::unique_lock request_lock(request.mutex);
         decltype(std::chrono::high_resolution_clock::now()) start;
         bool is_timeout = false;
@@ -213,7 +213,7 @@ namespace LFI
 
         while (request.wait_context && !is_timeout)
         {
-            if (global_lock.try_lock()){
+            if (ep_lock.try_lock()){
                 while (request.wait_context && !is_timeout)
                 {
                     request_lock.unlock();
@@ -223,7 +223,7 @@ namespace LFI
                     }
                     request_lock.lock();
                 }
-                global_lock.unlock();
+                ep_lock.unlock();
             }else{
                 if (request.wait_context){
                     request.cv.wait_for(request_lock, std::chrono::milliseconds(env::get_instance().LFI_ms_wait_sleep));
@@ -243,7 +243,7 @@ namespace LFI
         }
 
         if (env::get_instance().LFI_fault_tolerance){
-            std::unique_lock lock(request.m_comm.ft_mutex);
+            std::unique_lock ft_lock(request.m_comm.ft_mutex);
             debug_info("[LFI] erase request "<<request.to_string()<<" in comm "<<request.m_comm.rank_peer);
             request.m_comm.ft_requests.erase(&request);
         }
@@ -263,7 +263,7 @@ namespace LFI
         for (auto &request_ref : requests)
         {
             auto &request = request_ref.get();
-            std::scoped_lock l(request.mutex, shared_wait.wait_mutex);
+            std::scoped_lock req_and_shared_wait_lock(request.mutex, shared_wait.wait_mutex);
             request.shared_wait_struct = shared_wait;
             debug_info(request.to_string());
             debug_info("Request comm "<<request.m_comm.rank_peer);
@@ -337,7 +337,7 @@ namespace LFI
         {
             index = (first_rand + i) % requests.size();
             auto &request = requests[index].get();
-            std::scoped_lock l(request.mutex);
+            std::scoped_lock request_lock(request.mutex);
             request.shared_wait_struct = {};
             // Get the int the vector first completed
             if (request.is_completed() && out_index == -1){
@@ -370,15 +370,15 @@ namespace LFI
 
         if (request.is_send == true){
             // Try one progress to read the canceled and not accumulate errors
-            std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-            if (global_lock.try_lock()){
+            std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+            if (ep_lock.try_lock()){
                 progress(request);
-                global_lock.unlock();
+                ep_lock.unlock();
             }
             
             // Check if completed to no report error
             if (request.wait_context){
-                std::unique_lock lock(request.mutex);
+                std::unique_lock request_lock(request.mutex);
                 request.wait_context = false;
                 request.error = -LFI_CANCELED;
                 request.cv.notify_all();
@@ -649,16 +649,13 @@ namespace LFI
             request.is_inject = true;
             do
             {
-                {
-                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
-                    ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm.fi_addr, tag_send);
-                }
+                ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm.fi_addr, tag_send);
 
                 if (ret == -FI_EAGAIN){
-                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-                    if (global_lock.try_lock()){
+                    std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                    if (ep_lock.try_lock()){
                         progress(request);
-                        global_lock.unlock();
+                        ep_lock.unlock();
                     }
                     
                     if (timeout_ms >= 0){
@@ -686,16 +683,13 @@ namespace LFI
             request.is_inject = false;
             do
             {
-                {
-                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
-                    ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_send, &request.context);
-                }
+                ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_send, &request.context);
 
                 if (ret == -FI_EAGAIN){
-                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-                    if (global_lock.try_lock()){
+                    std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                    if (ep_lock.try_lock()){
                         progress(request);
-                        global_lock.unlock();
+                        ep_lock.unlock();
                     }
                     
                     if (timeout_ms >= 0){
@@ -714,7 +708,7 @@ namespace LFI
             } while (ret == -FI_EAGAIN);
 
             if (env::get_instance().LFI_fault_tolerance && ret == 0){
-                std::unique_lock lock(request.m_comm.ft_mutex);
+                std::unique_lock fi_lock(request.m_comm.ft_mutex);
                 debug_info("[LFI] insert request "<<std::hex<<&request<<std::dec<<" in comm "<<request.m_comm.rank_peer);
                 request.m_comm.ft_requests.insert(&request);
             }
@@ -776,16 +770,13 @@ namespace LFI
         request.is_send = false;
         do
         {
-            {
-                std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
-                ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, &request.context);
-            }
+            ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, &request.context);
 
             if (ret == -FI_EAGAIN){
-                std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-                if (global_lock.try_lock()){
+                std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                if (ep_lock.try_lock()){
                     progress(request);
-                    global_lock.unlock();
+                    ep_lock.unlock();
                 }
                 
                 if (timeout_ms >= 0){
@@ -813,7 +804,7 @@ namespace LFI
         debug_info("[LFI] Waiting on rank_peer " << request.m_comm.rank_peer);
 
         if (env::get_instance().LFI_fault_tolerance){
-            std::unique_lock lock(request.m_comm.ft_mutex);
+            std::unique_lock ft_lock(request.m_comm.ft_mutex);
             debug_info("[LFI] insert request "<<std::hex<<&request<<std::dec<<" in comm "<<request.m_comm.rank_peer);
             request.m_comm.ft_requests.insert(&request);
         }
@@ -883,16 +874,13 @@ namespace LFI
         // First we PEEK with CLAIM to only generate one match
         do
         {
-            {
-                std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
-                ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
-            }
+            ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
 
             if (ret == -FI_EAGAIN){
-                std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-                if (global_lock.try_lock()){
+                std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                if (ep_lock.try_lock()){
                     progress(request);
-                    global_lock.unlock();
+                    ep_lock.unlock();
                 }
                 
                 if (request.m_comm.is_canceled){
@@ -924,16 +912,13 @@ namespace LFI
             request.reset();
             do
             {
-                {
-                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_send_recv);
-                    ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
-                }
+                ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
 
                 if (ret == -FI_EAGAIN){
-                    std::unique_lock global_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
-                    if (global_lock.try_lock()){
+                    std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                    if (ep_lock.try_lock()){
                         progress(request);
-                        global_lock.unlock();
+                        ep_lock.unlock();
                     }
                     
                     if (request.m_comm.is_canceled){
