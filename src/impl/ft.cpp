@@ -21,7 +21,7 @@
 
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
-#include "impl/fabric.hpp"
+#include "impl/lfi.hpp"
 
 namespace LFI {
 
@@ -63,8 +63,8 @@ int LFI::ft_thread_loop() {
     std::unique_lock ft_lock(lfi.ft_mutex);
     std::vector<uint32_t> comms_with_err;
     comms_with_err.reserve(100);
-    std::unordered_map<int, fabric_request> requests;
-    std::vector<std::reference_wrapper<fabric_request>> wait_requests;
+    std::unordered_map<int, lfi_request> requests;
+    std::vector<std::reference_wrapper<lfi_request>> wait_requests;
     int index = 0;
     debug_info("[LFI] Start");
     auto start_loop = std::chrono::high_resolution_clock::now();
@@ -80,7 +80,7 @@ int LFI::ft_thread_loop() {
         }
         // Start the requests
         int ack = 0;
-        fabric_msg msg;
+        lfi_msg msg;
         index = 0;
         {
             std::unique_lock comms_lock(lfi.m_comms_mutex);

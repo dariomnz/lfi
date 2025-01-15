@@ -27,6 +27,7 @@
 #include "impl/proxy.hpp"
 
 namespace LFI {
+
 int socket::server_init(const std::string& addr, int& port) {
     struct sockaddr_in server_addr = {};
     int ret;
@@ -43,7 +44,7 @@ int socket::server_init(const std::string& addr, int& port) {
 
     server_addr.sin_family = AF_INET;
     if (!addr.empty()) {
-        debug_info("Socket bind to "<<addr);
+        debug_info("Socket bind to " << addr);
         if (PROXY(inet_pton)(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
             print_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
             return -1;
@@ -76,7 +77,7 @@ int socket::server_init(const std::string& addr, int& port) {
 
     debug_info("available at " << port);
 
-    debug_info(">> End = "<<socket);
+    debug_info(">> End = " << socket);
     return socket;
 }
 
@@ -88,7 +89,7 @@ int socket::client_init(const std::string& addr, int port) {
     struct addrinfo hints = {};
     struct addrinfo* res;
 
-    hints.ai_family = AF_INET;      // Allow IPv4 or IPv6
+    hints.ai_family = AF_INET;        // Allow IPv4 or IPv6
     hints.ai_socktype = SOCK_STREAM;  // TCP socket
 
     // Get address information
@@ -106,7 +107,7 @@ int socket::client_init(const std::string& addr, int port) {
         }
         // Attempt to connect
         if ((ret = PROXY(connect)(socket, p->ai_addr, p->ai_addrlen)) == -1) {
-            print_error("connect "<<addr<<" port "<<port);
+            print_error("connect " << addr << " port " << port);
             socket::close(socket);
             continue;
         }
@@ -127,15 +128,15 @@ int socket::client_init(const std::string& addr, int port) {
 
     int buf = 123;
     ret = send(socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)){
+    if (ret != sizeof(buf)) {
         return -1;
     }
     ret = recv(socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)){
+    if (ret != sizeof(buf)) {
         return -1;
     }
 
-    debug_info(">> End = "<<socket);
+    debug_info(">> End = " << socket);
     return socket;
 }
 
@@ -176,7 +177,7 @@ int socket::open() {
         return ret;
     }
 
-    debug_info(">> End = "<<out_socket);
+    debug_info(">> End = " << out_socket);
     return out_socket;
 }
 
@@ -204,15 +205,15 @@ int socket::accept(int socket) {
 
     int buf = 123;
     ret = recv(new_socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)){
+    if (ret != sizeof(buf)) {
         return -1;
     }
     ret = send(new_socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)){
+    if (ret != sizeof(buf)) {
         return -1;
     }
 
-    debug_info(">> End = "<<new_socket);
+    debug_info(">> End = " << new_socket);
     return new_socket;
 }
 
@@ -220,7 +221,7 @@ int socket::close(int socket) {
     int ret = -1;
     debug_info(">> Begin");
     ret = PROXY(close)(socket);
-    debug_info(">> End = "<<ret);
+    debug_info(">> End = " << ret);
     return ret;
 }
 
@@ -239,7 +240,7 @@ ssize_t socket::send(int socket, const void* data, size_t len) {
 
     } while ((l > 0) && (r >= 0));
 
-    debug_info(">> End = "<<len);
+    debug_info(">> End = " << len);
     return len;
 }
 
@@ -258,7 +259,7 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
 
     } while ((l > 0) && (r >= 0));
 
-    debug_info(">> End = "<<len);
+    debug_info(">> End = " << len);
     return len;
 }
 }  // namespace LFI
