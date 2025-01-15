@@ -77,8 +77,8 @@ int lfi_server_accept(int socket)
     
     std::unique_lock fut_lock(lfi.m_fut_mutex);
     lfi.m_fut_comms.emplace(out,
-        std::async(std::launch::async, [client_socket, &lfi](){
-            int ret = lfi.init_server(client_socket);
+        std::async(std::launch::async, [client_socket, out, &lfi](){
+            int ret = lfi.init_server(client_socket, out);
             uint32_t out = 0;
             if (ret >= 0){
                 out = ret;
