@@ -142,7 +142,7 @@ namespace LFI
         fabric_ep &m_ep;
 
         // For fault tolerance
-        std::mutex ft_mutex;
+        std::recursive_mutex ft_mutex;
         std::unordered_set<fabric_request*> ft_requests;
         bool ft_error = false;
 
@@ -244,7 +244,7 @@ namespace LFI
     public:
         int progress(fabric_request &request);
         int wait(fabric_request &request, int32_t timeout_ms = -1);
-        int wait_num(std::vector<std::reference_wrapper<fabric_request>> &request, int how_many);
+        int wait_num(std::vector<std::reference_wrapper<fabric_request>> &request, int how_many, int32_t timeout_ms = -1);
         int cancel(fabric_request &request);
         fabric_msg async_send(const void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);
         fabric_msg async_recv(void *buffer, size_t size, uint32_t tag, fabric_request &request, int32_t timeout_ms = -1);

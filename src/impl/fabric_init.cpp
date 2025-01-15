@@ -411,7 +411,7 @@ namespace LFI
 
             auto fut_it = m_fut_comms.find(id);
             if (fut_it == m_fut_comms.end()){
-                debug_info("[LFI] End not found in futs");
+                debug_info("[LFI] End "<<id<<" not found in futs");
                 return nullptr;
             }
 
@@ -431,12 +431,12 @@ namespace LFI
             it = m_comms.find(id);
             if (it == m_comms.end())
             {
-                debug_info("[LFI] End not found in comms nor futs");
+                debug_info("[LFI] End "<<id<<" not found in comms nor futs");
                 return nullptr;
             }
         }
 
-        debug_info("[LFI] End found");
+        debug_info("[LFI] End "<<id<<" found");
         return &it->second;
     }
 

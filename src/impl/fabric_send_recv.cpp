@@ -138,10 +138,6 @@ namespace LFI
             fi_cq_readerr(request.m_comm.m_ep.cq, &err, 0);
             debug_info(fi_cq_err_entry_to_string(err, request.m_comm.m_ep.cq));
 
-            // Only report when the ptr to the request is the same as the actual request when canceled
-            // because it can be free because the canceled is not always waited 
-            if (std::abs(err.err) == FI_ECANCELED && err.op_context != (void*)(&request)) return ret;
-            
             fabric_request *request_p = static_cast<fabric_request *>(err.op_context);
             std::unique_lock request_lock(request_p->mutex);
             debug_info("[Error] "<<request_p->to_string()<<" cq error");
@@ -153,7 +149,15 @@ namespace LFI
             }else{
                 request_p->error = -LFI_ERROR;
             }
-            request_p->cv.notify_all();
+            request_p->cv.notify_all(); 
+            if (request_p->shared_wait_struct.has_value()){
+                auto &shared_wait_struct = request_p->shared_wait_struct.value().get();
+                std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
+                shared_wait_struct.wait_count--;
+                if (shared_wait_struct.wait_count <= 0){
+                    shared_wait_struct.wait_cv.notify_all();
+                }
+            }   
             return ret;
         }
 
@@ -214,23 +218,14 @@ namespace LFI
         while (request.wait_context && !is_timeout)
         {
             if (ep_lock.try_lock()){
-                while (request.wait_context && !is_timeout)
-                {
-                    request_lock.unlock();
-                    progress(request);
-                    if (timeout_ms >= 0){
-                        is_timeout = wait_check_timeout(timeout_ms, start);
-                    }
-                    request_lock.lock();
-                }
+                request_lock.unlock();
+                progress(request);
+                request_lock.lock();
                 ep_lock.unlock();
             }else{
-                if (request.wait_context){
-                    request.cv.wait_for(request_lock, std::chrono::milliseconds(env::get_instance().LFI_ms_wait_sleep));
-                }
+                request.cv.wait_for(request_lock, std::chrono::milliseconds(env::get_instance().LFI_ms_wait_sleep));
             }
             if(timeout_ms >= 0){
-                if (is_timeout) continue;
                 is_timeout = wait_check_timeout(timeout_ms, start);
             }
         }
@@ -252,13 +247,18 @@ namespace LFI
         return LFI_SUCCESS;
     }
 
-    int LFI::wait_num(std::vector<std::reference_wrapper<fabric_request>> &requests, int how_many)
+    int LFI::wait_num(std::vector<std::reference_wrapper<fabric_request>> &requests, int how_many, int32_t timeout_ms)
     {
-        debug_info("[LFI] Start how_many "<<how_many);
-        if (how_many > static_cast<int>(requests.size())) return -1;
+        debug_info("[LFI] Start how_many "<<how_many<<" timeout_ms "<<timeout_ms);
+        if (how_many > static_cast<int>(requests.size()) || how_many <= 0 || requests.size() == 0) return -1;
         wait_struct shared_wait = {.wait_count = how_many};
         int wait_shm_ep = 0, wait_peer_ep = 0;
         std::optional<std::reference_wrapper<fabric_request>> one_shm_rq, one_peer_rq;
+        decltype(std::chrono::high_resolution_clock::now()) start;
+        bool is_timeout = false;
+        if (timeout_ms >= 0){
+            start = std::chrono::high_resolution_clock::now();
+        }
         // Set up the wait
         for (auto &request_ref : requests)
         {
@@ -296,7 +296,7 @@ namespace LFI
         std::unique_lock shm_lock(shm_ep.mutex_ep, std::defer_lock);
         std::unique_lock peer_lock(peer_ep.mutex_ep, std::defer_lock);
         bool made_progress = false;
-        while(shared_wait.wait_count > 0){
+        while(shared_wait.wait_count > 0 && !is_timeout){
             // debug_info("shared_wait.wait_count "<<shared_wait.wait_count);
             made_progress = false;
             if (shared_wait.wait_type == wait_endpoint::ALL ||
@@ -325,6 +325,9 @@ namespace LFI
                 // debug_info("wait");
                 shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(env::get_instance().LFI_ms_wait_sleep));
             }
+            if (timeout_ms >= 0){
+                is_timeout = wait_check_timeout(timeout_ms, start);
+            }
         }
 
         wait_lock.unlock();
@@ -337,14 +340,30 @@ namespace LFI
         {
             index = (first_rand + i) % requests.size();
             auto &request = requests[index].get();
-            std::scoped_lock request_lock(request.mutex);
-            request.shared_wait_struct = {};
-            // Get the int the vector first completed
-            if (request.is_completed() && out_index == -1){
-                out_index = index;
+            {
+                std::scoped_lock request_lock(request.mutex);
+                request.shared_wait_struct = {};
+                // Get the int the vector first completed
+                if (request.is_completed()) {
+                    if (out_index == -1){
+                        out_index = index;
+                    }
+                }else{
+                    request.error = -LFI_TIMEOUT;
+                }
+            }
+
+            if (env::get_instance().LFI_fault_tolerance){
+                std::unique_lock ft_lock(request.m_comm.ft_mutex);
+                debug_info("[LFI] erase request "<<request.to_string()<<" in comm "<<request.m_comm.rank_peer);
+                request.m_comm.ft_requests.erase(&request);
             }
         }
 
+        if (is_timeout) {
+            debug_info("[LFI] End how_many "<<how_many<<" timeout");
+            return -LFI_TIMEOUT;
+        }
         debug_info("[LFI] End how_many "<<how_many<<" out_index "<<out_index);
         return out_index;
     }
@@ -352,7 +371,7 @@ namespace LFI
     int LFI::cancel(fabric_request &request){
         // The inject is not cancelled
         debug_info("[LFI] Start "<<request.to_string());
-        if (request.is_inject) return 0;
+        if (request.is_inject || request.is_completed()) return 0;
 
         fid_ep *p_ep = nullptr;
         if (request.is_send){
