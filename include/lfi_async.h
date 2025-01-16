@@ -29,12 +29,14 @@
 extern "C"
 {
 #endif
+
     typedef struct lfi_request lfi_request;
 
-    #define LFI_ANY_COMM_SHM (0xFFFFFF - 1)
+    #define LFI_ANY_COMM_SHM  (0xFFFFFF - 1)
     #define LFI_ANY_COMM_PEER (0xFFFFFF - 2)
 
-    lfi_request* lfi_request_create(int id);
+    lfi_request *lfi_request_create(int id);
+    // It is only secure to free a request if is completed or canceled
     void lfi_request_free(lfi_request *request);
     bool lfi_request_completed(lfi_request *request);
     // When completed return values else -1
@@ -44,20 +46,20 @@ extern "C"
 
     ssize_t lfi_send_async(lfi_request *request, const void *data, size_t size);
     ssize_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int tag);
-    
+
     ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
     ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
-    
+
     ssize_t lfi_wait(lfi_request *request);
     // Return the index of the first request completed
     ssize_t lfi_wait_many(lfi_request *requests[], size_t size, size_t how_many);
 
-    // When the request is cancelled it can be completed, so if it is important for the user
-    // whether it is completed or not, it is necessary to check if it has been completed afterwards.
+    // When the request is cancelled it can be completed by the hardware, so, if it is important
+    // for the user whether it is completed or not, it is necessary to check it after this call.
     ssize_t lfi_cancel(lfi_request *request);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // _LFI_ASYNC_H
+#endif  // _LFI_ASYNC_H
