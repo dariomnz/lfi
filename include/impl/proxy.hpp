@@ -29,22 +29,23 @@
 #define PROXY(func) \
     ::lookupSymbol<::func>(#func)
 
+auto getSymbol(const char *name)
+{
+    auto symbol = ::dlsym(RTLD_NEXT, name);
+    if (!symbol)
+    {
+        std::string errormsg = "dlsym failed to find symbol '";
+        errormsg += name;
+        errormsg += "'";
+        throw std::runtime_error(errormsg);
+    }
+    return symbol;
+}
+
 template <auto T>
 auto lookupSymbol(const char *name)
 {
     using return_type = decltype(T);
-    static return_type symbol = nullptr;
-    if (symbol == nullptr)
-    {
-        symbol = (return_type)::dlsym(RTLD_NEXT, name);
-        if (!symbol)
-        {
-            std::string errormsg = "dlsym failed to find symbol '";
-            errormsg += name;
-            errormsg += "'";
-            throw std::runtime_error(errormsg);
-        }
-    }
-
+    static return_type symbol = (return_type)getSymbol(name);
     return symbol;
 }
