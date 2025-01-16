@@ -98,7 +98,7 @@ struct lfi_request {
     // context necesary for fabric interface
     struct fi_context context = {};
 
-    lfi_comm &m_comm;
+    std::shared_ptr<lfi_comm> m_comm;
     std::mutex mutex = {};
     std::condition_variable cv = {};
     bool wait_context = true;
@@ -110,7 +110,7 @@ struct lfi_request {
     fi_cq_tagged_entry entry = {};
     std::optional<std::reference_wrapper<wait_struct>> shared_wait_struct = {};
     lfi_request() = delete;
-    lfi_request(lfi_comm &comm) : m_comm(comm) {}
+    lfi_request(std::shared_ptr<lfi_comm> comm) : m_comm(comm) {}
     lfi_request(const lfi_request &&request) : m_comm(request.m_comm) {}
 
     void reset() {
@@ -206,9 +206,9 @@ class LFI {
 
     // address.cpp
    public:
-    int get_addr(lfi_comm &lfi_comm, std::vector<uint8_t> &out_addr);
-    int register_addr(lfi_comm &lfi_comm, std::vector<uint8_t> &addr);
-    int remove_addr(lfi_comm &lfi_comm);
+    int get_addr(std::shared_ptr<lfi_comm> lfi_comm, std::vector<uint8_t> &out_addr);
+    int register_addr(std::shared_ptr<lfi_comm> lfi_comm, std::vector<uint8_t> &addr);
+    int remove_addr(std::shared_ptr<lfi_comm> lfi_comm);
 
     // cancel.cpp
    public:
@@ -217,13 +217,13 @@ class LFI {
     // comm.cpp
    public:
     uint32_t reserve_comm();
-    lfi_comm &init_comm(bool is_shm, int32_t comm_id = -1);
-    lfi_comm *get_comm(uint32_t id);
+    std::shared_ptr<lfi_comm> init_comm(bool is_shm, int32_t comm_id = -1);
+    std::shared_ptr<lfi_comm> get_comm(uint32_t id);
     int close_comm(uint32_t id);
 
    private:
-    lfi_comm &create_comm(lfi_ep &lfi_ep, int32_t comm_id = -1);
-    lfi_comm &create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id);
+    std::shared_ptr<lfi_comm> create_comm(lfi_ep &lfi_ep, int32_t comm_id = -1);
+    std::shared_ptr<lfi_comm> create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id);
 
     // connection.cpp
    public:
@@ -248,7 +248,7 @@ class LFI {
     ~LFI();
    private:
     int set_hints(lfi_ep &lfi_ep, const std::string &prov);
-    int init(lfi_ep &fabric);
+    int init(lfi_ep &lfi_ep);
     int destroy(lfi_ep &lfi_ep);
 
     // recv.cpp
@@ -267,7 +267,7 @@ class LFI {
    private:
     inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
    public:
-    int progress(lfi_request &request);
+    int progress(lfi_ep &lfi_ep);
     int wait(lfi_request &request, int32_t timeout_ms = -1);
     int wait_num(std::vector<std::reference_wrapper<lfi_request>> &request, int how_many, int32_t timeout_ms = -1);
 
@@ -279,7 +279,7 @@ class LFI {
     std::mutex m_fut_mutex;
     std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
     std::mutex m_comms_mutex;
-    std::unordered_map<uint32_t, lfi_comm> m_comms;
+    std::unordered_map<uint32_t, std::shared_ptr<lfi_comm>> m_comms;
     std::atomic_uint32_t m_rank_counter = {0};
 
    public:

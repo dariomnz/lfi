@@ -36,9 +36,9 @@ int LFI::cancel(lfi_request &request) {
 
     fid_ep *p_ep = nullptr;
     if (request.is_send) {
-        p_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.tx_ep : request.m_comm.m_ep.ep;
+        p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
     } else {
-        p_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
+        p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
     }
     // Cancel request and notify
     int ret = 0;
@@ -50,9 +50,9 @@ int LFI::cancel(lfi_request &request) {
 
     if (request.is_send == true) {
         // Try one progress to read the canceled and not accumulate errors
-        std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+        std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
         if (ep_lock.try_lock()) {
-            progress(request);
+            progress(request.m_comm->m_ep);
             ep_lock.unlock();
         }
 

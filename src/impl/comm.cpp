@@ -28,7 +28,7 @@ namespace LFI {
 
 uint32_t LFI::reserve_comm() { return m_rank_counter.fetch_add(1); }
 
-lfi_comm &LFI::init_comm(bool is_shm, int32_t comm_id) {
+std::shared_ptr<lfi_comm> LFI::init_comm(bool is_shm, int32_t comm_id) {
     if (is_shm) {
         return create_comm(shm_ep, comm_id);
     } else {
@@ -36,7 +36,7 @@ lfi_comm &LFI::init_comm(bool is_shm, int32_t comm_id) {
     }
 }
 
-lfi_comm &LFI::create_comm(lfi_ep &lfi_ep, int32_t comm_id) {
+std::shared_ptr<lfi_comm> LFI::create_comm(lfi_ep &lfi_ep, int32_t comm_id) {
     uint32_t new_id = comm_id;
 
     std::unique_lock comms_lock(m_comms_mutex);
@@ -51,32 +51,32 @@ lfi_comm &LFI::create_comm(lfi_ep &lfi_ep, int32_t comm_id) {
         new_id = reserve_comm();
     }
     auto [key, inserted] =
-        m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(lfi_ep));
-    key->second.rank_peer = new_id;
+        m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
+    key->second->rank_peer = new_id;
     debug_info("[LFI] rank_peer " << key->second.rank_peer);
     debug_info("[LFI] End");
     return key->second;
 }
 
-lfi_comm &LFI::create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id) {
+std::shared_ptr<lfi_comm> LFI::create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id) {
     uint32_t new_id = comm_id;
 
     debug_info("[LFI] Start");
     auto [key, inserted] =
-        m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(lfi_ep));
-    key->second.rank_peer = new_id;
-    key->second.rank_self_in_peer = new_id;
-    key->second.is_ready = true;
+        m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
+    key->second->rank_peer = new_id;
+    key->second->rank_self_in_peer = new_id;
+    key->second->is_ready = true;
     debug_info("[LFI] rank_peer " << key->second.rank_peer);
     debug_info("[LFI] End");
     return key->second;
 }
 
-lfi_comm *LFI::get_comm(uint32_t id) {
+std::shared_ptr<lfi_comm> LFI::get_comm(uint32_t id) {
     debug_info("[LFI] Start " << id);
     std::unique_lock comms_lock(m_comms_mutex);
     auto it = m_comms.find(id);
-    if (it == m_comms.end() || (it != m_comms.end() && !it->second.is_ready)) {
+    if (it == m_comms.end() || (it != m_comms.end() && !it->second->is_ready)) {
         // If fail or not ready check if is in fut comm and retry
         std::unique_lock fut_lock(m_fut_mutex);
 
@@ -107,19 +107,30 @@ lfi_comm *LFI::get_comm(uint32_t id) {
     }
 
     debug_info("[LFI] End " << id << " found");
-    return &it->second;
+    return it->second;
 }
 
 int LFI::close_comm(uint32_t id) {
     int ret = 0;
     debug_info("[LFI] Start");
 
-    lfi_comm *comm = get_comm(id);
-    if (comm == nullptr) {
+    std::shared_ptr<lfi_comm> comm = get_comm(id);
+    if (!comm) {
         return -1;
     }
+    // {
+    //     std::unique_lock ft_lock(comm->ft_mutex);
+    //     debug_info("[LFI] cancel all request in closed comm " << id);
+    //     for (auto &request : comm->ft_requests) {
+    //         if (request == nullptr) continue;
+    //         debug_info("[LFI] cancel " << request->to_string());
+    //         cancel(*request);
+    //         debug_info("[LFI] canceled " << request->to_string());
+    //     }
+    //     comm->ft_requests.clear();
+    // }
 
-    remove_addr(*comm);
+    remove_addr(comm);
 
     std::unique_lock comms_lock(m_comms_mutex);
     m_comms.erase(comm->rank_peer);

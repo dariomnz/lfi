@@ -65,16 +65,16 @@ int LFI::init_server(int socket, int32_t comm_id) {
 
     // Initialize endpoints
     bool is_shm = host_id == peer_id;
-    lfi_comm &comm = init_comm(is_shm, comm_id);
+    std::shared_ptr<lfi_comm> comm = init_comm(is_shm, comm_id);
 
     // Exchange ranks
-    ret = socket::recv(socket, &comm.rank_self_in_peer, sizeof(comm.rank_self_in_peer));
-    if (ret != sizeof(comm.rank_self_in_peer)) {
-        print_error("socket::recv comm.rank_self_in_peer socket " << socket);
+    ret = socket::recv(socket, &comm->rank_self_in_peer, sizeof(comm->rank_self_in_peer));
+    if (ret != sizeof(comm->rank_self_in_peer)) {
+        print_error("socket::recv comm->rank_self_in_peer socket " << socket);
         return -1;
     }
-    ret = socket::send(socket, &comm.rank_peer, sizeof(comm.rank_peer));
-    if (ret != sizeof(comm.rank_peer)) {
+    ret = socket::send(socket, &comm->rank_peer, sizeof(comm->rank_peer));
+    if (ret != sizeof(comm->rank_peer)) {
         print_error("socket::send comm.rank_peer socket " << socket);
         return -1;
     }
@@ -119,18 +119,18 @@ int LFI::init_server(int socket, int32_t comm_id) {
         return -1;
     }
 
-    ret = comm.rank_peer;
-    comm.is_ready = true;
+    ret = comm->rank_peer;
+    comm->is_ready = true;
 
     // Do a send recv because some providers need it
     int buf = 123;
     lfi_msg msg;
-    msg = LFI::send(comm.rank_peer, &buf, sizeof(buf), 123);
+    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), 123);
     if (msg.error < 0) {
         print_error("LFI::send");
         return msg.error;
     }
-    msg = LFI::recv(comm.rank_peer, &buf, sizeof(buf), 1234);
+    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), 1234);
     if (msg.error < 0) {
         print_error("LFI::recv");
         return msg.error;
@@ -179,17 +179,17 @@ int LFI::init_client(int socket, int32_t comm_id) {
 
     // Initialize endpoints
     bool is_shm = host_id == peer_id;
-    lfi_comm &comm = init_comm(is_shm, comm_id);
+    std::shared_ptr<lfi_comm> comm = init_comm(is_shm, comm_id);
 
     // Exchange ranks
-    ret = socket::send(socket, &comm.rank_peer, sizeof(comm.rank_peer));
-    if (ret != sizeof(comm.rank_peer)) {
-        print_error("socket::send comm.rank_peer socket " << socket);
+    ret = socket::send(socket, &comm->rank_peer, sizeof(comm->rank_peer));
+    if (ret != sizeof(comm->rank_peer)) {
+        print_error("socket::send comm->rank_peer socket " << socket);
         return -1;
     }
-    ret = socket::recv(socket, &comm.rank_self_in_peer, sizeof(comm.rank_self_in_peer));
-    if (ret != sizeof(comm.rank_self_in_peer)) {
-        print_error("socket::recv comm.rank_self_in_peer socket " << socket);
+    ret = socket::recv(socket, &comm->rank_self_in_peer, sizeof(comm->rank_self_in_peer));
+    if (ret != sizeof(comm->rank_self_in_peer)) {
+        print_error("socket::recv comm->rank_self_in_peer socket " << socket);
         return -1;
     }
 
@@ -234,18 +234,18 @@ int LFI::init_client(int socket, int32_t comm_id) {
         return ret;
     }
 
-    ret = comm.rank_peer;
-    comm.is_ready = true;
+    ret = comm->rank_peer;
+    comm->is_ready = true;
 
     // Do a recv send because some providers need it
     int buf = 123;
     lfi_msg msg;
-    msg = LFI::recv(comm.rank_peer, &buf, sizeof(buf), 123);
+    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), 123);
     if (msg.error < 0) {
         print_error("LFI::recv");
         return msg.error;
     }
-    msg = LFI::send(comm.rank_peer, &buf, sizeof(buf), 1234);
+    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), 1234);
     if (msg.error < 0) {
         print_error("LFI::send");
         return msg.error;

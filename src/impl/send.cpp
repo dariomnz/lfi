@@ -37,12 +37,12 @@ lfi_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t ta
     }
 
     // Check if comm exists
-    lfi_comm *comm = get_comm(comm_id);
-    if (comm == nullptr) {
+    std::shared_ptr<lfi_comm> comm = get_comm(comm_id);
+    if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
     }
-    lfi_request request(*comm);
+    lfi_request request(comm);
 
     msg = async_send(buffer, size, tag, request);
 
@@ -63,13 +63,13 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
     lfi_msg msg = {};
 
     // Check cancelled comm
-    if (request.m_comm.is_canceled) {
+    if (request.m_comm->is_canceled) {
         msg.error = -LFI_CANCELED_COMM;
         return msg;
     }
 
     // Check if any_comm in send is error
-    if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER) {
+    if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
         msg.error = -LFI_ERROR;
         return msg;
     }
@@ -81,27 +81,27 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
         start = std::chrono::high_resolution_clock::now();
     }
     // tag format 24 bits rank_peer 24 bits rank_self_in_peer 16 bits tag
-    uint64_t aux_rank_peer = request.m_comm.rank_peer;
-    uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
+    uint64_t aux_rank_peer = request.m_comm->rank_peer;
+    uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
     uint64_t tag_send = (aux_rank_peer << 40) | (aux_rank_self_in_peer << 16) | aux_tag;
 
-    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
-                                   << request.m_comm.rank_self_in_peer << " tag " << tag << " send_context "
+    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
+                                   << request.m_comm->rank_self_in_peer << " tag " << tag << " send_context "
                                    << (void *)&request.context);
 
     request.is_send = true;
-    if (env::get_instance().LFI_use_inject && size <= request.m_comm.m_ep.info->tx_attr->inject_size) {
-        fid_ep *p_tx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.tx_ep : request.m_comm.m_ep.ep;
+    if (env::get_instance().LFI_use_inject && size <= request.m_comm->m_ep.info->tx_attr->inject_size) {
+        fid_ep *p_tx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
         request.wait_context = false;
         request.is_inject = true;
         do {
-            ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm.fi_addr, tag_send);
+            ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm->fi_addr, tag_send);
 
             if (ret == -FI_EAGAIN) {
-                std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
                 if (ep_lock.try_lock()) {
-                    progress(request);
+                    progress(request.m_comm->m_ep);
                     ep_lock.unlock();
                 }
 
@@ -115,7 +115,7 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
                     }
                 }
 
-                if (request.m_comm.is_canceled) {
+                if (request.m_comm->is_canceled) {
                     msg.error = -LFI_CANCELED_COMM;
                     return msg;
                 }
@@ -123,18 +123,18 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
         } while (ret == -FI_EAGAIN);
 
         // To not wait in this request
-        debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << request.m_comm.rank_peer);
+        debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << request.m_comm->rank_peer);
     } else {
-        fid_ep *p_tx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.tx_ep : request.m_comm.m_ep.ep;
+        fid_ep *p_tx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
         request.wait_context = true;
         request.is_inject = false;
         do {
-            ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_send, &request.context);
+            ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm->fi_addr, tag_send, &request.context);
 
             if (ret == -FI_EAGAIN) {
-                std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
                 if (ep_lock.try_lock()) {
-                    progress(request);
+                    progress(request.m_comm->m_ep);
                     ep_lock.unlock();
                 }
 
@@ -148,7 +148,7 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
                     }
                 }
 
-                if (request.m_comm.is_canceled) {
+                if (request.m_comm->is_canceled) {
                     msg.error = -LFI_CANCELED_COMM;
                     return msg;
                 }
@@ -156,13 +156,13 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
         } while (ret == -FI_EAGAIN);
 
         if (env::get_instance().LFI_fault_tolerance && ret == 0) {
-            std::unique_lock fi_lock(request.m_comm.ft_mutex);
+            std::unique_lock fi_lock(request.m_comm->ft_mutex);
             debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm "
-                                               << request.m_comm.rank_peer);
-            request.m_comm.ft_requests.insert(&request);
+                                               << request.m_comm->rank_peer);
+            request.m_comm->ft_requests.insert(&request);
         }
 
-        debug_info("[LFI] Waiting on rank_peer " << request.m_comm.rank_peer);
+        debug_info("[LFI] Waiting on rank_peer " << request.m_comm->rank_peer);
     }
 
     if (ret != 0) {

@@ -33,12 +33,12 @@ extern "C" {
 lfi_request *lfi_request_create(int id) {
     debug_info("(" << id << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    LFI::lfi_comm *comm = lfi.get_comm(id);
-    if (comm == nullptr) {
+    std::shared_ptr<LFI::lfi_comm> comm = lfi.get_comm(id);
+    if (!comm) {
         debug_info("(" << id << ")=" << nullptr << " >> End");
         return nullptr;
     }
-    const auto ret = reinterpret_cast<lfi_request *>(new (std::nothrow) LFI::lfi_request(*comm));
+    const auto ret = reinterpret_cast<lfi_request *>(new (std::nothrow) LFI::lfi_request(comm));
     debug_info("(" << id << ")=" << ret << " >> End");
     return ret;
 }

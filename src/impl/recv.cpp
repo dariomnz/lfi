@@ -31,12 +31,12 @@ lfi_msg LFI::recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
     debug_info("[LFI] Start");
 
     // Check if comm exists
-    lfi_comm *comm = get_comm(comm_id);
-    if (comm == nullptr) {
+    std::shared_ptr<lfi_comm> comm = get_comm(comm_id);
+    if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
     }
-    lfi_request request(*comm);
+    lfi_request request(comm);
 
     msg = async_recv(buffer, size, tag, request);
 
@@ -61,11 +61,11 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
     debug_info("[LFI] Start");
 
     // For the shm
-    lfi_comm *comm = get_comm(ANY_COMM_SHM);
-    if (comm == nullptr) {
+    std::shared_ptr<lfi_comm> comm = get_comm(ANY_COMM_SHM);
+    if (!comm) {
         throw std::runtime_error("There are no LFI_ANY_COMM_SHM. This should not happend");
     }
-    lfi_request shm_request(*comm);
+    lfi_request shm_request(comm);
     // Try a recv in shm
     shm_msg = async_recv(buffer_shm, size, tag, shm_request);
     if (shm_msg.error < 0) {
@@ -73,10 +73,10 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
     }
     // For the peer
     comm = get_comm(ANY_COMM_PEER);
-    if (comm == nullptr) {
+    if (!comm) {
         throw std::runtime_error("There are no LFI_ANY_COMM_PEER. This should not happend");
     }
-    lfi_request peer_request(*comm);
+    lfi_request peer_request(comm);
     // Try a recv in peer
     peer_msg = async_recv(buffer_peer, size, tag, peer_request);
     if (peer_msg.error < 0) {
@@ -213,7 +213,7 @@ lfi_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &re
     lfi_msg msg = {};
 
     // Check cancelled comm
-    if (request.m_comm.is_canceled) {
+    if (request.m_comm->is_canceled) {
         msg.error = -LFI_CANCELED_COMM;
         return msg;
     }
@@ -225,31 +225,31 @@ lfi_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &re
         start = std::chrono::high_resolution_clock::now();
     }
     // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
-    uint64_t aux_rank_peer = request.m_comm.rank_peer;
-    uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
+    uint64_t aux_rank_peer = request.m_comm->rank_peer;
+    uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
     uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
 
-    if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER) {
+    if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
         // mask = 0x0000'00FF'FFFF'0000;
         // mask = 0xFFFF'FF00'0000'0000;
         mask = 0xFFFF'FFFF'FFFF'0000;
     }
 
-    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
-                                   << request.m_comm.rank_self_in_peer << " tag " << tag << " recv_context "
+    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
+                                   << request.m_comm->rank_self_in_peer << " tag " << tag << " recv_context "
                                    << (void *)&request.context);
 
-    fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
+    fid_ep *p_rx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
     request.wait_context = true;
     request.is_send = false;
     do {
-        ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, &request.context);
+        ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm->fi_addr, tag_recv, mask, &request.context);
 
         if (ret == -FI_EAGAIN) {
-            std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+            std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
             if (ep_lock.try_lock()) {
-                progress(request);
+                progress(request.m_comm->m_ep);
                 ep_lock.unlock();
             }
 
@@ -263,7 +263,7 @@ lfi_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &re
                 }
             }
 
-            if (request.m_comm.is_canceled) {
+            if (request.m_comm->is_canceled) {
                 msg.error = -LFI_CANCELED_COMM;
                 return msg;
             }
@@ -276,13 +276,13 @@ lfi_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &re
         return msg;
     }
 
-    debug_info("[LFI] Waiting on rank_peer " << request.m_comm.rank_peer);
+    debug_info("[LFI] Waiting on rank_peer " << request.m_comm->rank_peer);
 
     if (env::get_instance().LFI_fault_tolerance) {
-        std::unique_lock ft_lock(request.m_comm.ft_mutex);
+        std::unique_lock ft_lock(request.m_comm->ft_mutex);
         debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm "
-                                           << request.m_comm.rank_peer);
-        request.m_comm.ft_requests.insert(&request);
+                                           << request.m_comm->rank_peer);
+        request.m_comm->ft_requests.insert(&request);
     }
 
     msg.size = size;
@@ -301,37 +301,37 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     lfi_msg msg = {};
 
     // Check if comm exists
-    lfi_comm *comm = get_comm(comm_id);
-    if (comm == nullptr) {
+    std::shared_ptr<lfi_comm>comm = get_comm(comm_id);
+    if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
     }
-    lfi_request request(*comm);
+    lfi_request request(comm);
 
     // Check cancelled comm
-    if (request.m_comm.is_canceled) {
+    if (request.m_comm->is_canceled) {
         msg.error = -LFI_CANCELED_COMM;
         return msg;
     }
 
     uint64_t mask = 0;
     // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
-    uint64_t aux_rank_peer = request.m_comm.rank_peer;
-    uint64_t aux_rank_self_in_peer = request.m_comm.rank_self_in_peer;
+    uint64_t aux_rank_peer = request.m_comm->rank_peer;
+    uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
     uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
 
-    if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER) {
+    if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
         // mask = 0x0000'00FF'FFFF'0000;
         // mask = 0xFFFF'FF00'0000'0000;
         mask = 0xFFFF'FFFF'FFFF'0000;
     }
 
-    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
-                                   << request.m_comm.rank_self_in_peer << " tag " << tag << " recv_context "
+    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
+                                   << request.m_comm->rank_self_in_peer << " tag " << tag << " recv_context "
                                    << (void *)&request.context);
 
-    fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
+    fid_ep *p_rx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
     request.reset();
     request.is_send = false;
     iovec iov = {
@@ -342,7 +342,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         .msg_iov = &iov,
         .desc = nullptr,
         .iov_count = 1,
-        .addr = request.m_comm.fi_addr,
+        .addr = request.m_comm->fi_addr,
         .tag = tag_recv,
         .ignore = mask,
         .context = &request.context,
@@ -353,13 +353,13 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
 
         if (ret == -FI_EAGAIN) {
-            std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+            std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
             if (ep_lock.try_lock()) {
-                progress(request);
+                progress(request.m_comm->m_ep);
                 ep_lock.unlock();
             }
 
-            if (request.m_comm.is_canceled) {
+            if (request.m_comm->is_canceled) {
                 msg.error = -LFI_CANCELED_COMM;
                 return msg;
             }
@@ -388,13 +388,13 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
             ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
 
             if (ret == -FI_EAGAIN) {
-                std::unique_lock ep_lock(request.m_comm.m_ep.mutex_ep, std::defer_lock);
+                std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
                 if (ep_lock.try_lock()) {
-                    progress(request);
+                    progress(request.m_comm->m_ep);
                     ep_lock.unlock();
                 }
 
-                if (request.m_comm.is_canceled) {
+                if (request.m_comm->is_canceled) {
                     msg.error = -LFI_CANCELED_COMM;
                     return msg;
                 }
