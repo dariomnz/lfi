@@ -138,7 +138,7 @@ int LFI::ft_thread_loop() {
 
         for (auto &comm : comms_with_err) {
             std::unique_lock lock(comm->ft_mutex);
-            debug_info("[LFI] cancel all request in comm with error " << id);
+            debug_info("[LFI] cancel all request in comm with error " << comm->rank_peer);
             for (auto &request : comm->ft_requests) {
                 if (request == nullptr) continue;
                 debug_info("[LFI] cancel " << request->to_string());
@@ -147,7 +147,7 @@ int LFI::ft_thread_loop() {
             }
             comm->ft_requests.clear();
 
-            debug_info("[LFI] close comm with error " << id);
+            debug_info("[LFI] close comm with error " << comm->rank_peer);
             comm->is_canceled = true;
         }
         comms_with_err.clear();

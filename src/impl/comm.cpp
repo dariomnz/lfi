@@ -53,7 +53,7 @@ std::shared_ptr<lfi_comm> LFI::create_comm(lfi_ep &lfi_ep, int32_t comm_id) {
     auto [key, inserted] =
         m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
     key->second->rank_peer = new_id;
-    debug_info("[LFI] rank_peer " << key->second.rank_peer);
+    debug_info("[LFI] rank_peer " << key->second->rank_peer);
     debug_info("[LFI] End");
     return key->second;
 }
@@ -67,7 +67,7 @@ std::shared_ptr<lfi_comm> LFI::create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id)
     key->second->rank_peer = new_id;
     key->second->rank_self_in_peer = new_id;
     key->second->is_ready = true;
-    debug_info("[LFI] rank_peer " << key->second.rank_peer);
+    debug_info("[LFI] rank_peer " << key->second->rank_peer);
     debug_info("[LFI] End");
     return key->second;
 }

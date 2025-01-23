@@ -114,7 +114,7 @@ int LFI::init(lfi_ep &lfi_ep) {
     }
 
     debug_info("[LFI] " << fi_tostr(lfi_ep.info, FI_TYPE_INFO));
-    debug_info("[LFI] provider: " << lfi_ep.info->lfi_attr->prov_name);
+    debug_info("[LFI] provider: " << lfi_ep.info->fabric_attr->prov_name);
 
     ret = fi_fabric(lfi_ep.info->fabric_attr, &lfi_ep.fabric, NULL);
     debug_info("[LFI] fi_fabric = " << ret);

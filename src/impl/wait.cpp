@@ -231,7 +231,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
 
     if (env::get_instance().LFI_fault_tolerance) {
         std::unique_lock ft_lock(request.m_comm->ft_mutex);
-        debug_info("[LFI] erase request " << request.to_string() << " in comm " << request.m_comm.rank_peer);
+        debug_info("[LFI] erase request " << request.to_string() << " in comm " << request.m_comm->rank_peer);
         request.m_comm->ft_requests.erase(&request);
     }
 
