@@ -73,8 +73,9 @@ static constexpr const char *lfi_strerror(int error) {
 }
 
 // Reserved tags
-#define LFI_TAG_FT              65535
-#define LFI_TAG_RECV_LD_PRELOAD 65534
+#define LFI_TAG_FT                      65535
+#define LFI_TAG_RECV_LD_PRELOAD         65534
+#define LFI_TAG_BUFFERED_LD_PRELOAD     65533
 
 // Forward declaration
 struct lfi_ep;

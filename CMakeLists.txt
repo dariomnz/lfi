@@ -20,7 +20,7 @@ link_libraries("pthread" "dl")
 # add_link_options(-fsanitize=undefined)
 
 add_subdirectory(src)
-# add_subdirectory(ld_preload)
+add_subdirectory(ld_preload)
 
 option(BUILD_EXAMPLES "Build the examples" OFF)
 if(BUILD_EXAMPLES)

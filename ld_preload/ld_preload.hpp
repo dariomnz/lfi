@@ -27,24 +27,31 @@
 #include <unordered_map>
 #include <mutex>
 #include <tuple>
-#include <queue>
-#include <impl/fabric.hpp>
+#include <deque>
+#include <impl/lfi.hpp>
 
 class ld_preload
 {
 public:
+    std::unique_ptr<LFI::LFI> m_lfi;
+
     struct lfi_socket
     {
         int lfi_id = -1;
         int eventfd = -1;
+        std::mutex m_mutex = {};
+        struct buffered {
+            std::vector<uint8_t> buffer = {};
+            uint64_t consumed = 0;
+        };
+        std::deque<buffered> buffers = {};
     };
 
     std::recursive_mutex m_mutex;
     std::unordered_map<int, lfi_socket> socket_ids;
 
-    std::mutex m_eventfd_requests_mutex;
-    uint64_t aux_buff = 0;
-    std::unordered_map<int, LFI::fabric_request> m_eventfd_requests_recv;
+    std::mutex m_map_comm_socket_mutex;
+    std::unordered_map<int, int> m_map_comm_socket;
 
     std::thread m_thread_eventfd;
     bool m_thread_eventfd_is_running = false;
@@ -52,6 +59,7 @@ public:
     std::condition_variable m_thread_eventfd_cv;
 
     int create_eventfd(lfi_socket& ids);
+    int destroy_eventfd(lfi_socket& ids);
     static inline bool is_caller_libfabric();
     void thread_eventfd_start();
     void thread_eventfd_end();
@@ -59,12 +67,14 @@ public:
 
     ld_preload()
     {
+        m_lfi = std::make_unique<LFI::LFI>();
         thread_eventfd_start();
     }
 
     ~ld_preload()
     {
         thread_eventfd_end();
+        m_lfi.reset();
     }
 
     static ld_preload &get_instance()

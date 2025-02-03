@@ -29,7 +29,7 @@
 #define PROXY(func) \
     ::lookupSymbol<::func>(#func)
 
-auto getSymbol(const char *name)
+static auto getSymbol(const char *name)
 {
     auto symbol = ::dlsym(RTLD_NEXT, name);
     if (!symbol)
@@ -43,7 +43,7 @@ auto getSymbol(const char *name)
 }
 
 template <auto T>
-auto lookupSymbol(const char *name)
+static auto lookupSymbol(const char *name)
 {
     using return_type = decltype(T);
     static return_type symbol = (return_type)getSymbol(name);

@@ -24,6 +24,7 @@
 #include "impl/debug.hpp"
 #include <ostream>
 #include <sstream>
+#include <iomanip>
 #include <cstring>
 #include <mutex>
 #include <arpa/inet.h>
@@ -35,7 +36,7 @@
 #define debug(out_format)                                                                                                          \
     {                                                                                                                              \
         std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                                                                \
-        std::cerr << "[" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] " << out_format << std::endl << std::flush; \
+        std::cerr << "[" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl << std::flush; \
     }
 #else
 #define debug(out_format)
@@ -54,7 +55,7 @@
         return #name;      \
     }
 
-#define STR_ERRNO (ret < 0 ? std::strerror(errno) : "")
+#define STR_ERRNO std::strerror(errno)
 
 std::ostream &operator<<(std::ostream &os, const socklen_t *addlen)
 {
@@ -774,27 +775,50 @@ std::string getMSGFlags(int flags)
     return result;
 }
 
-std::string printIovec(const struct iovec *iov, size_t iovlen)
+template<typename T>
+std::string to_hex(const std::vector<T>& vec)
 {
-    std::string result;
-
-    for (size_t i = 0; i < iovlen; ++i)
-    {
-        // const char* data = static_cast<const char*>(iov[i].iov_base);
-        result += "iovec[" + std::to_string(i) + "]: ";
-        // result.append(data, iov[i].iov_len);
-        result += "(" + std::to_string(iov[i].iov_len) + " bytes) ,";
+    std::stringstream result;
+    result << std::dec << "vec(" << vec.size() << " bytes) ";
+    for (size_t j = 0; j < vec.size(); ++j) {
+        result << std::hex << std::setw(2) << std::setfill('0') << (int)vec[j] << " ";
+        if (j % 1024 == 0 && j != 0){
+            result << std::endl;
+        }
     }
-
-    return result;
+    result << std::endl;
+    return result.str();
 }
 
-std::ostream &operator<<(std::ostream &os, const struct msghdr *msg)
+std::string printIovec(const struct iovec *iov, size_t iovlen, size_t how_many = 0)
 {
+    std::stringstream result;
+
+    for (ssize_t i = 0; i < static_cast<ssize_t>(iovlen); ++i)
+    {
+        uint8_t * data = static_cast<uint8_t *>(iov[i].iov_base);
+        result << std::dec << "iovec[" << i << "] ";
+        result << std::dec << "(" << iov[i].iov_len << " bytes) ";
+        auto num = std::min(iov[i].iov_len, how_many);
+        for (size_t j = 0; j < num; ++j) {
+            result << std::hex << std::setw(2) << std::setfill('0') << (int)data[j] << " ";
+            if (j % 1024 == 0 && j != 0){
+                result << std::endl;
+            }
+        }
+        result << std::endl;
+    }
+
+    return result.str();
+}
+
+std::string msghdr_to_str(const struct msghdr *msg, size_t how_many = 0)
+{
+    std::stringstream os;
     if (!msg)
     {
         os << "null";
-        return os;
+        return os.str();
     }
 
     os << "Message Header Details: ";
@@ -826,7 +850,7 @@ std::ostream &operator<<(std::ostream &os, const struct msghdr *msg)
 
     if (msg->msg_iov && msg->msg_iovlen > 0)
     {
-        os << "Message Data: " << printIovec(msg->msg_iov, msg->msg_iovlen);
+        os << "Message Data: " << printIovec(msg->msg_iov, msg->msg_iovlen, how_many);
     }
     else
     {
@@ -844,8 +868,7 @@ std::ostream &operator<<(std::ostream &os, const struct msghdr *msg)
     os << ", ";
 
     os << "Message Flags: " << getMSGFlags(msg->msg_flags);
-
-    return os;
+    return os.str();
 }
 
 std::string interpretEvents(short events)
