@@ -53,10 +53,9 @@ public:
     std::mutex m_map_comm_socket_mutex;
     std::unordered_map<int, int> m_map_comm_socket;
 
-    std::thread m_thread_eventfd;
-    bool m_thread_eventfd_is_running = false;
+    std::vector<std::thread> m_thread_eventfd;
     std::mutex m_thread_eventfd_mutex;
-    std::condition_variable m_thread_eventfd_cv;
+    std::atomic_bool m_thread_eventfd_is_running = {false};
 
     int create_eventfd(lfi_socket& ids);
     int destroy_eventfd(lfi_socket& ids);

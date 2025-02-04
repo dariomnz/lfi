@@ -36,7 +36,7 @@
 #define debug(out_format)                                                                                                          \
     {                                                                                                                              \
         std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                                                                \
-        std::cerr << "[" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl << std::flush; \
+        std::cerr << ::LFI::getTime() << " [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl << std::flush; \
     }
 #else
 #define debug(out_format)

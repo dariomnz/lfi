@@ -67,6 +67,12 @@ namespace LFI
             {
                 LFI_async_connection = (atoi(env_lfi_async_connection) != 0);
             }
+            // LFI_LD_PRELOAD_THREADS
+            char *env_lfi_ld_preload_threads = std::getenv("LFI_LD_PRELOAD_THREADS");
+            if ((env_lfi_ld_preload_threads != NULL) && (std::strlen(env_lfi_ld_preload_threads) > 0))
+            {
+                LFI_ld_preload_threads = atoi(env_lfi_ld_preload_threads);
+            }
         }
         // Delete copy constructor
         env(const env &) = delete;
@@ -82,6 +88,7 @@ namespace LFI
         int LFI_ms_wait_sleep = 10;
         bool LFI_use_inject = false;
         bool LFI_async_connection = true;
+        bool LFI_ld_preload_threads = 1;
 
     public:
         static env &get_instance()
