@@ -196,7 +196,7 @@ void ld_preload::thread_eventfd_loop()
         int source = -1;
         if (completed == 0) {
             // SHM
-            source = ((shm_request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16);
+            source = ((shm_request->entry.tag & MASK_RANK) >> MASK_RANK_BYTES);
             buff_size = aux_buff_shm;
             // Reuse the request
             if (any_recv(*shm_request, true)){
@@ -204,7 +204,7 @@ void ld_preload::thread_eventfd_loop()
             }
         } else if (completed == 1) {
             // PEER
-            source = ((peer_request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16);
+            source = ((peer_request->entry.tag & MASK_RANK) >> MASK_RANK_BYTES);
             buff_size = aux_buff_peer;
             // Reuse the request
             if (any_recv(*peer_request, false)){

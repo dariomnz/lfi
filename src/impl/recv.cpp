@@ -48,9 +48,8 @@ lfi_msg LFI::recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
 
     msg.error = request.error;
     msg.size = request.entry.len;
-    msg.tag = request.entry.tag & 0x0000'0000'0000'FFFF;
-    msg.rank_self_in_peer = (request.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-    msg.rank_peer = (request.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+    msg.tag = request.entry.tag & MASK_TAG;
+    msg.rank = (request.entry.tag & MASK_RANK) >> MASK_RANK_BYTES;
 
     debug_info("[LFI] End");
     return msg;
@@ -103,15 +102,13 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
 
     shm_msg.error = shm_request.error;
     shm_msg.size = shm_request.entry.len;
-    shm_msg.tag = shm_request.entry.tag & 0x0000'0000'0000'FFFF;
-    shm_msg.rank_self_in_peer = (shm_request.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-    shm_msg.rank_peer = (shm_request.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+    shm_msg.tag = shm_request.entry.tag & MASK_TAG;
+    shm_msg.rank = (shm_request.entry.tag & MASK_RANK) >> MASK_RANK_BYTES;
 
     peer_msg.error = peer_request.error;
     peer_msg.size = peer_request.entry.len;
-    peer_msg.tag = peer_request.entry.tag & 0x0000'0000'0000'FFFF;
-    peer_msg.rank_self_in_peer = (peer_request.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-    peer_msg.rank_peer = (peer_request.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+    peer_msg.tag = peer_request.entry.tag & MASK_TAG;
+    peer_msg.rank = (peer_request.entry.tag & MASK_RANK) >> MASK_RANK_BYTES;
     debug_info("[LFI] End shm_msg " << shm_msg.to_string() << " peer_msg " << peer_msg.to_string());
     return {shm_msg, peer_msg};
 }
@@ -203,7 +200,7 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
 //     msg.size = request->entry.len;
 //     msg.tag = request->entry.tag & 0x0000'0000'0000'FFFF;
 //     msg.rank_self_in_peer = (request->entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-//     msg.rank_peer = (request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+//     msg.rank = (request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
 //     debug_info("[LFI] End");
 //     return msg;
 // }
@@ -224,16 +221,13 @@ lfi_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &re
     if (timeout_ms >= 0) {
         start = std::chrono::high_resolution_clock::now();
     }
-    // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
+
     uint64_t aux_rank_peer = request.m_comm->rank_peer;
-    uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
-    uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
+    uint64_t tag_recv = (aux_rank_peer << MASK_RANK_BYTES) | aux_tag;
 
     if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
-        // mask = 0x0000'00FF'FFFF'0000;
-        // mask = 0xFFFF'FF00'0000'0000;
-        mask = 0xFFFF'FFFF'FFFF'0000;
+        mask = MASK_RANK;
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
@@ -286,12 +280,10 @@ lfi_msg LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &re
     }
 
     msg.size = size;
-    msg.tag = tag_recv & 0x0000'0000'0000'FFFF;
-    msg.rank_self_in_peer = (tag_recv & 0xFFFF'FF00'0000'0000) >> 40;
-    msg.rank_peer = (tag_recv & 0x0000'00FF'FFFF'0000) >> 16;
+    msg.tag = tag_recv & MASK_TAG;
+    msg.rank = (tag_recv & MASK_RANK) >> MASK_RANK_BYTES;
 
-    debug_info("[LFI] msg size " << msg.size << " rank_peer " << msg.rank_peer << " rank_self_in_peer "
-                                 << msg.rank_self_in_peer << " tag " << msg.tag << " error " << msg.error);
+    debug_info("[LFI] msg size " << msg.size << " rank " << msg.rank << " tag " << msg.tag << " error " << msg.error);
     debug_info("[LFI] End = " << size);
     return msg;
 }
@@ -315,16 +307,13 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     }
 
     uint64_t mask = 0;
-    // tag format 24 bits rank_self_in_peer 24 bits rank_peer 16 bits tag
+
     uint64_t aux_rank_peer = request.m_comm->rank_peer;
-    uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
-    uint64_t tag_recv = (aux_rank_self_in_peer << 40) | (aux_rank_peer << 16) | aux_tag;
+    uint64_t tag_recv = (aux_rank_peer << MASK_RANK_BYTES) | aux_tag;
 
     if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
-        // mask = 0x0000'00FF'FFFF'0000;
-        // mask = 0xFFFF'FF00'0000'0000;
-        mask = 0xFFFF'FFFF'FFFF'0000;
+        mask = MASK_RANK;
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
@@ -418,12 +407,10 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
 
     msg.size = size;
     msg.error = request.error;
-    msg.tag = request.entry.tag & 0x0000'0000'0000'FFFF;
-    msg.rank_self_in_peer = (request.entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-    msg.rank_peer = (request.entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
+    msg.tag = request.entry.tag & MASK_TAG;
+    msg.rank = (request.entry.tag & MASK_RANK) >> MASK_RANK_BYTES;
 
-    debug_info("[LFI] msg size " << msg.size << " rank_peer " << msg.rank_peer << " rank_self_in_peer "
-                                 << msg.rank_self_in_peer << " tag " << msg.tag << " error " << msg.error);
+    debug_info("[LFI] msg size " << msg.size << " rank " << msg.rank << " tag " << msg.tag << " error " << msg.error);
     debug_info("[LFI] End = " << size);
     return msg;
 }

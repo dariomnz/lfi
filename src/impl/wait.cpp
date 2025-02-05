@@ -86,9 +86,8 @@ static inline std::string fi_cq_tagged_entry_to_string(const fi_cq_tagged_entry 
     out << "  data: " << entry.data << std::endl;
     out << "  tag: " << entry.tag << std::endl;
     if (entry.flags & FI_RECV) {
-        out << "    real_tag: " << (entry.tag & 0x0000'0000'0000'FFFF) << std::endl;
-        out << "    rank_peer: " << ((entry.tag & 0x0000'00FF'FFFF'0000) >> 16) << std::endl;
-        out << "    rank_self_in_peer: " << ((entry.tag & 0xFFFF'FF00'0000'0000) >> 40) << std::endl;
+        out << "    real_tag: " << (entry.tag & MASK_TAG) << std::endl;
+        out << "    rank: " << ((entry.tag & MASK_RANK) >> MASK_RANK_BYTES) << std::endl;
     }
     return out.str();
 }
@@ -103,9 +102,8 @@ static inline std::string fi_cq_err_entry_to_string(const fi_cq_err_entry &entry
     out << "  buf: " << entry.buf << std::endl;
     out << "  data: " << entry.data << std::endl;
     out << "  tag: " << entry.tag << std::endl;
-    out << "    real_tag: " << (entry.tag & 0x0000'0000'0000'FFFF) << std::endl;
-    out << "    rank_peer: " << ((entry.tag & 0x0000'00FF'FFFF'0000) >> 16) << std::endl;
-    out << "    rank_self_in_peer: " << ((entry.tag & 0xFFFF'FF00'0000'0000) >> 40) << std::endl;
+    out << "    real_tag: " << (entry.tag & MASK_TAG) << std::endl;
+    out << "    rank: " << ((entry.tag & MASK_RANK) >> MASK_RANK_BYTES) << std::endl;
     out << "  olen: " << entry.olen << std::endl;
     out << "  err: " << entry.err << " " << fi_strerror(entry.err) << std::endl;
     out << "  prov_errno: " << entry.prov_errno << " " << fi_cq_strerror(cq, entry.prov_errno, entry.err_data, NULL, 0)

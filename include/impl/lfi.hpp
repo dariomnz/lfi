@@ -186,15 +186,13 @@ struct lfi_ep {
 
 struct lfi_msg {
     uint64_t size = 0;
-    uint32_t rank_peer = 0;
-    uint32_t rank_self_in_peer = 0;
+    uint32_t rank = 0;
     uint32_t tag = 0;
     int32_t error = 0;
 
     std::string to_string() {
         std::stringstream out;
-        out << "lfi_msg " << " size " << size << " rank_peer " << rank_peer << " rank_self_in_peer "
-            << rank_self_in_peer << " tag " << tag << " error " << error;
+        out << "lfi_msg " << " size " << size << " rank " << rank << " tag " << tag << " error " << error;
         return out.str();
     }
 };
@@ -202,6 +200,11 @@ struct lfi_msg {
 // Constants
 constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
 constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
+
+constexpr static const uint64_t MASK_RANK = 0xFFFF'FFFF'0000'0000;
+constexpr static const uint64_t MASK_RANK_BYTES = 32;
+constexpr static const uint64_t MASK_TAG = 0x0000'0000'FFFF'FFFF;
+constexpr static const uint64_t MASK_TAG_BYTES = 32;
 
 class LFI {
 

@@ -81,10 +81,9 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
         start = std::chrono::high_resolution_clock::now();
     }
     // tag format 24 bits rank_peer 24 bits rank_self_in_peer 16 bits tag
-    uint64_t aux_rank_peer = request.m_comm->rank_peer;
     uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
-    uint64_t tag_send = (aux_rank_peer << 40) | (aux_rank_self_in_peer << 16) | aux_tag;
+    uint64_t tag_send = (aux_rank_self_in_peer << MASK_RANK_BYTES) | aux_tag;
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
                                    << request.m_comm->rank_self_in_peer << " tag " << tag << " send_context "
@@ -172,12 +171,10 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
     }
 
     msg.size = size;
-    msg.tag = tag_send & 0x0000'0000'0000'FFFF;
-    msg.rank_peer = (tag_send & 0xFFFF'FF00'0000'0000) >> 40;
-    msg.rank_self_in_peer = (tag_send & 0x0000'00FF'FFFF'0000) >> 16;
+    msg.tag = tag_send & MASK_TAG;
+    msg.rank = (tag_send & MASK_RANK) >> MASK_RANK_BYTES;
 
-    debug_info("[LFI] msg size " << msg.size << " rank_peer " << msg.rank_peer << " rank_self_in_peer "
-                                 << msg.rank_self_in_peer << " tag " << msg.tag << " error " << msg.error);
+    debug_info("[LFI] msg size " << msg.size << " rank " << msg.rank << " tag " << msg.tag << " error " << msg.error);
     debug_info("[LFI] End = " << size);
     return msg;
 }
