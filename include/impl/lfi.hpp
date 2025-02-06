@@ -73,9 +73,9 @@ static constexpr const char *lfi_strerror(int error) {
 }
 
 // Reserved tags
-#define LFI_TAG_FT                      65535
-#define LFI_TAG_RECV_LD_PRELOAD         65534
-#define LFI_TAG_BUFFERED_LD_PRELOAD     65533
+#define LFI_TAG_FT                  65535
+#define LFI_TAG_RECV_LD_PRELOAD     65534
+#define LFI_TAG_BUFFERED_LD_PRELOAD 65533
 
 // Forward declaration
 struct lfi_ep;
@@ -95,6 +95,19 @@ struct wait_struct {
     int wait_count = 0;
 };
 
+struct lfi_msg {
+    uint64_t size = 0;
+    uint32_t source = 0;
+    uint32_t tag = 0;
+    int32_t error = 0;
+
+    std::string to_string() {
+        std::stringstream out;
+        out << "lfi_msg " << " size " << size << " source " << source << " tag " << tag << " error " << error;
+        return out.str();
+    }
+};
+
 struct lfi_request {
     // context necesary for fabric interface
     struct fi_context context = {};
@@ -102,14 +115,17 @@ struct lfi_request {
     std::shared_ptr<lfi_comm> m_comm;
     std::mutex mutex = {};
     std::condition_variable cv = {};
-    bool wait_context = true;
     int error = 0;
+    bool wait_context = true;
 
     bool is_send = false;
     bool is_inject = false;
 
-    fi_cq_tagged_entry entry = {};
-    std::optional<std::reference_wrapper<wait_struct>> shared_wait_struct = {};
+    size_t size = 0;
+    uint32_t tag = 0;
+    uint32_t source = -1;
+
+    wait_struct *shared_wait_struct = nullptr;
     lfi_request() = delete;
     lfi_request(std::shared_ptr<lfi_comm> comm) : m_comm(comm) {}
     lfi_request(const lfi_request &&request) : m_comm(request.m_comm) {}
@@ -117,6 +133,9 @@ struct lfi_request {
     void reset() {
         wait_context = true;
         error = 0;
+        size = 0;
+        tag = 0;
+        source = -1;
     }
 
     bool is_completed() { return !wait_context; }
@@ -132,6 +151,8 @@ struct lfi_request {
         }
         return out.str();
     }
+
+    operator lfi_msg() const { return lfi_msg{.size = size, .source = source, .tag = tag, .error = error}; }
 };
 
 struct lfi_comm {
@@ -184,19 +205,6 @@ struct lfi_ep {
     }
 };
 
-struct lfi_msg {
-    uint64_t size = 0;
-    uint32_t rank = 0;
-    uint32_t tag = 0;
-    int32_t error = 0;
-
-    std::string to_string() {
-        std::stringstream out;
-        out << "lfi_msg " << " size " << size << " rank " << rank << " tag " << tag << " error " << error;
-        return out.str();
-    }
-};
-
 // Constants
 constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
 constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
@@ -207,7 +215,6 @@ constexpr static const uint64_t MASK_TAG = 0x0000'0000'FFFF'FFFF;
 constexpr static const uint64_t MASK_TAG_BYTES = 32;
 
 class LFI {
-
     // address.cpp
    public:
     int get_addr(std::shared_ptr<lfi_comm> lfi_comm, std::vector<uint8_t> &out_addr);
@@ -250,6 +257,7 @@ class LFI {
     LFI();
     // Secure close ep when closing app
     ~LFI();
+
    private:
     int set_hints(lfi_ep &lfi_ep, const std::string &prov);
     int init(lfi_ep &lfi_ep);
@@ -259,17 +267,18 @@ class LFI {
    public:
     lfi_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
     std::pair<lfi_msg, lfi_msg> any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag);
-    lfi_msg async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1);
+    int async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1);
     lfi_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
 
     // send.cpp
    public:
     lfi_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
-    lfi_msg async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1);
+    int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1);
 
     // wait.cpp
    private:
     inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
+
    public:
     int progress(lfi_ep &lfi_ep);
     int wait(lfi_request &request, int32_t timeout_ms = -1);

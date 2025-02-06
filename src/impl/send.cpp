@@ -28,6 +28,7 @@ namespace LFI {
 
 lfi_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag) {
     lfi_msg msg = {};
+    int ret = 0;
     debug_info("[LFI] Start");
 
     // Check if any_comm in send is error
@@ -44,34 +45,30 @@ lfi_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t ta
     }
     lfi_request request(comm);
 
-    msg = async_send(buffer, size, tag, request);
+    ret = async_send(buffer, size, tag, request);
 
-    if (msg.error < 0) {
+    if (ret < 0) {
+        msg.error = ret;
         return msg;
     }
 
     wait(request);
 
-    msg.error = request.error;
-
     debug_info("[LFI] End");
-    return msg;
+    return request;
 }
 
-lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms) {
+int LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms) {
     int ret;
-    lfi_msg msg = {};
 
     // Check cancelled comm
     if (request.m_comm->is_canceled) {
-        msg.error = -LFI_CANCELED_COMM;
-        return msg;
+        return -LFI_CANCELED_COMM;
     }
 
     // Check if any_comm in send is error
     if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
-        msg.error = -LFI_ERROR;
-        return msg;
+        return -LFI_ERROR;
     }
 
     request.reset();
@@ -109,14 +106,12 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
                                              std::chrono::high_resolution_clock::now() - start)
                                              .count();
                     if (elapsed_ms >= timeout_ms) {
-                        msg.error = -LFI_TIMEOUT;
-                        return msg;
+                        return -LFI_TIMEOUT;
                     }
                 }
 
                 if (request.m_comm->is_canceled) {
-                    msg.error = -LFI_CANCELED_COMM;
-                    return msg;
+                    return -LFI_CANCELED_COMM;
                 }
             }
         } while (ret == -FI_EAGAIN);
@@ -142,14 +137,12 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
                                              std::chrono::high_resolution_clock::now() - start)
                                              .count();
                     if (elapsed_ms >= timeout_ms) {
-                        msg.error = -LFI_TIMEOUT;
-                        return msg;
+                        return -LFI_TIMEOUT;
                     }
                 }
 
                 if (request.m_comm->is_canceled) {
-                    msg.error = -LFI_CANCELED_COMM;
-                    return msg;
+                    return -LFI_CANCELED_COMM;
                 }
             }
         } while (ret == -FI_EAGAIN);
@@ -166,16 +159,15 @@ lfi_msg LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_reque
 
     if (ret != 0) {
         printf("error posting send buffer (%d)\n", ret);
-        msg.error = -LFI_ERROR;
-        return msg;
+        return -LFI_ERROR;
     }
 
-    msg.size = size;
-    msg.tag = tag_send & MASK_TAG;
-    msg.rank = (tag_send & MASK_RANK) >> MASK_RANK_BYTES;
+    request.size = size;
+    request.tag = tag;
+    request.source = request.m_comm->rank_peer;
 
-    debug_info("[LFI] msg size " << msg.size << " rank " << msg.rank << " tag " << msg.tag << " error " << msg.error);
+    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error " << request.error);
     debug_info("[LFI] End = " << size);
-    return msg;
+    return 0;
 }
 }  // namespace LFI

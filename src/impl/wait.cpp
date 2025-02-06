@@ -28,6 +28,7 @@ namespace LFI {
 
 static inline std::string fi_flags_to_string(uint64_t flags) {
     std::stringstream out;
+    if (flags == 0) out << "    NONE" << std::endl;
     if (flags & FI_MSG) out << "    FI_MSG" << std::endl;
     if (flags & FI_RMA) out << "    FI_RMA" << std::endl;
     if (flags & FI_TAGGED) out << "    FI_TAGGED" << std::endl;
@@ -142,8 +143,8 @@ int LFI::progress(lfi_ep &lfi_ep) {
             request_p->error = -LFI_ERROR;
         }
         request_p->cv.notify_all();
-        if (request_p->shared_wait_struct.has_value()) {
-            auto &shared_wait_struct = request_p->shared_wait_struct.value().get();
+        if (request_p->shared_wait_struct != nullptr) {
+            auto &shared_wait_struct = *request_p->shared_wait_struct;
             std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
             shared_wait_struct.wait_count--;
             if (shared_wait_struct.wait_count <= 0) {
@@ -159,12 +160,17 @@ int LFI::progress(lfi_ep &lfi_ep) {
         debug_info(fi_cq_tagged_entry_to_string(comp[i]));
 
         std::unique_lock request_lock(request->mutex);
-        request->entry = comp[i];
+        // If len is not 0 is a RECV
+        if (comp[i].len != 0){
+            request->size = comp[i].len;
+            request->tag = (comp[i].tag & MASK_TAG);
+            request->source = (comp[i].tag & MASK_RANK) >> MASK_RANK_BYTES;
+        }
         request->error = LFI_SUCCESS;
         request->wait_context = false;
         request->cv.notify_all();
-        if (request->shared_wait_struct.has_value()) {
-            auto &shared_wait_struct = request->shared_wait_struct.value().get();
+        if (request->shared_wait_struct != nullptr) {
+            auto &shared_wait_struct = *request->shared_wait_struct;
             std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
             shared_wait_struct.wait_count--;
             if (shared_wait_struct.wait_count <= 0) {
@@ -252,7 +258,7 @@ int LFI::wait_num(std::vector<std::reference_wrapper<lfi_request>> &requests, in
     for (auto &request_ref : requests) {
         auto &request = request_ref.get();
         std::scoped_lock req_and_shared_wait_lock(request.mutex, shared_wait.wait_mutex);
-        request.shared_wait_struct = shared_wait;
+        request.shared_wait_struct = &shared_wait;
         debug_info(request.to_string());
         debug_info("Request comm " << request.m_comm->rank_peer);
         if (request.is_completed()) {
@@ -326,7 +332,7 @@ int LFI::wait_num(std::vector<std::reference_wrapper<lfi_request>> &requests, in
         auto &request = requests[index].get();
         {
             std::scoped_lock request_lock(request.mutex);
-            request.shared_wait_struct = {};
+            request.shared_wait_struct = nullptr;
             // Get the int the vector first completed
             if (request.is_completed()) {
                 if (out_index == -1) {

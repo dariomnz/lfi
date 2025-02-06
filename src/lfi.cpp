@@ -166,7 +166,7 @@ ssize_t lfi_any_trecv(void *data1, void *data2, size_t size, int tag, int *out_s
     } else if (shm_msg.error >= 0 && peer_msg.error < 0) {
         ret = shm_msg.size;
         if (out_source1 != NULL) {
-            (*out_source1) = shm_msg.rank;
+            (*out_source1) = shm_msg.source;
         }
         if (out_source2 != NULL) {
             (*out_source2) = -1;
@@ -177,15 +177,15 @@ ssize_t lfi_any_trecv(void *data1, void *data2, size_t size, int tag, int *out_s
             (*out_source1) = -1;
         }
         if (out_source2 != NULL) {
-            (*out_source2) = peer_msg.rank;
+            (*out_source2) = peer_msg.source;
         }
     } else if (shm_msg.error >= 0 && peer_msg.error >= 0) {
         ret = shm_msg.size;
         if (out_source1 != NULL) {
-            (*out_source1) = shm_msg.rank;
+            (*out_source1) = shm_msg.source;
         }
         if (out_source2 != NULL) {
-            (*out_source2) = peer_msg.rank;
+            (*out_source2) = peer_msg.source;
         }
     }
 

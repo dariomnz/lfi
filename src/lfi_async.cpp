@@ -69,7 +69,7 @@ ssize_t lfi_request_size(lfi_request *req) {
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
     std::unique_lock request_lock(request->mutex);
-    const auto ret = request->is_completed() ? request->entry.len : -1;
+    const auto ret = request->is_completed() ? request->size : -1;
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
 }
@@ -80,7 +80,7 @@ ssize_t lfi_request_source(lfi_request *req) {
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
     std::unique_lock request_lock(request->mutex);
-    const auto ret = request->is_completed() ? ((request->entry.tag & LFI::MASK_RANK) >> LFI::MASK_RANK_BYTES) : -1;
+    const auto ret = request->is_completed() ? request->source : -1;
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
 }
@@ -107,12 +107,7 @@ ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
-    LFI::lfi_msg msg = lfi.async_send(data, size, tag, *request);
-    if (msg.error < 0) {
-        ret = msg.error;
-    } else {
-        ret = msg.size;
-    }
+    ret = lfi.async_send(data, size, tag, *request);
     debug_info("(" << request << ", " << data << ", " << size << ", " << tag << ")=" << ret << ">> End");
     return ret;
 }
@@ -124,12 +119,7 @@ ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
-    LFI::lfi_msg msg = lfi.async_recv(data, size, tag, *request);
-    if (msg.error < 0) {
-        ret = msg.error;
-    } else {
-        ret = msg.size;
-    }
+    ret = lfi.async_recv(data, size, tag, *request);
     debug_info("(" << request << ", " << data << ", " << size << ", " << tag << ")=" << ret << ">> End");
     return ret;
 }

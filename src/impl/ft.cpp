@@ -80,7 +80,6 @@ int LFI::ft_thread_loop() {
         }
         // Start the requests
         int ack = 0;
-        lfi_msg msg;
         index = 0;
         {
             std::unique_lock comms_lock(lfi.m_comms_mutex);
@@ -94,8 +93,8 @@ int LFI::ft_thread_loop() {
                     auto [it, _] = requests.emplace(index++, comm);
                     auto &send_request = it->second;
                     debug_info("[LFI] Send ft ack comm " << id << " " << std::hex << &send_request << std::dec);
-                    msg = lfi.async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
-                    if (msg.error < 0) {
+                    ret = lfi.async_send(&ack, sizeof(ack), LFI_TAG_FT, send_request, timeout_ms);
+                    if (ret < 0) {
                         comm->ft_error = true;
                         comms_with_err.push_back(comm);
                         debug_info("[LFI] Error in Send ft ack comm " << id << " " << std::hex << &send_request
@@ -108,8 +107,8 @@ int LFI::ft_thread_loop() {
                     auto [it, _] = requests.emplace(index++, comm);
                     auto &recv_request = it->second;
                     debug_info("[LFI] Recv ft ack comm " << id << " " << std::hex << &recv_request << std::dec);
-                    msg = lfi.async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
-                    if (msg.error < 0) {
+                    ret = lfi.async_recv(&ack, sizeof(ack), LFI_TAG_FT, recv_request, timeout_ms);
+                    if (ret < 0) {
                         comm->ft_error = true;
                         comms_with_err.push_back(comm);
                         debug_info("[LFI] Error in Recv ft ack comm " << id << " " << std::hex << &recv_request

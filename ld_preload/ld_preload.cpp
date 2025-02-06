@@ -143,13 +143,13 @@ void ld_preload::thread_eventfd_loop()
     uint64_t aux_buff_peer = 0;
     std::unique_ptr<LFI::lfi_request> shm_request, peer_request;
     auto any_recv = [&](LFI::lfi_request& req, bool is_shm){
-        LFI::lfi_msg msg;
+        int ret;
         if (is_shm){
-            msg = lfi->async_recv(&aux_buff_shm, sizeof(aux_buff_shm), LFI_TAG_RECV_LD_PRELOAD, req);
+            ret = lfi->async_recv(&aux_buff_shm, sizeof(aux_buff_shm), LFI_TAG_RECV_LD_PRELOAD, req);
         }else{
-            msg = lfi->async_recv(&aux_buff_peer, sizeof(aux_buff_peer), LFI_TAG_RECV_LD_PRELOAD, req);
+            ret = lfi->async_recv(&aux_buff_peer, sizeof(aux_buff_peer), LFI_TAG_RECV_LD_PRELOAD, req);
         }
-        if (msg.error < 0){
+        if (ret < 0){
             print("Error in async_recv")
             return -1;
         }
@@ -196,7 +196,7 @@ void ld_preload::thread_eventfd_loop()
         int source = -1;
         if (completed == 0) {
             // SHM
-            source = ((shm_request->entry.tag & MASK_RANK) >> MASK_RANK_BYTES);
+            source = shm_request->source;
             buff_size = aux_buff_shm;
             // Reuse the request
             if (any_recv(*shm_request, true)){
@@ -204,7 +204,7 @@ void ld_preload::thread_eventfd_loop()
             }
         } else if (completed == 1) {
             // PEER
-            source = ((peer_request->entry.tag & MASK_RANK) >> MASK_RANK_BYTES);
+            source = peer_request->source;
             buff_size = aux_buff_peer;
             // Reuse the request
             if (any_recv(*peer_request, false)){
