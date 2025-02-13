@@ -246,6 +246,12 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
 int LFI::wait_num(std::vector<std::reference_wrapper<lfi_request>> &requests, int how_many, int32_t timeout_ms) {
     debug_info("[LFI] Start how_many " << how_many << " timeout_ms " << timeout_ms);
     if (how_many > static_cast<int>(requests.size()) || how_many <= 0 || requests.size() == 0) return -1;
+
+    // If only one redirect to wait
+    if (how_many == 1 && requests.size() == 1) {
+        return wait(requests[0], timeout_ms);
+    }
+
     wait_struct shared_wait = {.wait_count = how_many};
     int wait_shm_ep = 0, wait_peer_ep = 0;
     std::optional<std::reference_wrapper<lfi_request>> one_shm_rq, one_peer_rq;

@@ -26,7 +26,7 @@
 
 namespace LFI {
 
-lfi_msg LFI::recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
+lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag) {
     lfi_msg msg = {};
     int ret = 0;
     debug_info("[LFI] Start");
@@ -39,7 +39,17 @@ lfi_msg LFI::recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
     }
     lfi_request request(comm);
 
-    ret = async_recv(buffer, size, tag, request);
+    switch (type) {
+        case recv_type::RECV:
+            ret = async_recv(ptr, size, tag, request);
+            break;
+        case recv_type::RECVV:
+            ret = async_recvv(reinterpret_cast<iovec *>(ptr), size, tag, request);
+            break;
+        default:
+            std::runtime_error("Error unknown recv_type. This should not happend");
+            break;
+    }
 
     if (ret < 0) {
         msg.error = ret;
@@ -195,7 +205,8 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
 //     return msg;
 // }
 
-int LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms) {
+int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
+                             int32_t timeout_ms) {
     int ret;
 
     // Check cancelled comm
@@ -226,7 +237,14 @@ int LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &reques
     request.wait_context = true;
     request.is_send = false;
     do {
-        ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm->fi_addr, tag_recv, mask, &request.context);
+        if (type == recv_type::RECV) {
+            ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm->fi_addr, tag_recv, mask, &request.context);
+        } else if (type == recv_type::RECVV) {
+            ret = fi_trecvv(p_rx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, request.m_comm->fi_addr,
+                            tag_recv, mask, &request.context);
+        } else {
+            std::runtime_error("Error unknown recv_type. This should not happend");
+        }
 
         if (ret == -FI_EAGAIN) {
             std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
@@ -268,7 +286,8 @@ int LFI::async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &reques
     request.tag = tag;
     request.source = request.m_comm->rank_peer;
 
-    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error " << request.error);
+    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error "
+                                 << request.error);
     debug_info("[LFI] End = " << size);
     return 0;
 }
@@ -278,7 +297,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     lfi_msg msg = {};
 
     // Check if comm exists
-    std::shared_ptr<lfi_comm>comm = get_comm(comm_id);
+    std::shared_ptr<lfi_comm> comm = get_comm(comm_id);
     if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
@@ -390,7 +409,8 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         }
     }
 
-    debug_info("[LFI] request size " << request.size << " source " << request.source << " tag " << request.tag << " error " << request.error);
+    debug_info("[LFI] request size " << request.size << " source " << request.source << " tag " << request.tag
+                                     << " error " << request.error);
     debug_info("[LFI] End = " << size);
     return request;
 }

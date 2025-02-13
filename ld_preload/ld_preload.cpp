@@ -82,15 +82,27 @@ bool ld_preload::is_caller_libfabric()
         exit(EXIT_FAILURE);
     }
 
-    bool out = false;
+    bool out = true;
     for (int i = 0; i < nptrs; i++)
     {
-        if (std::string_view(symbols[i]).find("libpsm2.so") != std::string_view::npos ||
-            std::string_view(symbols[i]).find("libfabric.so") != std::string_view::npos ||
-            std::string_view(symbols[i]).find("libmpi.so") != std::string_view::npos)
+        if (std::string_view(symbols[i]).find("libmpi.so") != std::string_view::npos)
         {
-            out = true;
+            out = false;
             break;
+        }
+    }
+
+
+    if (out == false) {
+        for (int i = 0; i < nptrs; i++)
+        {
+            if (std::string_view(symbols[i]).find("libpsm2.so") != std::string_view::npos ||
+                std::string_view(symbols[i]).find("libfabric.so") != std::string_view::npos ||
+                std::string_view(symbols[i]).find("libpmix.so") != std::string_view::npos)
+            {
+                out = true;
+                break;
+            }
         }
     }
 
@@ -138,16 +150,16 @@ void ld_preload::thread_eventfd_loop()
     auto &ld_preload = ld_preload::get_instance();
     auto &lfi = ld_preload.m_lfi;
     debug("[LFI LD_PRELOAD] Start");
-    uint64_t buff_size = 0;
-    uint64_t aux_buff_shm = 0;
-    uint64_t aux_buff_peer = 0;
+    std::vector<uint64_t> noti_buffered(1024, 0);
+    std::vector<uint64_t> aux_buff_shm(1024, 0);
+    std::vector<uint64_t> aux_buff_peer(1024, 0);
     std::unique_ptr<LFI::lfi_request> shm_request, peer_request;
     auto any_recv = [&](LFI::lfi_request& req, bool is_shm){
         int ret;
         if (is_shm){
-            ret = lfi->async_recv(&aux_buff_shm, sizeof(aux_buff_shm), LFI_TAG_RECV_LD_PRELOAD, req);
+            ret = lfi->async_recv(aux_buff_shm.data(), aux_buff_shm.size()*sizeof(aux_buff_shm[0]), LFI_TAG_RECV_LD_PRELOAD, req);
         }else{
-            ret = lfi->async_recv(&aux_buff_peer, sizeof(aux_buff_peer), LFI_TAG_RECV_LD_PRELOAD, req);
+            ret = lfi->async_recv(aux_buff_peer.data(), aux_buff_peer.size()*sizeof(aux_buff_peer[0]), LFI_TAG_RECV_LD_PRELOAD, req);
         }
         if (ret < 0){
             print("Error in async_recv")
@@ -192,12 +204,14 @@ void ld_preload::thread_eventfd_loop()
         }
 
         std::vector<std::reference_wrapper<LFI::lfi_request>> requests = {*shm_request, *peer_request};
-        int completed = lfi->wait_num(requests, 1, 500);
+        int completed = lfi->wait_num(requests, 1, 1000);
         int source = -1;
+        uint64_t how_many = 0;
         if (completed == 0) {
             // SHM
             source = shm_request->source;
-            buff_size = aux_buff_shm;
+            how_many = shm_request->size / sizeof(aux_buff_shm[0]);
+            noti_buffered.swap(aux_buff_shm);
             // Reuse the request
             if (any_recv(*shm_request, true)){
                 print_error("peer any_recv");
@@ -205,7 +219,8 @@ void ld_preload::thread_eventfd_loop()
         } else if (completed == 1) {
             // PEER
             source = peer_request->source;
-            buff_size = aux_buff_peer;
+            how_many = peer_request->size / sizeof(aux_buff_peer[0]);
+            noti_buffered.swap(aux_buff_peer);
             // Reuse the request
             if (any_recv(*peer_request, false)){
                 print_error("peer any_recv");
@@ -240,21 +255,56 @@ void ld_preload::thread_eventfd_loop()
 
         auto& lfi_socket = it->second;
 
-        debug("[LFI LD_PRELOAD] Recv notification of msg of size "<<buff_size);
-        lfi_socket::buffered new_buffer;
-        new_buffer.buffer.resize(buff_size, 0);
-        auto msg = lfi->recv(lfi_socket.lfi_id, new_buffer.buffer.data(), new_buffer.buffer.size(), LFI_TAG_BUFFERED_LD_PRELOAD);
-        if (msg.error < 0){
-            print_error("Error recv buffered in comm "<<lfi_socket.lfi_id<<" error "<<msg.error);
+        auto comm = lfi->get_comm(lfi_socket.lfi_id);
+        if (!comm){
+            print_error("Error find the comm "<<source);
             continue;
         }
-        debug("[LFI LD_PRELOAD] Recv of msg of size "<<msg.size);
+        std::vector<LFI::lfi_request> recv_requests;
+        std::vector<std::reference_wrapper<LFI::lfi_request>> ref_requests;
+        recv_requests.reserve(how_many);
+        ref_requests.reserve(how_many);
+
+        uint64_t buff_size = 0;
+        for (size_t i = 0; i < how_many; i++)
+        {
+            recv_requests.emplace_back(comm);
+            ref_requests.emplace_back(recv_requests[i]);
+            buff_size += noti_buffered[i];
+        }
+
+        debug("[LFI LD_PRELOAD] Recv notification of "<<how_many<<" msgs of size "<<buff_size);
+        lfi_socket::buffered new_buffer;
+        new_buffer.buffer.resize(buff_size, 0);
+
+        uint64_t already_recv = 0;
+        int error = 0;
+        for (size_t i = 0; i < how_many; i++)
+        {
+            auto ret = lfi->async_recv(new_buffer.buffer.data()+already_recv, noti_buffered[i], LFI_TAG_BUFFERED_LD_PRELOAD+i, recv_requests[i]);
+            if (ret < 0){
+                print_error("Error recv buffered in comm "<<lfi_socket.lfi_id<<" error "<<ret);
+                error = 1;
+                break;
+            }
+            debug("[LFI LD_PRELOAD] Async recv of msg of size "<<noti_buffered[i]);
+            already_recv += noti_buffered[i];
+        }
+        if (error != 0){
+            continue;
+        }
+        ssize_t ret;
+        ret = lfi->wait_num(ref_requests, ref_requests.size());
+        if (ret < 0) {
+            print_error("Error waiting recvs buffered in comm "<<lfi_socket.lfi_id<<" error "<<ret);
+            continue;
+        }
 
         std::unique_lock eventfd_lock(lfi_socket.m_mutex);
         lfi_socket.buffers.emplace_back(std::move(new_buffer));
         debug("[LFI LD_PRELOAD] Actual msg in queue "<<lfi_socket.buffers.size());
         uint64_t buff = 1;
-        auto ret = PROXY(write)(lfi_socket.eventfd, &buff, sizeof(buff));
+        ret = PROXY(write)(lfi_socket.eventfd, &buff, sizeof(buff));
         if (ret < 0){
             debug("[LFI LD_PRELOAD] Error writing eventfd "<<lfi_socket.eventfd<<" error "<<ret<<" "<<strerror(errno));
             continue;
@@ -293,6 +343,191 @@ int ld_preload::destroy_eventfd(lfi_socket &ids)
 
     ids.eventfd = -1;
     return 0;
+}
+
+ssize_t ld_preload::internal_recvmsg(lfi_socket& lfi_socket, const struct iovec *iov, size_t count) {
+    debug("[LFI LD_PRELOAD] found find fd in socket_ids");
+    auto comm_id = lfi_socket.lfi_id;
+    if (comm_id == -1)
+    {
+        debug("[LFI LD_PRELOAD] comm_id is -1");
+        return -1;
+    }
+
+    auto comm = m_lfi->get_comm(comm_id);
+    if (comm == nullptr){
+        debug("[LFI LD_PRELOAD] comm is nullptr");
+        return -1;
+    }
+
+    ssize_t ret = 0;
+    std::unique_lock lock(lfi_socket.m_mutex);
+    if (lfi_socket.buffers.size() == 0){
+        debug("[LFI LD_PRELOAD] msg_size empty");  
+        errno = EAGAIN;
+        return -1;
+    }
+    auto& buff = lfi_socket.buffers.front();
+    for (size_t i = 0; i < count; i++)
+    {
+        if (buff.buffer.size() == buff.consumed){
+            break;
+        }
+        auto& actual_iov = iov[i];
+        debug("[LFI LD_PRELOAD] start msg queue "<<lfi_socket);
+
+        auto to_copy = std::min(actual_iov.iov_len, (buff.buffer.size()-buff.consumed));
+
+        std::memcpy(actual_iov.iov_base, (buff.buffer.data()+buff.consumed), to_copy);
+
+        ret += to_copy;
+        buff.consumed += to_copy;
+        debug("[LFI LD_PRELOAD] end msg queue "<<lfi_socket);
+    }
+    
+    if (buff.buffer.size() == buff.consumed){
+        lfi_socket.buffers.pop_front();
+        uint64_t dummy = 0; 
+        ssize_t ret_write = PROXY(read)(lfi_socket.eventfd, &dummy, sizeof(dummy));
+        if (ret_write < 0){
+            debug("[LFI LD_PRELOAD] Error write in eventfd "<<lfi_socket.eventfd<<" err "<<ret_write<<" "<<strerror(errno));  
+        }
+    }
+    debug("[LFI LD_PRELOAD] msg queue "<<lfi_socket);
+    return ret;
+}
+
+ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec *iov, size_t count) {
+    ssize_t ret = 0;
+    if (count == 0){
+        debug("[LFI LD_PRELOAD] msg_iovlen 0");
+        return ret;
+    }
+    auto comm_id = lfi_socket.lfi_id;
+    if (comm_id == -1){
+        debug("[LFI LD_PRELOAD] Error comm_id -1");
+        return -1;
+    }
+
+    auto comm = m_lfi->get_comm(comm_id);
+    if (comm == nullptr){
+        debug("[LFI LD_PRELOAD] Error comm not found");
+        return -1;
+    }
+    
+    // [size,[index...]]...
+    struct buff_groups{
+        uint64_t size = 0;
+        std::vector<uint64_t> list = {};
+    };
+    std::vector<buff_groups> groups;
+    uint64_t index = 0;
+    groups.emplace_back();
+    groups[index].list.reserve(count); 
+    for (size_t i = 0; i < count; i++)
+    {
+        // If the actual fits in the group
+        if (groups[index].size != 0 && (groups[index].size + iov[i].iov_len) > env::get_instance().LFI_ld_preload_buffered) {
+            groups.emplace_back();
+            index++;
+            groups[index].list.reserve(count - i); 
+        }
+        groups[index].list.emplace_back(i);
+        groups[index].size += iov[i].iov_len;
+    #ifdef DEBUG
+        std::cerr<<"[LFI LD_PRELOAD] actual_group size "<<groups[index].size<<" list[";
+        for (auto &index : groups[index].list)
+        {
+            std::cerr<<index<<" ";
+        }
+        std::cerr<<"] size "<<groups[index].list.size()<<std::endl;
+    #endif
+    }
+    debug("[LFI LD_PRELOAD] calcule buffering for iov of "<<count<<" msgs to "<<groups.size());
+    size_t size_to_buffer = 0;
+    for (auto &group : groups)
+    {
+        if (group.list.size() != 1){
+            size_to_buffer += group.size;
+        }
+
+        debug("[LFI LD_PRELOAD] group size "<<group.size<<" group list size "<<group.list.size());
+    }
+    debug("[LFI LD_PRELOAD] total buffering for "<<groups.size()<<" msgs "<<size_to_buffer);
+    
+    std::vector<uint8_t> buffered;
+    buffered.resize(size_to_buffer, 0);
+    size_t actual_size = 0;
+
+    std::vector<iovec> v_iov;
+    v_iov.reserve(groups.size());
+    for (auto &group : groups)
+    {
+        debug("[LFI LD_PRELOAD] group size "<<group.size<<" group list size "<<group.list.size());
+        if (group.list.size() == 1){
+            [[maybe_unused]] auto& io = v_iov.emplace_back(iovec{
+                .iov_base = iov[group.list[0]].iov_base,
+                .iov_len = iov[group.list[0]].iov_len,
+            });
+            debug("[LFI LD_PRELOAD] not buffering "<<io.iov_len<<" origin size "<<iov[group.list[0]].iov_len);
+        }else{
+            size_t start_buff = actual_size;
+            for (auto &index : group.list)
+            {
+                std::memcpy(buffered.data()+actual_size, iov[index].iov_base, iov[index].iov_len);
+                actual_size += iov[index].iov_len;
+            }
+            [[maybe_unused]] auto& io = v_iov.emplace_back(iovec{
+                .iov_base = reinterpret_cast<void*>(buffered.data() + start_buff),
+                .iov_len = group.size,
+            });
+            debug("[LFI LD_PRELOAD] buffering "<<io.iov_len<<" group size "<<group.size);
+        }
+    }
+    
+    std::vector<LFI::lfi_request> requests;
+    std::vector<std::reference_wrapper<LFI::lfi_request>> ref_requests;
+    requests.reserve(v_iov.size());
+    ref_requests.reserve(v_iov.size());
+
+    uint64_t to_send = 0;
+    std::vector<uint64_t> noti_buffered;
+    noti_buffered.reserve(v_iov.size());
+
+    for (size_t i = 0; i < v_iov.size(); i++)
+    {
+        requests.emplace_back(comm);
+        ref_requests.emplace_back(requests[i]);
+        noti_buffered.emplace_back(v_iov[i].iov_len);
+        to_send += v_iov[i].iov_len;
+    }
+    
+    debug("[LFI LD_PRELOAD] Send notification of "<<v_iov.size()<<" msgs");
+    auto msg_not = m_lfi->send(comm_id, noti_buffered.data(), noti_buffered.size()*sizeof(noti_buffered[0]), LFI_TAG_RECV_LD_PRELOAD);
+    if (msg_not.error < 0){
+        debug("[LFI LD_PRELOAD] Error in send notification "<<msg_not.error<<" "<<LFI::lfi_strerror(msg_not.error));
+        return msg_not.error;
+    }
+    debug("[LFI LD_PRELOAD] Sended notification of "<<v_iov.size()<<" msgs");
+
+
+    for (size_t i = 0; i < v_iov.size(); i++)
+    {
+        debug("[LFI LD_PRELOAD] Start async send");
+        auto ret = m_lfi->async_send(v_iov[i].iov_base, v_iov[i].iov_len, LFI_TAG_BUFFERED_LD_PRELOAD+i, requests[i]);
+        if (ret < 0){
+            debug("[LFI LD_PRELOAD] Error in async send "<<ret<<" "<<LFI::lfi_strerror(ret));
+            return ret;
+        }
+    }
+    
+    ret = m_lfi->wait_num(ref_requests, ref_requests.size());
+    if (ret < 0){
+        debug("[LFI LD_PRELOAD] Error in wait sends "<<ret<<" "<<LFI::lfi_strerror(ret));
+        return ret;
+    }
+
+    return to_send;
 }
 
 #ifdef __cplusplus
@@ -376,10 +611,15 @@ extern "C"
             // std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }while(ret2 < 0 && errno == EAGAIN);
 
-        std::string server_addr = sockaddr_to_str(addr);
+        std::string server_addr;
+        do{
+            ret2 = socket::recv_str(sockfd, server_addr);
+        }while(ret2 < 0 && errno == EAGAIN);
+
+        debug("[LFI LD_PRELOAD] recved host_ip "<<server_addr);
         debug("Try connect to " << server_addr);
 
-        int client_socket = socket::client_init(server_addr, LFI::env::get_instance().LFI_port);
+        int client_socket = socket::client_init(server_addr, LFI::env::get_instance().LFI_port, true);
         if (client_socket < 0)
         {
             print_error("socket::client_init (" << server_addr << ", " << LFI::env::get_instance().LFI_port << ")");
@@ -453,7 +693,8 @@ extern "C"
             return ret;
         }
 
-        int server_socket = socket::server_init(LFI::ns::get_host_ip(), LFI::env::get_instance().LFI_port);
+        std::string host_ip = LFI::ns::get_host_ip();
+        int server_socket = socket::server_init("", LFI::env::get_instance().LFI_port);
         if (server_socket < 0){
             return server_socket;
         }
@@ -472,6 +713,12 @@ extern "C"
             ret1 = socket::send(ret, &buff, sizeof(buff));
         }while(ret1 < 0 && errno == EAGAIN);
         // print("send "<<ret1<<" "<<STR_ERRNO);
+        
+        do{
+            ret1 = socket::send_str(ret, host_ip);
+        }while(ret1 < 0 && errno == EAGAIN);
+        debug("[LFI LD_PRELOAD] sended host_ip "<<host_ip);
+
 
         int client_socket = socket::accept(server_socket);
         if (client_socket < 0)
@@ -565,8 +812,59 @@ extern "C"
         return ret;
 #else
         debug("[LFI LD_PRELOAD] Start (" << fd << ", " << buf << ", " << count << ")");
-        auto ret = PROXY(write)(fd, buf, count);
+        ssize_t ret = 0;
+        auto &preload = ld_preload::get_instance();
+        decltype(preload.socket_ids.find(fd)) it_socket;
+        {
+            std::unique_lock lock(preload.m_mutex);
+            it_socket = preload.socket_ids.find(fd);
+        }
+        if (it_socket == preload.socket_ids.end())
+        {
+            debug("[LFI LD_PRELOAD] cannot find fd in socket_ids");
+            ret = PROXY(write)(fd, buf, count);
+        }
+        else
+        {
+            iovec iov = {.iov_base = const_cast<void *>(buf), .iov_len = count};
+            int iovcnt = 1;
+            ret = preload.internal_sendmsg(it_socket->second, &iov, iovcnt);
+        }
         debug("[LFI LD_PRELOAD] End (" << fd << ", " << buf << ", " << count << ") = " << ret << " " << STR_ERRNO);
+        return ret;
+#endif
+    }
+
+    ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
+    {
+        if (ld_preload::is_caller_libfabric())
+        {
+            return PROXY(writev)(fd, iov, iovcnt);
+        }
+#ifdef ONLY_DEBUG
+        debug("[LFI LD_PRELOAD] Start (" << fd << ", " << printIovec(iov, iovcnt, 1024) << ", " << iovcnt << ")");
+        auto ret = PROXY(writev)(fd, iov, iovcnt);
+        debug("[LFI LD_PRELOAD] End (" << fd << ", " << printIovec(iov, iovcnt) << ", " << iovcnt << ") = " << ret << " " << STR_ERRNO);
+        return ret;
+#else
+        debug("[LFI LD_PRELOAD] Start (" << fd << ", " << printIovec(iov, iovcnt, 1024) << ", " << iovcnt << ")");
+        ssize_t ret = 0;
+        auto &preload = ld_preload::get_instance();
+        decltype(preload.socket_ids.find(fd)) it_socket;
+        {
+            std::unique_lock lock(preload.m_mutex);
+            it_socket = preload.socket_ids.find(fd);
+        }
+        if (it_socket == preload.socket_ids.end())
+        {
+            debug("[LFI LD_PRELOAD] cannot find fd in socket_ids");
+            ret = PROXY(writev)(fd, iov, iovcnt);
+        }
+        else
+        {
+            ret = preload.internal_sendmsg(it_socket->second, iov, iovcnt);
+        }
+        debug("[LFI LD_PRELOAD] End (" << fd << ", " << printIovec(iov, iovcnt) << ", " << iovcnt << ") = " << ret << " " << STR_ERRNO);
         return ret;
 #endif
     }
@@ -584,8 +882,59 @@ extern "C"
         return ret;
 #else
         debug("[LFI LD_PRELOAD] Start (" << fd << ", " << buf << ", " << count << ")");
-        auto ret = PROXY(read)(fd, buf, count);
+        ssize_t ret = 0;
+        auto &preload = ld_preload::get_instance();
+        decltype(preload.socket_ids.find(fd)) it_socket;
+        {
+            std::unique_lock lock(preload.m_mutex);
+            it_socket = preload.socket_ids.find(fd);
+        }
+        if (it_socket == preload.socket_ids.end())
+        {
+            debug("[LFI LD_PRELOAD] cannot find fd in socket_ids");
+            ret = PROXY(read)(fd, buf, count);
+        }
+        else
+        {
+            iovec iov = {.iov_base = buf, .iov_len = count};
+            int iovcnt = 1;
+            ret = preload.internal_recvmsg(it_socket->second, &iov, iovcnt);
+        }
         debug("[LFI LD_PRELOAD] End (" << fd << ", " << buf << ", " << count << ") = " << ret << " " << STR_ERRNO);
+        return ret;
+#endif
+    }
+
+    ssize_t readv(int fd, const struct iovec *iov, int iovcnt)
+    {
+        if (ld_preload::is_caller_libfabric())
+        {
+            return PROXY(readv)(fd, iov, iovcnt);
+        }
+#ifdef ONLY_DEBUG
+        debug("[LFI LD_PRELOAD] Start (" << fd << ", " << printIovec(iov, iovcnt) << ", " << iovcnt << ")");
+        auto ret = PROXY(readv)(fd, iov, iovcnt);
+        debug("[LFI LD_PRELOAD] End (" << fd << ", " << printIovec(iov, iovcnt, 1024) << ", " << iovcnt << ") = " << ret << " " << STR_ERRNO);
+        return ret;
+#else
+        debug("[LFI LD_PRELOAD] Start (" << fd << ", " << printIovec(iov, iovcnt) << ", " << iovcnt << ")");
+        ssize_t ret = 0;
+        auto &preload = ld_preload::get_instance();
+        decltype(preload.socket_ids.find(fd)) it_socket;
+        {
+            std::unique_lock lock(preload.m_mutex);
+            it_socket = preload.socket_ids.find(fd);
+        }
+        if (it_socket == preload.socket_ids.end())
+        {
+            debug("[LFI LD_PRELOAD] cannot find fd in socket_ids");
+            ret = PROXY(readv)(fd, iov, iovcnt);
+        }
+        else
+        {
+            ret = preload.internal_recvmsg(it_socket->second, iov, iovcnt);
+        }
+        debug("[LFI LD_PRELOAD] End (" << fd << ", " << printIovec(iov, iovcnt, 1024) << ", " << iovcnt << ") = " << ret << " " << STR_ERRNO);
         return ret;
 #endif
     }
@@ -636,12 +985,32 @@ extern "C"
         }
 #ifdef ONLY_DEBUG
         debug("[LFI LD_PRELOAD] Start (" << sockfd << ", " << buf << ", " << len << ", " << flags << ")");
+        // print_backtrace();
+        // int * v = NULL;
+        // v[0] = 1234;
         auto ret = PROXY(recv)(sockfd, buf, len, flags);
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << buf << ", " << len << ", " << flags << ") = " << ret << " " << STR_ERRNO);
         return ret;
 #else
         debug("[LFI LD_PRELOAD] Start (" << sockfd << ", " << buf << ", " << len << ", " << flags << ")");
-        auto ret = PROXY(recv)(sockfd, buf, len, flags);
+        ssize_t ret = 0;
+        auto &preload = ld_preload::get_instance();
+        decltype(preload.socket_ids.find(sockfd)) it_socket;
+        {
+            std::unique_lock lock(preload.m_mutex);
+            it_socket = preload.socket_ids.find(sockfd);
+        }
+        if (it_socket == preload.socket_ids.end())
+        {
+            debug("[LFI LD_PRELOAD] cannot find fd in socket_ids");
+            ret = PROXY(recv)(sockfd, buf, len, flags);
+        }
+        else
+        {
+            iovec iov = {.iov_base = buf, .iov_len = len};
+            int iovcnt = 1;
+            ret = preload.internal_recvmsg(it_socket->second, &iov, iovcnt);
+        }
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << buf << ", " << len << ", " << flags << ") = " << ret << " " << STR_ERRNO);
         return ret;
 #endif
@@ -686,95 +1055,7 @@ extern "C"
         }
         else
         {
-            debug("[LFI LD_PRELOAD] found find fd in socket_ids");
-            auto comm_id = it_socket->second.lfi_id;
-            if (comm_id == -1)
-            {
-                debug("[LFI LD_PRELOAD] comm_id is -1");
-                return -1;
-            }
-
-            auto comm = preload.m_lfi->get_comm(comm_id);
-            if (comm == nullptr){
-                debug("[LFI LD_PRELOAD] comm is nullptr");
-                return -1;
-            }
-
-            auto& lfi_socket = it_socket->second;
-
-            ret = 0;
-            std::unique_lock lock(lfi_socket.m_mutex);
-            if (lfi_socket.buffers.size() == 0){
-                debug("[LFI LD_PRELOAD] msg_size empty");  
-                errno = EAGAIN;
-                return -1;
-            }
-            auto& buff = lfi_socket.buffers.front();
-            for (size_t i = 0; i < msg->msg_iovlen; i++)
-            {
-                if (buff.buffer.size() == buff.consumed){
-                    break;
-                }
-                auto& iov = msg->msg_iov[i];
-                debug("[LFI LD_PRELOAD] start msg queue "<<lfi_socket);
-
-                auto to_copy = std::min(iov.iov_len, (buff.buffer.size()-buff.consumed));
-
-                std::memcpy(iov.iov_base, (buff.buffer.data()+buff.consumed), to_copy);
-
-                ret += to_copy;
-                buff.consumed += to_copy;
-                debug("[LFI LD_PRELOAD] end msg queue "<<lfi_socket);
-
-                // if (buff == 0) {
-                //     debug("[LFI LD_PRELOAD] Finish");
-                //     break;
-                // } 
-
-                // uint64_t len = iov.iov_len;
-
-                // if ()
-                
-                // // TODO: revise the min size to start sending
-                // if (buff > 1024){
-                //     debug("[LFI LD_PRELOAD] Start send buffer size "<<len);
-                //     auto msg_send = preload.m_lfi->send(comm_id, &len, sizeof(len), LFI_TAG_BUFF_SIZE_LD_PRELOAD);
-                //     if (msg_send.error < 0)
-                //     {
-                //         debug("[LFI LD_PRELOAD] Error in recv");
-                //         return -1;
-                //     }
-                //     debug("[LFI LD_PRELOAD] Start sended buffer size "<<len);
-                // }
-
-                // debug("[LFI LD_PRELOAD] Start recv size "<<iov.iov_len);
-                // auto msg_recv = preload.m_lfi->recv(comm_id, iov.iov_base, iov.iov_len, 0);
-                // if (msg_recv.error < 0)
-                // {
-                //     debug("[LFI LD_PRELOAD] Error in recv");
-                //     return -1;
-                // }
-                // ret += msg_recv.size;
-                // debug("[LFI LD_PRELOAD] End recv size "<<msg_recv.size);
-                    
-                // // std::unique_lock lock(preload.m_eventfd_mutex);
-                // if (preload.msg_size < msg_recv.size){
-                //     preload.msg_size = 0;
-                // }else{
-                //     preload.msg_size-=msg_recv.size;
-                // }
-                // debug("[LFI LD_PRELOAD] Actual msg_size "<<preload.msg_size);
-            }
-            
-            if (buff.buffer.size() == buff.consumed){
-                lfi_socket.buffers.pop_front();
-                uint64_t dummy = 0; 
-                ssize_t ret_write = PROXY(read)(lfi_socket.eventfd, &dummy, sizeof(dummy));
-                if (ret_write < 0){
-                    debug("[LFI LD_PRELOAD] Error write in eventfd "<<lfi_socket.eventfd<<" err "<<ret_write<<" "<<strerror(errno));  
-                }
-            }
-            debug("[LFI LD_PRELOAD] msg queue "<<lfi_socket);
+            ret = preload.internal_recvmsg(it_socket->second, msg->msg_iov, msg->msg_iovlen);
         }
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << msghdr_to_str(msg, std::min(1024l, ret)) << ", " << getMSGFlags(flags) << ") = " << ret << " " << STR_ERRNO);
         return ret;
@@ -788,7 +1069,24 @@ extern "C"
             return PROXY(send)(sockfd, buf, len, flags);
         }
         debug("[LFI LD_PRELOAD] Start (" << sockfd << ", " << buf << ", " << len << ", " << flags << ")");
-        auto ret = PROXY(send)(sockfd, buf, len, flags);
+        ssize_t ret = 0;
+        auto &preload = ld_preload::get_instance();
+        decltype(preload.socket_ids.find(sockfd)) it_socket;
+        {
+            std::unique_lock lock(preload.m_mutex);
+            it_socket = preload.socket_ids.find(sockfd);
+        }
+        if (it_socket == preload.socket_ids.end())
+        {
+            debug("[LFI LD_PRELOAD] cannot find fd in socket_ids");
+            ret = PROXY(send)(sockfd, buf, len, flags);
+        }
+        else
+        {
+            iovec iov = {.iov_base = const_cast<void *>(buf), .iov_len = len};
+            int iovcnt = 1;
+            ret = preload.internal_sendmsg(it_socket->second, &iov, iovcnt);
+        }
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << buf << ", " << len << ", " << flags << ") = " << ret << " " << STR_ERRNO);
         return ret;
     }
@@ -832,73 +1130,7 @@ extern "C"
         }
         else
         {
-            auto comm_id = it_socket->second.lfi_id;
-            if (comm_id == -1){
-                debug("[LFI LD_PRELOAD] Error comm_id -1");
-                return -1;
-            }
-
-            auto comm = preload.m_lfi->get_comm(comm_id);
-            if (comm == nullptr){
-                debug("[LFI LD_PRELOAD] Error comm not found");
-                return -1;
-            }
-
-            uint64_t buff_size = 0;
-            for (size_t i = 0; i < msg->msg_iovlen; i++)
-            {
-                buff_size += msg->msg_iov[i].iov_len;
-            }
-
-            if (buff_size > (8 * 1024)){
-                for (size_t i = 0; i < msg->msg_iovlen; ++i) {
-                    debug("[LFI LD_PRELOAD] Send notification of "<<msg->msg_iov[i].iov_len);
-                    auto msg_not = preload.m_lfi->send(comm_id, &msg->msg_iov[i].iov_len, sizeof(msg->msg_iov[i].iov_len), LFI_TAG_RECV_LD_PRELOAD);
-                    if (msg_not.error < 0){
-                        debug("[LFI LD_PRELOAD] Error in send notification "<<msg_not.error<<" "<<LFI::lfi_strerror(msg_not.error));
-                        return msg_not.error;
-                    }
-                    debug("[LFI LD_PRELOAD] Sended notification of "<<msg->msg_iov[i].iov_len);
-                
-                    debug("[LFI LD_PRELOAD] Start send size "<<msg->msg_iov[i].iov_len);
-                    auto msg_send = preload.m_lfi->send(comm_id, msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len, LFI_TAG_BUFFERED_LD_PRELOAD);
-                    if (msg_send.error < 0){
-                        debug("[LFI LD_PRELOAD] Error in send "<<msg_send.error<<" "<<LFI::lfi_strerror(msg_send.error));
-                        return msg_send.error;
-                    }
-
-                    ret += msg_send.size;
-                    debug("[LFI LD_PRELOAD] End send size "<<ret);
-                }
-            }else{
-                debug("[LFI LD_PRELOAD] Send notification of "<<buff_size);
-                auto msg_not = preload.m_lfi->send(comm_id, &buff_size, sizeof(buff_size), LFI_TAG_RECV_LD_PRELOAD);
-                if (msg_not.error < 0){
-                    debug("[LFI LD_PRELOAD] Error in send notification "<<msg_not.error<<" "<<LFI::lfi_strerror(msg_not.error));
-                    return msg_not.error;
-                }
-                debug("[LFI LD_PRELOAD] Sended notification of "<<buff_size);
-                
-                std::vector<uint8_t> buff;
-                buff.resize(buff_size, 0);
-                size_t already_copied = 0;
-                std::stringstream ss;
-                for (size_t i = 0; i < msg->msg_iovlen; ++i) {
-                    const struct iovec &iov = msg->msg_iov[i];
-                    std::memcpy(buff.data()+already_copied, iov.iov_base, iov.iov_len);
-                    already_copied += iov.iov_len;
-                }
-                
-                debug("[LFI LD_PRELOAD] Start send size "<<buff.size());
-                auto msg_send = preload.m_lfi->send(comm_id, buff.data(), buff.size(), LFI_TAG_BUFFERED_LD_PRELOAD);
-                if (msg_send.error < 0){
-                    debug("[LFI LD_PRELOAD] Error in send "<<msg_send.error<<" "<<LFI::lfi_strerror(msg_send.error));
-                    return msg_send.error;
-                }
-
-                ret = msg_send.size;
-                debug("[LFI LD_PRELOAD] End send size "<<ret);
-            }
+            ret = preload.internal_sendmsg(it_socket->second, msg->msg_iov, msg->msg_iovlen);
         }
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << msghdr_to_str(msg) << ", " << getMSGFlags(flags) << ") = " << ret << " " << STR_ERRNO);
         return ret;
@@ -1038,9 +1270,37 @@ extern "C"
         {
             return PROXY(poll)(fds, nfds, timeout);
         }
-        debug("[LFI LD_PRELOAD] Start (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ")");
+        // debug("[LFI LD_PRELOAD] Start (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ")");
+        // Replace our fds
+        auto &preload = ld_preload::get_instance();
+        struct replace_fd {
+            size_t index;
+            int original_fd;
+        };
+        std::vector<replace_fd> replaced_fds;
+        std::unique_lock lock(preload.m_mutex);
+        for (size_t i = 0; i < nfds; i++)
+        {
+            auto it_socket = preload.socket_ids.find(fds[i].fd);
+            if (it_socket != preload.socket_ids.end())
+            {
+                // debug("[LFI LD_PRELOAD] find fd " << fds[i].fd << " in socket_ids");
+                if (it_socket->second.eventfd != -1){
+                    replaced_fds.emplace_back(replace_fd{.index = i, .original_fd = fds[i].fd});
+                    fds[i].fd = it_socket->second.eventfd;
+                }
+            }
+        }
         auto ret = PROXY(poll)(fds, nfds, timeout);
-        debug("[LFI LD_PRELOAD] End (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ") = " << ret << " " << STR_ERRNO);
+        if (ret < 0){
+            return ret;
+        }
+        for (auto &repl : replaced_fds)
+        {
+            fds[repl.index].fd = repl.original_fd;
+        }
+
+        // debug("[LFI LD_PRELOAD] End (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ") = " << ret << " " << STR_ERRNO);
         return ret;
     }
 

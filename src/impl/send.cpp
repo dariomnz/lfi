@@ -26,7 +26,7 @@
 
 namespace LFI {
 
-lfi_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag) {
+lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag) {
     lfi_msg msg = {};
     int ret = 0;
     debug_info("[LFI] Start");
@@ -45,7 +45,17 @@ lfi_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t ta
     }
     lfi_request request(comm);
 
-    ret = async_send(buffer, size, tag, request);
+    switch (type) {
+        case send_type::SEND:
+            ret = async_send(ptr, size, tag, request);
+            break;
+        case send_type::SENDV:
+            ret = async_sendv(reinterpret_cast<const iovec *>(ptr), size, tag, request);
+            break;
+        default:
+            std::runtime_error("Error unknown recv_type. This should not happend");
+            break;
+    }
 
     if (ret < 0) {
         msg.error = ret;
@@ -58,7 +68,8 @@ lfi_msg LFI::send(uint32_t comm_id, const void *buffer, size_t size, uint32_t ta
     return request;
 }
 
-int LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms) {
+int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
+                             int32_t timeout_ms) {
     int ret;
 
     // Check cancelled comm
@@ -87,7 +98,8 @@ int LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &
                                    << (void *)&request.context);
 
     request.is_send = true;
-    if (env::get_instance().LFI_use_inject && size <= request.m_comm->m_ep.info->tx_attr->inject_size) {
+    if (env::get_instance().LFI_use_inject && type == send_type::SEND &&
+        size <= request.m_comm->m_ep.info->tx_attr->inject_size) {
         fid_ep *p_tx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
         request.wait_context = false;
         request.is_inject = true;
@@ -123,7 +135,14 @@ int LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &
         request.wait_context = true;
         request.is_inject = false;
         do {
-            ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm->fi_addr, tag_send, &request.context);
+            if (type == send_type::SEND) {
+                ret = fi_tsend(p_tx_ep, buffer, size, NULL, request.m_comm->fi_addr, tag_send, &request.context);
+            } else if (type == send_type::SENDV) {
+                ret = fi_tsendv(p_tx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, request.m_comm->fi_addr,
+                                tag_send, &request.context);
+            } else {
+                std::runtime_error("Error unknown send_type. This should not happend");
+            }
 
             if (ret == -FI_EAGAIN) {
                 std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
@@ -166,7 +185,8 @@ int LFI::async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &
     request.tag = tag;
     request.source = request.m_comm->rank_peer;
 
-    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error " << request.error);
+    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error "
+                                 << request.error);
     debug_info("[LFI] End = " << size);
     return 0;
 }

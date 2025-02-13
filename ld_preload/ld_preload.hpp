@@ -63,6 +63,9 @@ public:
     void thread_eventfd_start();
     void thread_eventfd_end();
     static void thread_eventfd_loop();
+    
+    ssize_t internal_recvmsg(lfi_socket& lfi_socket, const struct iovec *msg, size_t count);
+    ssize_t internal_sendmsg(lfi_socket& lfi_socket, const struct iovec *msg, size_t count);
 
     ld_preload()
     {

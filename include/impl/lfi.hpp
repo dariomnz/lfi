@@ -75,7 +75,7 @@ static constexpr const char *lfi_strerror(int error) {
 // Reserved tags
 #define LFI_TAG_FT                  65535
 #define LFI_TAG_RECV_LD_PRELOAD     65534
-#define LFI_TAG_BUFFERED_LD_PRELOAD 65533
+#define LFI_TAG_BUFFERED_LD_PRELOAD 100000
 
 // Forward declaration
 struct lfi_ep;
@@ -193,6 +193,8 @@ struct lfi_ep {
 
     bool initialized() { return enable_ep; }
 
+    size_t get_iov_limit() { return info->tx_attr->iov_limit; }
+
     bool operator==(const lfi_ep &other) const {
         if (this->use_scalable_ep != other.use_scalable_ep) return false;
 
@@ -265,16 +267,51 @@ class LFI {
 
     // recv.cpp
    public:
-    lfi_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
+    enum class recv_type {
+        RECV,
+        RECVV,
+    };
+    lfi_msg recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag);
     std::pair<lfi_msg, lfi_msg> any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag);
-    int async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1);
+    int async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
+                            int32_t timeout_ms = -1);
+    // Redirects
+    lfi_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
+        return recv_internal(comm_id, buffer, size, recv_type::RECV, tag);
+    }
+    lfi_msg recvv(uint32_t comm_id, struct iovec *iov, size_t count, uint32_t tag) {
+        return recv_internal(comm_id, reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag);
+    }
+    int async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
+        return async_recv_internal(buffer, size, recv_type::RECV, tag, request, timeout_ms);
+    }
+    int async_recvv(struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
+        return async_recv_internal(reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag, request, timeout_ms);
+    }
     lfi_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
 
     // send.cpp
    public:
-    lfi_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag);
-    int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1);
-
+    enum class send_type {
+        SEND,
+        SENDV,
+    };
+    lfi_msg send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag);
+    int async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
+                            int32_t timeout_ms = -1);
+    // Redirects
+    lfi_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag) {
+        return send_internal(comm_id, buffer, size, send_type::SEND, tag);
+    }
+    lfi_msg sendv(uint32_t comm_id, const struct iovec *iov, size_t count, uint32_t tag) {
+        return send_internal(comm_id, reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag);
+    }
+    int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
+        return async_send_internal(buffer, size, send_type::SEND, tag, request, timeout_ms);
+    }
+    int async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
+        return async_send_internal(reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag, request, timeout_ms);
+    }
     // wait.cpp
    private:
     inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);

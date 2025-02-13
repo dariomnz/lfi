@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "impl/debug.hpp"
+#include "impl/ns.hpp"
 #include "impl/proxy.hpp"
 
 namespace LFI {
@@ -81,44 +82,66 @@ int socket::server_init(const std::string& addr, int& port) {
     return socket;
 }
 
-int socket::client_init(const std::string& addr, int port) {
+int socket::client_init(const std::string& addr, int port, bool is_ip) {
     int ret = -1;
     int socket = -1;
     debug_info(">> Begin");
 
-    struct addrinfo hints = {};
-    struct addrinfo* res;
+    if (is_ip == false) {
+        struct addrinfo hints = {};
+        struct addrinfo* res;
 
-    hints.ai_family = AF_INET;        // Allow IPv4 or IPv6
-    hints.ai_socktype = SOCK_STREAM;  // TCP socket
+        hints.ai_family = AF_INET;        // Allow IPv4 or IPv6
+        hints.ai_socktype = SOCK_STREAM;  // TCP socket
 
-    // Get address information
-    int status = PROXY(getaddrinfo)(addr.c_str(), std::to_string(port).c_str(), &hints, &res);
-    if (status != 0) {
-        print_error("getaddrinfo error: " << gai_strerror(status));
-        return -1;
-    }
+        // Get address information
+        debug_info("Before getaddrinfo");
+        int status = PROXY(getaddrinfo)(addr.c_str(), std::to_string(port).c_str(), &hints, &res);
+        if (status != 0) {
+            print_error("getaddrinfo error: " << gai_strerror(status));
+            return -1;
+        }
+        // Try to connect to one of the results returned by getaddrinfo
+        for (addrinfo* p = res; p != nullptr; p = p->ai_next) {
+            socket = socket::open();
+            if (socket < 0) {
+                return socket;
+            }
+            // Attempt to connect
+            debug_info("Attempt connect to " << ns::sockaddr_to_str(p->ai_addr) << " on port " << port);
+            if ((ret = PROXY(connect)(socket, p->ai_addr, p->ai_addrlen)) == -1) {
+                print_error("connect " << addr << " port " << port);
+                socket::close(socket);
+                continue;
+            }
 
-    // Try to connect to one of the results returned by getaddrinfo
-    for (addrinfo* p = res; p != nullptr; p = p->ai_next) {
+            // Successfully connected
+            debug_info("Connected to " << addr << " on port " << port);
+            break;
+        }
+
+        // Free the linked list created by getaddrinfo
+        PROXY(freeaddrinfo)(res);
+    }else{
+        struct sockaddr_in server_addr = {};
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(port);
+
+        debug_info("Socket bind to " << addr);
+        if (PROXY(inet_pton)(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
+            print_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
+            return -1;
+        }
         socket = socket::open();
         if (socket < 0) {
             return socket;
         }
-        // Attempt to connect
-        if ((ret = PROXY(connect)(socket, p->ai_addr, p->ai_addrlen)) == -1) {
+        if ((ret = PROXY(connect)(socket, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr))) == -1) {
             print_error("connect " << addr << " port " << port);
             socket::close(socket);
-            continue;
+            return -1;
         }
-
-        // Successfully connected
-        debug_info("Connected to " << addr << " on port " << port);
-        break;
     }
-
-    // Free the linked list created by getaddrinfo
-    PROXY(freeaddrinfo)(res);
 
     // If no valid connection was made
     if (ret == -1) {
@@ -261,5 +284,58 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
 
     debug_info(">> End = " << len);
     return len;
+}
+
+int64_t socket::send_str(int socket, const std::string& str) {
+    int64_t ret;
+    size_t size_str = str.size();
+    debug_info("Send_str size " << size_str);
+    
+    do{
+        ret = socket::send(socket, &size_str, sizeof(size_str));
+    }while(ret < 0 && errno == EAGAIN);
+    if (ret != sizeof(size_str)) {
+        print_error("send size of string");
+        return ret;
+    }
+    if (size_str == 0) {
+        return 0;
+    }
+    debug_info("Send_str " << str);
+    do{
+        ret = socket::send(socket, &str[0], size_str);
+    }while(ret < 0 && errno == EAGAIN);
+    if (ret != static_cast<int64_t>(size_str)) {
+        print_error("send string");
+        return ret;
+    }
+    return ret;
+}
+
+int64_t socket::recv_str(int socket, std::string& str) {
+    int64_t ret;
+    size_t size_str = 0;
+    do{
+        ret = socket::recv(socket, &size_str, sizeof(size_str));
+    }while(ret < 0 && errno == EAGAIN);
+    if (ret != sizeof(size_str)) {
+        print_error("send size of string");
+        return ret;
+    }
+    debug_info("Recv_str size " << size_str);
+    if (size_str == 0) {
+        return 0;
+    }
+    str.clear();
+    str.resize(size_str, '\0');
+    do{
+        ret = socket::recv(socket, &str[0], size_str);
+    }while(ret < 0 && errno == EAGAIN);
+    if (ret != static_cast<int64_t>(size_str)) {
+        print_error("send string");
+        return ret;
+    }
+    debug_info("Recv_str " << str);
+    return ret;
 }
 }  // namespace LFI

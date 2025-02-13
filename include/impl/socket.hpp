@@ -36,12 +36,14 @@ namespace LFI
 
     public:
         static int server_init(const std::string &addr, int &port);
-        static int client_init(const std::string &addr, int port);
+        static int client_init(const std::string &addr, int port, bool is_ip = false);
         static int accept(int socket);
         static int close(int socket);
 
         static ssize_t send(int socket, const void *data, size_t len);
         static ssize_t recv(int socket, void *data, size_t len);
+        static int64_t send_str(int socket, const std::string& str);
+        static int64_t recv_str(int socket, std::string& str);
     };
 
 } // namespace LFI
