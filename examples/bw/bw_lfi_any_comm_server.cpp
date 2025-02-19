@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
 
             lfi_request* requests[2] = {shm_request.get(), peer_request.get()};
 
-            int completed = lfi_wait_many(requests, 2, 1);
+            int completed = lfi_wait_any(requests, 2);
 
             std::cout << "Completed wait_num with " << completed << std::endl;
             if (completed == 0) {

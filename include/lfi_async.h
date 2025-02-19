@@ -52,7 +52,8 @@ extern "C"
 
     ssize_t lfi_wait(lfi_request *request);
     // Return the index of the first request completed
-    ssize_t lfi_wait_many(lfi_request *requests[], size_t size, size_t how_many);
+    ssize_t lfi_wait_any(lfi_request *requests[], size_t size);
+    ssize_t lfi_wait_all(lfi_request *requests[], size_t size);
 
     // When the request is cancelled it can be completed by the hardware, so, if it is important
     // for the user whether it is completed or not, it is necessary to check it after this call.

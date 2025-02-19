@@ -135,7 +135,7 @@ ssize_t lfi_wait(lfi_request *req) {
     return ret;
 }
 
-ssize_t lfi_wait_many(lfi_request *reqs[], size_t size, size_t how_many) {
+inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_many) {
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")>> Begin");
     if (reqs == nullptr) return -1;
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -150,6 +150,14 @@ ssize_t lfi_wait_many(lfi_request *reqs[], size_t size, size_t how_many) {
     const ssize_t ret = lfi.wait_num(v_requests, how_many);
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")=" << ret << ">> End");
     return ret;
+}
+
+ssize_t lfi_wait_any(lfi_request *reqs[], size_t size) {
+    return lfi_wait_wrapper(reqs, size, 1);
+}
+
+ssize_t lfi_wait_all(lfi_request *reqs[], size_t size) {
+    return lfi_wait_wrapper(reqs, size, size);
 }
 
 ssize_t lfi_cancel(lfi_request *req) {

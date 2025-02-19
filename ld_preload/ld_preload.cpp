@@ -1270,7 +1270,7 @@ extern "C"
         {
             return PROXY(poll)(fds, nfds, timeout);
         }
-        // debug("[LFI LD_PRELOAD] Start (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ")");
+        debug("[LFI LD_PRELOAD] Start (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ")");
         // Replace our fds
         auto &preload = ld_preload::get_instance();
         struct replace_fd {
@@ -1284,7 +1284,7 @@ extern "C"
             auto it_socket = preload.socket_ids.find(fds[i].fd);
             if (it_socket != preload.socket_ids.end())
             {
-                // debug("[LFI LD_PRELOAD] find fd " << fds[i].fd << " in socket_ids");
+                debug("[LFI LD_PRELOAD] find fd " << fds[i].fd << " in socket_ids");
                 if (it_socket->second.eventfd != -1){
                     replaced_fds.emplace_back(replace_fd{.index = i, .original_fd = fds[i].fd});
                     fds[i].fd = it_socket->second.eventfd;
@@ -1300,7 +1300,7 @@ extern "C"
             fds[repl.index].fd = repl.original_fd;
         }
 
-        // debug("[LFI LD_PRELOAD] End (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ") = " << ret << " " << STR_ERRNO);
+        debug("[LFI LD_PRELOAD] End (" << getPollfdStr(fds, nfds) << ", " << nfds << ", " << timeout << ") = " << ret << " " << STR_ERRNO);
         return ret;
     }
 
