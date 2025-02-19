@@ -144,56 +144,6 @@ ssize_t lfi_trecv(int id, void *data, size_t size, int tag) {
     return ret;
 }
 
-ssize_t lfi_any_recv(void *data1, void *data2, size_t size, int *out_source1, int *out_source2) {
-    return lfi_any_trecv(data1, data2, size, 0, out_source1, out_source2);
-}
-
-ssize_t lfi_any_trecv(void *data1, void *data2, size_t size, int tag, int *out_source1, int *out_source2) {
-    ssize_t ret = -1;
-    debug_info("(" << data1 << ", " << data2 << ", " << size << ", " << tag << ")>> Begin");
-
-    LFI::LFI &lfi = LFI::LFI::get_instance();
-    auto [shm_msg, peer_msg] = lfi.any_recv(data1, data2, size, tag);
-
-    if (shm_msg.error < 0 && peer_msg.error < 0) {
-        ret = shm_msg.error;
-        if (out_source1 != NULL) {
-            (*out_source1) = -1;
-        }
-        if (out_source2 != NULL) {
-            (*out_source2) = -1;
-        }
-    } else if (shm_msg.error >= 0 && peer_msg.error < 0) {
-        ret = shm_msg.size;
-        if (out_source1 != NULL) {
-            (*out_source1) = shm_msg.source;
-        }
-        if (out_source2 != NULL) {
-            (*out_source2) = -1;
-        }
-    } else if (shm_msg.error < 0 && peer_msg.error >= 0) {
-        ret = peer_msg.size;
-        if (out_source1 != NULL) {
-            (*out_source1) = -1;
-        }
-        if (out_source2 != NULL) {
-            (*out_source2) = peer_msg.source;
-        }
-    } else if (shm_msg.error >= 0 && peer_msg.error >= 0) {
-        ret = shm_msg.size;
-        if (out_source1 != NULL) {
-            (*out_source1) = shm_msg.source;
-        }
-        if (out_source2 != NULL) {
-            (*out_source2) = peer_msg.source;
-        }
-    }
-
-    debug_info("(" << data1 << ", " << data2 << ", " << size << ", " << tag << ")= ret " << ret << " id1 "
-                   << (out_source1 ? *out_source1 : -1) << " id2 " << (out_source2 ? *out_source2 : -1) << " >> End");
-    return ret;
-}
-
 int lfi_server_close(int id) {
     int ret = -1;
     debug_info("(" << id << ") >> Begin");

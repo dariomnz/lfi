@@ -270,7 +270,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
     if (ret != 0) {
         printf("error posting recv buffer (%d)\n", ret);
-        return -LFI_ERROR;
+        return -LFI_LIBFABRIC_ERROR;
     }
 
     debug_info("[LFI] Waiting on rank_peer " << request.m_comm->rank_peer);
@@ -289,7 +289,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error "
                                  << request.error);
     debug_info("[LFI] End = " << size);
-    return 0;
+    return LFI_SUCCESS;
 }
 
 lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
@@ -361,7 +361,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
 
     if (ret != 0) {
         printf("error PEEK recv buffer (%d)\n", ret);
-        msg.error = -LFI_ERROR;
+        msg.error = -LFI_LIBFABRIC_ERROR;
         return msg;
     }
 
@@ -370,7 +370,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     ret = wait(request);
     if (ret != 0) {
         printf("error waiting recv peek (%d)\n", ret);
-        msg.error = -LFI_ERROR;
+        msg.error = ret;
         return msg;
     }
     // If the PEEK request is successfully we need to claim the content
@@ -396,7 +396,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
 
         if (ret != 0) {
             printf("error CLAIM recv buffer (%d)\n", ret);
-            msg.error = -LFI_ERROR;
+            msg.error = -LFI_LIBFABRIC_ERROR;
             return msg;
         }
 
@@ -404,7 +404,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         ret = wait(request);
         if (ret != 0) {
             printf("error waiting recv claim (%d)\n", ret);
-            msg.error = -LFI_ERROR;
+            msg.error = ret;
             return msg;
         }
     }

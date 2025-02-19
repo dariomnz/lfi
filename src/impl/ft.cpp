@@ -26,34 +26,34 @@
 namespace LFI {
 
 int LFI::ft_thread_start() {
-    if (!env::get_instance().LFI_fault_tolerance) return 0;
+    if (!env::get_instance().LFI_fault_tolerance) return LFI_SUCCESS;
 
     debug_info("[LFI] Start");
     {
         std::unique_lock lock(ft_mutex);
-        if (ft_is_running) return 0;
+        if (ft_is_running) return LFI_SUCCESS;
         ft_is_running = true;
     }
     ft_thread = std::thread(ft_thread_loop);
     debug_info("[LFI] End");
-    return 0;
+    return LFI_SUCCESS;
 }
 
 int LFI::ft_thread_destroy() {
-    if (!env::get_instance().LFI_fault_tolerance) return 0;
+    if (!env::get_instance().LFI_fault_tolerance) return LFI_SUCCESS;
 
     debug_info("[LFI] Start");
 
     {
         std::unique_lock lock(ft_mutex);
-        if (!ft_is_running) return 0;
+        if (!ft_is_running) return LFI_SUCCESS;
         ft_is_running = false;
     }
     ft_cv.notify_one();
     ft_thread.join();
 
     debug_info("[LFI] End");
-    return 0;
+    return LFI_SUCCESS;
 }
 
 int LFI::ft_thread_loop() {

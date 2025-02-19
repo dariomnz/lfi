@@ -33,7 +33,7 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 
     // Check if any_comm in send is error
     if (comm_id == ANY_COMM_SHM || comm_id == ANY_COMM_PEER) {
-        msg.error = -LFI_ERROR;
+        msg.error = -LFI_SEND_ANY_COMM;
         return msg;
     }
 
@@ -79,7 +79,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
     // Check if any_comm in send is error
     if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
-        return -LFI_ERROR;
+        return -LFI_SEND_ANY_COMM;
     }
 
     request.reset();
@@ -178,7 +178,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
     if (ret != 0) {
         printf("error posting send buffer (%d)\n", ret);
-        return -LFI_ERROR;
+        return -LFI_LIBFABRIC_ERROR;
     }
 
     request.size = size;
@@ -188,6 +188,6 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error "
                                  << request.error);
     debug_info("[LFI] End = " << size);
-    return 0;
+    return LFI_SUCCESS;
 }
 }  // namespace LFI

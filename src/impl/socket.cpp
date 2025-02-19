@@ -299,7 +299,7 @@ int64_t socket::send_str(int socket, const std::string& str) {
         return ret;
     }
     if (size_str == 0) {
-        return 0;
+        return size_str;
     }
     debug_info("Send_str " << str);
     do{
@@ -324,7 +324,7 @@ int64_t socket::recv_str(int socket, std::string& str) {
     }
     debug_info("Recv_str size " << size_str);
     if (size_str == 0) {
-        return 0;
+        return size_str;
     }
     str.clear();
     str.resize(size_str, '\0');

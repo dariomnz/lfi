@@ -31,7 +31,7 @@ int LFI::cancel(lfi_request &request) {
     debug_info("[LFI] Start " << request.to_string());
     {
         std::unique_lock request_lock(request.mutex);
-        if (request.is_inject || request.is_completed()) return 0;
+        if (request.is_inject || request.is_completed()) return LFI_SUCCESS;
     }
 
     fid_ep *p_ep = nullptr;

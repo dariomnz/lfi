@@ -122,7 +122,7 @@ int LFI::progress(lfi_ep &lfi_ep) {
     // Libfabric progress
     ret = fi_cq_read(lfi_ep.cq, comp, comp_count);
     if (ret == -FI_EAGAIN) {
-        return 0;
+        return LFI_SUCCESS;
     }
 
     if (ret == -FI_EAVAIL) {
@@ -140,7 +140,7 @@ int LFI::progress(lfi_ep &lfi_ep) {
         } else if (std::abs(err.err) == FI_ENOMSG) {
             request_p->error = -LFI_PEEK_NO_MSG;
         } else {
-            request_p->error = -LFI_ERROR;
+            request_p->error = -LFI_LIBFABRIC_ERROR;
         }
         request_p->cv.notify_all();
         if (request_p->shared_wait_struct != nullptr) {

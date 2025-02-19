@@ -93,7 +93,7 @@ int LFI::set_hints(lfi_ep &lfi_ep, const std::string &prov) {
 
     debug_info("[LFI] End");
 
-    return 0;
+    return LFI_SUCCESS;
 }
 
 int LFI::init(lfi_ep &lfi_ep) {

@@ -25,6 +25,7 @@
 #include "impl/lfi.hpp"
 #include "impl/socket.hpp"
 #include "lfi.h"
+#include "lfi_error.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,33 +66,33 @@ bool lfi_request_completed(lfi_request *req) {
 
 ssize_t lfi_request_size(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
     std::unique_lock request_lock(request->mutex);
-    const auto ret = request->is_completed() ? request->size : -1;
+    const auto ret = request->is_completed() ? request->size : -LFI_NOT_COMPLETED;
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
 }
 
 ssize_t lfi_request_source(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
     std::unique_lock request_lock(request->mutex);
-    const auto ret = request->is_completed() ? request->source : -1;
+    const auto ret = request->is_completed() ? request->source : -LFI_NOT_COMPLETED;
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
 }
 
 ssize_t lfi_request_error(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
     std::unique_lock request_lock(request->mutex);
-    const auto ret = request->is_completed() ? request->error : -1;
+    const auto ret = request->is_completed() ? request->error : -LFI_NOT_COMPLETED;
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
 }
@@ -103,7 +104,7 @@ ssize_t lfi_recv_async(lfi_request *req, void *data, size_t size) { return lfi_t
 ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag) {
     ssize_t ret = 0;
     debug_info("(" << req << ", " << data << ", " << size << ", " << tag << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
@@ -115,7 +116,7 @@ ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag
 ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
     ssize_t ret = 0;
     debug_info("(" << req << ", " << data << ", " << size << ", " << tag << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
@@ -126,7 +127,7 @@ ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
 
 ssize_t lfi_wait(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
@@ -137,7 +138,7 @@ ssize_t lfi_wait(lfi_request *req) {
 
 inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_many) {
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")>> Begin");
-    if (reqs == nullptr) return -1;
+    if (reqs == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request **requests = reinterpret_cast<LFI::lfi_request **>(reqs);
     std::vector<std::reference_wrapper<LFI::lfi_request>> v_requests;
@@ -162,7 +163,7 @@ ssize_t lfi_wait_all(lfi_request *reqs[], size_t size) {
 
 ssize_t lfi_cancel(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
-    if (req == nullptr) return -1;
+    if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());

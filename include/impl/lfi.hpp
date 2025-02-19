@@ -38,10 +38,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "lfi.h"
 #include "lfi_async.h"
+#include "lfi_error.h"
 
-#define DECLARE_LFI_ERROR(name, num, msg)  \
-    static constexpr const int name = num; \
+#define DECLARE_LFI_ERROR(name, msg)  \
     static constexpr const char *name##_str = msg;
 
 #define CASE_STR_ERROR(name) \
@@ -50,13 +51,17 @@
 
 namespace LFI {
 // Error codes
-DECLARE_LFI_ERROR(LFI_SUCCESS, 0, "Success");
-DECLARE_LFI_ERROR(LFI_ERROR, 1, "Error");
-DECLARE_LFI_ERROR(LFI_TIMEOUT, 2, "Timeout");
-DECLARE_LFI_ERROR(LFI_CANCELED, 3, "Canceled");
-DECLARE_LFI_ERROR(LFI_CANCELED_COMM, 4, "Canceled COMM");
-DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND, 5, "COMM not found");
-DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG, 6, "No msg encounter");
+DECLARE_LFI_ERROR(LFI_SUCCESS,           "Success");
+DECLARE_LFI_ERROR(LFI_ERROR,             "Error");
+DECLARE_LFI_ERROR(LFI_TIMEOUT,           "Timeout");
+DECLARE_LFI_ERROR(LFI_CANCELED,          "Canceled");
+DECLARE_LFI_ERROR(LFI_CANCELED_COMM,     "Canceled COMM");
+DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND,    "COMM not found");
+DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG,       "No msg encounter");
+DECLARE_LFI_ERROR(LFI_NOT_COMPLETED,     "Request not completed");
+DECLARE_LFI_ERROR(LFI_NULL_REQUEST,      "Request is NULL");
+DECLARE_LFI_ERROR(LFI_SEND_ANY_COMM,     "Use of ANY_COMM in send");
+DECLARE_LFI_ERROR(LFI_LIBFABRIC_ERROR,   "Internal libfabric error");
 
 static constexpr const char *lfi_strerror(int error) {
     switch (error) {
@@ -67,6 +72,10 @@ static constexpr const char *lfi_strerror(int error) {
         CASE_STR_ERROR(LFI_CANCELED_COMM);
         CASE_STR_ERROR(LFI_COMM_NOT_FOUND);
         CASE_STR_ERROR(LFI_PEEK_NO_MSG);
+        CASE_STR_ERROR(LFI_NOT_COMPLETED);
+        CASE_STR_ERROR(LFI_NULL_REQUEST);
+        CASE_STR_ERROR(LFI_SEND_ANY_COMM);
+        CASE_STR_ERROR(LFI_LIBFABRIC_ERROR);
         default:
             return "Unknown";
     }

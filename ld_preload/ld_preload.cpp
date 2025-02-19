@@ -225,7 +225,7 @@ void ld_preload::thread_eventfd_loop()
             if (any_recv(*peer_request, false)){
                 print_error("peer any_recv");
             }
-        } else if (completed == -LFI::LFI_TIMEOUT) {
+        } else if (completed == -LFI_TIMEOUT) {
             continue;
         } else {
             print_error("lfi wait_num");
