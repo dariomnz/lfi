@@ -26,38 +26,175 @@
 #include <sys/types.h>
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
-    typedef struct lfi_request lfi_request;
+/**
+ * @brief Represents an LFI asynchronous request.
+ */
+typedef struct lfi_request lfi_request;
 
-    #define LFI_ANY_COMM_SHM  (0xFFFFFF - 1)
-    #define LFI_ANY_COMM_PEER (0xFFFFFF - 2)
+/**
+ * @brief Creates a new LFI asynchronous request.
+ *
+ * This function creates a new request object associated with the given client ID.
+ *
+ * @param id The ID of the client.
+ * @return A pointer to the newly created `lfi_request` object on success, or NULL on failure.
+ */
+lfi_request *lfi_request_create(int id);
 
-    lfi_request *lfi_request_create(int id);
-    // It is only secure to free a request if is completed or canceled
-    void lfi_request_free(lfi_request *request);
-    bool lfi_request_completed(lfi_request *request);
-    // When completed return values else -1
-    ssize_t lfi_request_size(lfi_request *request);
-    ssize_t lfi_request_source(lfi_request *request);
-    ssize_t lfi_request_error(lfi_request *request);
+/**
+ * @brief Frees an LFI asynchronous request.
+ *
+ * This function frees the memory associated with the given request object.
+ *
+ * @note It is only safe to free a request if it is completed or canceled.
+ *
+ * @param request Pointer to the `lfi_request` object to free.
+ */
+void lfi_request_free(lfi_request *request);
 
-    ssize_t lfi_send_async(lfi_request *request, const void *data, size_t size);
-    ssize_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int tag);
+/**
+ * @brief Checks if an LFI asynchronous request is completed.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @return `true` if the request is completed, `false` otherwise.
+ */
+bool lfi_request_completed(lfi_request *request);
 
-    ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
-    ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
+/**
+ * @brief Returns the size of the data associated with a completed request.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @return The size of the data on success (if the request is completed), or a negative error code on failure.
+ */
+ssize_t lfi_request_size(lfi_request *request);
 
-    ssize_t lfi_wait(lfi_request *request);
-    // Return the index of the first request completed
-    ssize_t lfi_wait_any(lfi_request *requests[], size_t size);
-    ssize_t lfi_wait_all(lfi_request *requests[], size_t size);
+/**
+ * @brief Returns the source ID of the data associated with a completed request.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @return The source of the data on success (if the request is completed), or -1 if the request is not completed or an
+ * error occurred.
+ */
+ssize_t lfi_request_source(lfi_request *request);
 
-    // When the request is cancelled it can be completed by the hardware, so, if it is important
-    // for the user whether it is completed or not, it is necessary to check it after this call.
-    ssize_t lfi_cancel(lfi_request *request);
+/**
+ * @brief Returns the error code associated with a request.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_request_error(lfi_request *request);
+
+/**
+ * @brief Sends data asynchronously over the LFI connection.
+ *
+ * This function sends data asynchronously using the given request object.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @param data Pointer to the data to send.
+ * @param size The size of the data to send.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_send_async(lfi_request *request, const void *data, size_t size);
+
+/**
+ * @brief Sends tagged data asynchronously over the LFI connection.
+ *
+ * This function sends data with a tag asynchronously using the given request object.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @param data Pointer to the data to send.
+ * @param size The size of the data to send.
+ * @param tag The tag associated with the data.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int tag);
+
+/**
+ * @brief Receives data asynchronously over the LFI connection.
+ *
+ * This function receives data asynchronously using the given request object,
+ * or from any actual client if the ANY_COMM constant is used when creating the request object.
+ *
+ * @note To use ANY_COMM, two calls to this function are required:
+ *       - One with a request for LFI_ANY_COMM_SHM to receive data from shared memory.
+ *       - Another with a request for LFI_ANY_COMM_PEER to receive data from the peer connection.
+ *       Next a call to lfi_wait_any to wait for one msg.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @param data Pointer to the buffer where the received data will be stored.
+ * @param size The size of the buffer.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
+
+/**
+ * @brief Receives tagged data asynchronously over the LFI connection.
+ *
+ * This function receives data with a specific tag asynchronously using the given request object,
+ * or from any actual client if the ANY_COMM constant is used when creating the request object.
+ *
+ * @note To use ANY_COMM, two calls to this function are required:
+ *       - One with a request for LFI_ANY_COMM_SHM to receive data from shared memory.
+ *       - Another with a request for LFI_ANY_COMM_PEER to receive data from the peer connection.
+ *       Next a call to lfi_wait_any to wait for one msg.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @param data Pointer to the buffer where the received data will be stored.
+ * @param size The size of the buffer.
+ * @param tag The tag of the data to receive.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
+
+/**
+ * @brief Waits for an asynchronous request to complete.
+ *
+ * This function blocks until the given request is completed.
+ *
+ * @param request Pointer to the `lfi_request` object.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_wait(lfi_request *request);
+
+/**
+ * @brief Waits for any of the given asynchronous requests to complete.
+ *
+ * This function blocks until at least one of the given requests is completed.
+ *
+ * @param requests Array of `lfi_request` pointers.
+ * @param size The number of requests in the array.
+ * @return The index of the one completed request in the array, or a negative error code on failure.
+ */
+ssize_t lfi_wait_any(lfi_request *requests[], size_t size);
+
+/**
+ * @brief Waits for all of the given asynchronous requests to complete.
+ *
+ * This function blocks until all of the given requests are completed.
+ *
+ * @param requests Array of `lfi_request` pointers.
+ * @param size The number of requests in the array.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_wait_all(lfi_request *requests[], size_t size);
+
+/**
+ * @brief Cancels an asynchronous request.
+ *
+ * This function attempts to cancel the given request.
+ *
+ * @note When a request is canceled, it may still be completed by the hardware.
+ *       If it is important for the user to know whether the request was ultimately completed,
+ *       it is necessary to check it with `lfi_request_completed()` after calling this function.
+ *
+ * @param request Pointer to the `lfi_request` object to cancel.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_cancel(lfi_request *request);
 
 #ifdef __cplusplus
 }
