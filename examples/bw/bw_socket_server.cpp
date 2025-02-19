@@ -29,26 +29,39 @@
 #include "mpi.h"
 #include "bw_common.hpp"
 #include "impl/socket.hpp"
+#include "impl/ns.hpp"
+#include "impl/debug.hpp"
 
 using namespace bw_examples;
 
+static std::vector<uint8_t> data;
+
 int run_test(int socket, bw_test &test)
 {
-    std::vector<uint8_t> data(test.test_size);
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
+    debug_info("Start run_test id "<<socket<<" size "<<test.test_size);
     for (size_t i = 0; i < test.test_count; i++)
     {
+        debug_info("count "<<i<<" recv("<<socket<<", data.data(), "<<test_size<<")");
         data_recv = LFI::socket::recv(socket, data.data(), test_size);
-        if (data_recv != test_size)
+        debug_info("count "<<i<<" recved("<<socket<<", data.data(), "<<test_size<<")");
+        if (data_recv != test_size){
+            print_error("Error recv = "<<data_recv);
             return -1;
+        }
+        int ack = 0;
+        debug_info("ack send("<<socket<<", ack, "<<sizeof(ack)<<")");
+        data_send = LFI::socket::send(socket, &ack, sizeof(ack));
+        debug_info("ack sended("<<socket<<", ack, "<<sizeof(ack)<<")");
+        if (data_send != sizeof(ack)){
+            print_error("Error send = "<<data_send);
+            return -1;
+        }
     }
-    
-    int ack = 0;
-    data_send = LFI::socket::send(socket, &ack, sizeof(ack));
-    if (data_send != sizeof(ack))
-        return -1;
+
+    debug_info("End run_test id "<<socket<<" size "<<test.test_size);
 
     return 0;
 }
@@ -69,8 +82,15 @@ int main(int argc, char *argv[])
     if (ret < 0) exit(EXIT_FAILURE);
 
     // Creating socket file descriptor
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
         perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int val = 1;
+    ret = setsockopt(server_fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
+    if (ret < 0) {
+        perror("setsockopt");
         exit(EXIT_FAILURE);
     }
 
@@ -94,7 +114,9 @@ int main(int argc, char *argv[])
     }
 
     auto &tests = get_test_vector();
+    data.resize(tests[tests.size()-1].test_size);
 
+    print("Server start accepting "<<LFI::ns::sockaddr_to_str((struct sockaddr*)&address)<<" :");
     int iter = 0;
     while (iter < max_clients)
     {
@@ -103,7 +125,7 @@ int main(int argc, char *argv[])
             exit(EXIT_FAILURE);
         }
         std::thread([new_socket, &tests](){
-           
+            print("Server accept client "<<new_socket);
             for (auto &test : tests)
             {
                 run_test(new_socket, test);

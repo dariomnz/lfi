@@ -28,9 +28,10 @@
 
 using namespace bw_examples;
 
+static std::vector<uint8_t> data;
+
 int run_test(int id, bw_test &test)
 {
-    std::vector<uint8_t> data(test.test_size);
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
@@ -44,13 +45,13 @@ int run_test(int id, bw_test &test)
             return -1;
         }
 
-    }
-    int ack = 0;
-    debug_info("ack lfi_send("<<id<<", ack, "<<sizeof(ack)<<")");
-    data_send = lfi_send(id, &ack, sizeof(ack));
-    if (data_send != sizeof(ack)){
-        print("Error lfi_send = "<<data_send<<" "<<lfi_strerror(data_send));
-        return -1;
+        int ack = 0;
+        debug_info("ack lfi_send("<<id<<", ack, "<<sizeof(ack)<<")");
+        data_send = lfi_send(id, &ack, sizeof(ack));
+        if (data_send != sizeof(ack)){
+            print("Error lfi_send = "<<data_send<<" "<<lfi_strerror(data_send));
+            return -1;
+        }
     }
 
     debug_info("End run_test id "<<id<<" size "<<test.test_size);
@@ -78,6 +79,7 @@ int main(int argc, char *argv[])
     }
 
     auto &tests = get_test_vector();
+    data.resize(tests[tests.size()-1].test_size);
 
     print("Server start accepting "<<LFI::ns::get_host_name()<<" :");
     int iter = 0;

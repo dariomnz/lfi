@@ -31,34 +31,45 @@
 
 using namespace bw_examples;
 
+static std::vector<uint8_t> data;
+
 int run_test(std::vector<int> sockets, bw_test &test)
 {
-    std::vector<uint8_t> data(test.test_size);
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
+    debug_info("Start run_test size "<<test.test_size);
     MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
     {
         for (auto &socket : sockets)
         {
+            debug_info("count "<<i<<" send("<<socket<<", data.data(), "<<test_size<<")");
             data_send = LFI::socket::send(socket, data.data(), test_size);
-            if (data_send != test_size)
+            debug_info("count "<<i<<" sended("<<socket<<", data.data(), "<<test_size<<")");
+            if (data_send != test_size){
+                print_error("Error count "<<i<<" socket "<<socket<<" send = "<<data_send);
                 return -1;
+            }
             test.size += data_send;
+
+
+            int ack = 0;
+            debug_info("ack recv("<<socket<<", ack, "<<sizeof(ack)<<")");
+            data_recv = LFI::socket::recv(socket, &ack, sizeof(ack));
+            debug_info("ack recved("<<socket<<", ack, "<<sizeof(ack)<<")");
+            if (data_recv != sizeof(ack)){
+                print_error("Error socket "<<socket<<" recv = "<<data_recv);
+                return -1;
+            }
         }
     }
-    
-    for (auto &socket : sockets)
-    {   
-        int ack = 0;
-        data_recv = LFI::socket::recv(socket, &ack, sizeof(ack));
-        if (data_recv != sizeof(ack))
-            return -1;
-    }
+
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
+    
+    debug_info("End run_test size "<<test.test_size);
 
     return 0;
 }
@@ -87,13 +98,29 @@ int main(int argc, char *argv[])
 
     print_header();
 
+    int rank;
+    ret = MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (ret < 0)
+        exit(EXIT_FAILURE);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    timer t;
+
     client_fds.resize(servers.size());
     for (size_t i = 0; i < servers.size(); i++)
     {
-        if ((client_fds[i] = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        if ((client_fds[i] = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
         {
             printf("\n Socket creation error \n");
             return -1;
+        }
+
+        int val = 1;
+        ret = setsockopt(client_fds[i], IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
+        if (ret < 0) {
+            print_error("ERROR: setsockopt fails");
+            LFI::socket::close(client_fds[i]);
+            return ret;
         }
 
         serv_addr.sin_family = AF_INET;
@@ -103,19 +130,27 @@ int main(int argc, char *argv[])
         {
             printf(
                 "\nInvalid address/ Address not supported \n");
+                LFI::socket::close(client_fds[i]);
             return -1;
         }
 
         if ((status = connect(client_fds[i], (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
         {
             printf("\nConnection Failed \n");
+            LFI::socket::close(client_fds[i]);
             return -1;
         }
     }
     MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0){
+        print("Connection time to "<<servers.size()<<" servers: "<<(t.resetElapsedNano() * 0.000'001)<<" ms");
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
-
+    data.resize(tests[tests.size()-1].test_size);
+    
     for (auto &test : tests)
     {
         run_test(client_fds, test);

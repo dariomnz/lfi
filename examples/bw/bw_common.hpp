@@ -59,7 +59,7 @@ namespace bw_examples
             for (size_t i = 0; i < tests.size(); i++)
             {
                 tests[i].test_size = 1ull << i;
-                tests[i].test_count = 10;
+                tests[i].test_count = 1;
                 tests[i].test_tag = 1000+i;
             }
         }

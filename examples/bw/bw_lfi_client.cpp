@@ -26,9 +26,10 @@
 
 using namespace bw_examples;
 
+static std::vector<uint8_t> data;
+
 int run_test(std::vector<int>& ids, bw_test &test)
 {
-    std::vector<uint8_t> data(test.test_size);
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
@@ -46,20 +47,16 @@ int run_test(std::vector<int>& ids, bw_test &test)
                 return -1;
             }
             test.size += data_send;
+            int ack = 0;
+            debug_info("ack lfi_recv("<<id<<", ack, "<<sizeof(ack)<<")");
+            data_recv = lfi_recv(id, &ack, sizeof(ack));
+            if (data_recv != sizeof(ack)){
+                print("Error lfi_recv = "<<data_recv<<" "<<lfi_strerror(data_recv));
+                return -1;
+            }
         }
     }
     
-    for (auto &id : ids)
-    {
-        int ack = 0;
-        debug_info("ack lfi_recv("<<id<<", ack, "<<sizeof(ack)<<")");
-        data_recv = lfi_recv(id, &ack, sizeof(ack));
-        if (data_recv != sizeof(ack)){
-            print("Error lfi_recv = "<<data_recv<<" "<<lfi_strerror(data_recv));
-            return -1;
-        }
-    }
-
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
     
@@ -89,6 +86,14 @@ int main(int argc, char *argv[])
     if (ret < 0)
         exit(EXIT_FAILURE);
 
+    int rank;
+    ret = MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (ret < 0)
+        exit(EXIT_FAILURE);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    timer t;
+
     client_fds.resize(servers.size());
     for (size_t i = 0; i < servers.size(); i++)
     {
@@ -98,11 +103,16 @@ int main(int argc, char *argv[])
             return -1;
         }
     }
-    
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0){
+        print("Connection time to "<<servers.size()<<" servers: "<<(t.resetElapsedNano() * 0.000'001)<<" ms");
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
+    data.resize(tests[tests.size()-1].test_size);
     print_header();
 
     for (auto &test : tests)
@@ -120,7 +130,6 @@ int main(int argc, char *argv[])
         // closing the connected socket
         lfi_client_close(id);
     }
-    
 
     ret = MPI_Finalize();
     if (ret < 0)

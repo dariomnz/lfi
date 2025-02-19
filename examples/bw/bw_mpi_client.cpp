@@ -32,10 +32,10 @@
 
 using namespace bw_examples;
 
+static std::vector<uint8_t> data;
+
 int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
 {
-    std::vector<uint8_t> data(test.test_size);
-    std::vector<MPI_Request> requests(test.test_count*servers);
     int ret = 0;
     ssize_t test_size = test.test_size;
     debug_info("Start run_test size "<<test.test_size);
@@ -46,26 +46,22 @@ int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
         for (int j = 0; j < servers; j++)
         {
             debug_info("count "<<i<<" MPI_Isend(data.data(), "<<test_size<<")");
-            ret = MPI_Isend(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, &requests[i*servers+j]);
+            ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm);
             if (ret != MPI_SUCCESS){
                 printf("Error MPI_Send\n");
                 return -1;
             }
             test.size += test_size;
+            int ack = 0;
+            debug_info("ack MPI_Recv(ack, "<<sizeof(ack)<<")");
+            ret = MPI_Recv(&ack, 1, MPI_INT, j, 0, client_comm, MPI_STATUS_IGNORE);
+            if (ret != MPI_SUCCESS){
+                printf("Error MPI_Recv\n");
+                return -1;
+            }
         }
     }
 
-    MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-    for (int j = 0; j < servers; j++)
-    {
-        int ack = 0;
-        debug_info("ack MPI_Recv(ack, "<<sizeof(ack)<<")");
-        ret = MPI_Recv(&ack, 1, MPI_INT, j, 0, client_comm, MPI_STATUS_IGNORE);
-        if (ret != MPI_SUCCESS){
-            printf("Error MPI_Recv\n");
-            return -1;
-        }
-    }
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
 
@@ -141,14 +137,22 @@ int main(int argc, char *argv[])
 
     MPI_Bcast(port_name.data(), port_name.size(), MPI_CHAR, 0, MPI_COMM_WORLD);
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    timer t;
+
     debug_info("Connecting mpi "<<port_name.c_str());
     MPI_Comm_connect(port_name.c_str(), MPI_INFO_NULL, 0, MPI_COMM_WORLD, &client_comm);
     
     debug_info("Connected mpi "<<port_name.c_str());
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0){
+        print("Connection time to "<<servers.size()<<" servers: "<<(t.resetElapsedNano() * 0.000'001)<<" ms");
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     auto &tests = get_test_vector();
+    data.resize(tests[tests.size()-1].test_size);
 
     for (auto &test : tests)
     {
