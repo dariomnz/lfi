@@ -19,89 +19,71 @@
  *
  */
 
-#pragma once
+ #pragma once
 
-#include <cstdlib>
-#include <cstring>
-
-namespace LFI
-{
-    class env
-    {
-    public:
-        env()
-        {
-            // LFI_FAULT_TOLERANCE
-            char *env_lfi_fault_tolerance = std::getenv("LFI_FAULT_TOLERANCE");
-            if ((env_lfi_fault_tolerance != NULL) && (std::strlen(env_lfi_fault_tolerance) > 0))
-            {
-                LFI_fault_tolerance = (atoi(env_lfi_fault_tolerance) != 0);
-            }
-            // LFI_FAULT_TOLERANCE_TIME
-            char *env_lfi_fault_tolerance_time = std::getenv("LFI_FAULT_TOLERANCE_TIME");
-            if ((env_lfi_fault_tolerance_time != NULL) && (std::strlen(env_lfi_fault_tolerance_time) > 0))
-            {
-                LFI_fault_tolerance_time = atoi(env_lfi_fault_tolerance_time);
-            }
-            // LFI_PORT
-            char *env_lfi_port = std::getenv("LFI_PORT");
-            if ((env_lfi_port != NULL) && (std::strlen(env_lfi_port) > 0))
-            {
-                LFI_port = atoi(env_lfi_port);
-            }
-            // LFI_MS_WAIT_SLEEP
-            char *env_lfi_ms_wait_sleep = std::getenv("LFI_MS_WAIT_SLEEP");
-            if ((env_lfi_ms_wait_sleep != NULL) && (std::strlen(env_lfi_ms_wait_sleep) > 0))
-            {
-                LFI_ms_wait_sleep = atoi(env_lfi_ms_wait_sleep);
-            }
-            // LFI_USE_INJECT
-            char *env_lfi_use_inject = std::getenv("LFI_USE_INJECT");
-            if ((env_lfi_use_inject != NULL) && (std::strlen(env_lfi_use_inject) > 0))
-            {
-                LFI_use_inject = (atoi(env_lfi_use_inject) != 0);
-            }
-            // LFI_ASYNC_CONNECTION
-            char *env_lfi_async_connection = std::getenv("LFI_ASYNC_CONNECTION");
-            if ((env_lfi_async_connection != NULL) && (std::strlen(env_lfi_async_connection) > 0))
-            {
-                LFI_async_connection = (atoi(env_lfi_async_connection) != 0);
-            }
-            // LFI_LD_PRELOAD_THREADS
-            char *env_lfi_ld_preload_threads = std::getenv("LFI_LD_PRELOAD_THREADS");
-            if ((env_lfi_ld_preload_threads != NULL) && (std::strlen(env_lfi_ld_preload_threads) > 0))
-            {
-                LFI_ld_preload_threads = atoi(env_lfi_ld_preload_threads);
-            }
-            // LFI_LD_PRELOAD_THREADS
-            char *env_lfi_ld_preload_buffered = std::getenv("LFI_LD_PRELOAD_BUFFERED");
-            if ((env_lfi_ld_preload_buffered != NULL) && (std::strlen(env_lfi_ld_preload_buffered) > 0))
-            {
-                LFI_ld_preload_buffered = atoi(env_lfi_ld_preload_buffered);
-            }
-        }
-        // Delete copy constructor
-        env(const env &) = delete;
-        // Delete copy assignment operator
-        env &operator=(const env &) = delete;
-        // Delete move constructor
-        env(env &&) = delete;
-        // Delete move assignment operator
-        env &operator=(env &&) = delete;
-        bool LFI_fault_tolerance = true;
-        int LFI_fault_tolerance_time = 5;
-        int LFI_port = 56789;
-        int LFI_ms_wait_sleep = 10;
-        bool LFI_use_inject = false;
-        bool LFI_async_connection = true;
-        size_t LFI_ld_preload_threads = 1;
-        size_t LFI_ld_preload_buffered = 64 * 1024;
-
-    public:
-        static env &get_instance()
-        {
-            static env instance;
-            return instance;
-        }
-    };
-} // namespace LFI
+ #include <iostream>
+ #include <cstdlib>
+ #include <cstring>
+ 
+ namespace LFI
+ {
+     class env
+     {
+     public:
+         template<typename T>
+         void parse_env(const char * env, T& value)
+         {
+             char *endptr;
+             int int_value;
+      
+             char *env_value = std::getenv(env);
+             if ((env_value == NULL) || (std::strlen(env_value) == 0)) {
+                 return;
+             }
+ 
+             int_value = (int) std::strtol(env_value, &endptr, 10);
+             if ((endptr == env_value) || (*endptr != '\0'))
+             {
+                 std::cerr << "Warning: environmental variable '"<<env<<"' with value '"<<env_value<<"' is not a number" << std::endl;
+                 return;
+             }
+ 
+             value = int_value;
+         }
+ 
+         env()
+         {
+             parse_env("LFI_FAULT_TOLERANCE", LFI_fault_tolerance);
+             parse_env("LFI_FAULT_TOLERANCE_TIME", LFI_fault_tolerance_time);
+             parse_env("LFI_PORT", LFI_port);
+             parse_env("LFI_MS_WAIT_SLEEP", LFI_ms_wait_sleep);
+             parse_env("LFI_USE_INJECT", LFI_use_inject);
+             parse_env("LFI_ASYNC_CONNECTION", LFI_async_connection);
+             parse_env("LFI_LD_PRELOAD_THREADS", LFI_ld_preload_threads);
+             parse_env("LFI_LD_PRELOAD_BUFFERED", LFI_ld_preload_buffered);
+         }
+         // Delete copy constructor
+         env(const env &) = delete;
+         // Delete copy assignment operator
+         env &operator=(const env &) = delete;
+         // Delete move constructor
+         env(env &&) = delete;
+         // Delete move assignment operator
+         env &operator=(env &&) = delete;
+         bool LFI_fault_tolerance = true;
+         int LFI_fault_tolerance_time = 5;
+         int LFI_port = 56789;
+         int LFI_ms_wait_sleep = 10;
+         bool LFI_use_inject = false;
+         bool LFI_async_connection = true;
+         size_t LFI_ld_preload_threads = 1;
+         size_t LFI_ld_preload_buffered = 64 * 1024;
+ 
+     public:
+         static env &get_instance()
+         {
+             static env instance;
+             return instance;
+         }
+     };
+ } // namespace LFI
