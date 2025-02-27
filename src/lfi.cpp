@@ -55,14 +55,10 @@ int lfi_client_create(const char *serv_addr, int port) {
     out = lfi.reserve_comm();
 
     auto func = [client_socket, out, &lfi]() {
-        int ret = lfi.init_client(client_socket, out);
-        uint32_t out = 0;
-        if (ret >= 0) {
-            out = ret;
-        }
+        uint32_t ret = lfi.init_client(client_socket, out);
         // TODO handle error in close
         LFI::socket::close(client_socket);
-        return out;
+        return ret;
     };
 
     if (LFI::env::get_instance().LFI_async_connection) {
@@ -89,14 +85,10 @@ int lfi_server_accept(int socket) {
 
     out = lfi.reserve_comm();
     auto func = [client_socket, out, &lfi]() {
-        int ret = lfi.init_server(client_socket, out);
-        uint32_t out = 0;
-        if (ret >= 0) {
-            out = ret;
-        }
+        uint32_t ret = lfi.init_server(client_socket, out);
         // TODO handle error in close
         LFI::socket::close(client_socket);
-        return out;
+        return ret;
     };
 
     if (LFI::env::get_instance().LFI_async_connection) {

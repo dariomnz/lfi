@@ -50,8 +50,8 @@ std::shared_ptr<lfi_comm> LFI::create_comm(lfi_ep &lfi_ep, int32_t comm_id) {
     } else {
         new_id = reserve_comm();
     }
-    auto [key, inserted] =
-        m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
+    auto [key, inserted] = m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id),
+                                           std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
     key->second->rank_peer = new_id;
     debug_info("[LFI] rank_peer " << key->second->rank_peer);
     debug_info("[LFI] End");
@@ -62,8 +62,8 @@ std::shared_ptr<lfi_comm> LFI::create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id)
     uint32_t new_id = comm_id;
 
     debug_info("[LFI] Start");
-    auto [key, inserted] =
-        m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id), std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
+    auto [key, inserted] = m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id),
+                                           std::forward_as_tuple(std::make_shared<lfi_comm>(lfi_ep)));
     key->second->rank_peer = new_id;
     key->second->rank_self_in_peer = new_id;
     key->second->is_ready = true;
@@ -76,7 +76,7 @@ std::shared_ptr<lfi_comm> LFI::get_comm(uint32_t id) {
     debug_info("[LFI] Start " << id);
     std::unique_lock comms_lock(m_comms_mutex);
     auto it = m_comms.find(id);
-    if (it == m_comms.end() || (it != m_comms.end() && !it->second->is_ready)) {
+    if (it == m_comms.end() || (it != m_comms.end() && (!it->second->is_ready || it->second->in_fut))) {
         // If fail or not ready check if is in fut comm and retry
         std::unique_lock fut_lock(m_fut_mutex);
 
@@ -104,6 +104,7 @@ std::shared_ptr<lfi_comm> LFI::get_comm(uint32_t id) {
             debug_info("[LFI] End " << id << " not found in comms nor futs");
             return nullptr;
         }
+        it->second->in_fut = false;
     }
 
     debug_info("[LFI] End " << id << " found");

@@ -37,6 +37,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <variant>
 
 #include "lfi.h"
 #include "lfi_async.h"
@@ -90,15 +91,7 @@ static constexpr const char *lfi_strerror(int error) {
 struct lfi_ep;
 struct lfi_comm;
 
-enum class wait_endpoint {
-    NONE,
-    SHM,
-    PEER,
-    ALL,
-};
-
 struct wait_struct {
-    wait_endpoint wait_type = wait_endpoint::NONE;
     std::mutex wait_mutex = {};
     std::condition_variable wait_cv = {};
     int wait_count = 0;
@@ -180,6 +173,7 @@ struct lfi_comm {
     bool is_canceled = false;
 
     std::atomic_bool is_ready = false;
+    std::atomic_bool in_fut = false;
 
     lfi_comm(lfi_ep &ep) : m_ep(ep) {}
 };
@@ -198,7 +192,10 @@ struct lfi_ep {
     std::atomic_bool enable_ep = false;
     bool is_shm = false;
 
-    std::mutex mutex_ep = {};
+    std::atomic_bool progress = {false};
+    
+    std::mutex requests_mutex = {};
+    std::unordered_set<std::variant<lfi_request *, wait_struct *>> waiting_requests = {};
 
     bool initialized() { return enable_ep; }
 
@@ -324,8 +321,10 @@ class LFI {
     // wait.cpp
    private:
     inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
+    void wake_up_requests(lfi_ep &ep);
 
    public:
+    bool protected_progress(lfi_ep &ep);
     int progress(lfi_ep &lfi_ep);
     int wait(lfi_request &request, int32_t timeout_ms = -1);
     int wait_num(std::vector<std::reference_wrapper<lfi_request>> &request, int how_many, int32_t timeout_ms = -1);

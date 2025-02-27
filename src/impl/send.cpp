@@ -82,6 +82,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
         return -LFI_SEND_ANY_COMM;
     }
 
+    std::unique_lock req_lock(request.mutex);
     request.reset();
 
     decltype(std::chrono::high_resolution_clock::now()) start;
@@ -107,11 +108,9 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
             ret = fi_tinject(p_tx_ep, buffer, size, request.m_comm->fi_addr, tag_send);
 
             if (ret == -FI_EAGAIN) {
-                std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
-                if (ep_lock.try_lock()) {
-                    progress(request.m_comm->m_ep);
-                    ep_lock.unlock();
-                }
+                req_lock.unlock();
+                protected_progress(request.m_comm->m_ep);
+                req_lock.lock();
 
                 if (timeout_ms >= 0) {
                     int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -145,11 +144,9 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
             }
 
             if (ret == -FI_EAGAIN) {
-                std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
-                if (ep_lock.try_lock()) {
-                    progress(request.m_comm->m_ep);
-                    ep_lock.unlock();
-                }
+                req_lock.unlock();
+                protected_progress(request.m_comm->m_ep);
+                req_lock.lock();
 
                 if (timeout_ms >= 0) {
                     int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -136,6 +136,8 @@ int LFI::init_server(int socket, int32_t comm_id) {
         return msg.error;
     }
 
+    comm->in_fut = true;
+
     debug_info("[LFI] End = " << ret);
     return ret;
 }
@@ -250,6 +252,8 @@ int LFI::init_client(int socket, int32_t comm_id) {
         print_error("LFI::send");
         return msg.error;
     }
+
+    comm->in_fut = true;
 
     debug_info("[LFI] End = " << ret);
     return ret;

@@ -214,6 +214,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         return -LFI_CANCELED_COMM;
     }
 
+    std::unique_lock req_lock(request.mutex);
     request.reset();
     uint64_t mask = 0;
     decltype(std::chrono::high_resolution_clock::now()) start;
@@ -247,11 +248,9 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         }
 
         if (ret == -FI_EAGAIN) {
-            std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
-            if (ep_lock.try_lock()) {
-                progress(request.m_comm->m_ep);
-                ep_lock.unlock();
-            }
+            req_lock.unlock();
+            protected_progress(request.m_comm->m_ep);
+            req_lock.lock();
 
             if (timeout_ms >= 0) {
                 int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -346,11 +345,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
 
         if (ret == -FI_EAGAIN) {
-            std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
-            if (ep_lock.try_lock()) {
-                progress(request.m_comm->m_ep);
-                ep_lock.unlock();
-            }
+            protected_progress(request.m_comm->m_ep);
 
             if (request.m_comm->is_canceled) {
                 msg.error = -LFI_CANCELED_COMM;
@@ -381,11 +376,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
             ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
 
             if (ret == -FI_EAGAIN) {
-                std::unique_lock ep_lock(request.m_comm->m_ep.mutex_ep, std::defer_lock);
-                if (ep_lock.try_lock()) {
-                    progress(request.m_comm->m_ep);
-                    ep_lock.unlock();
-                }
+                protected_progress(request.m_comm->m_ep);
 
                 if (request.m_comm->is_canceled) {
                     msg.error = -LFI_CANCELED_COMM;
