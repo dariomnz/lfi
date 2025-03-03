@@ -38,6 +38,8 @@ typedef struct lfi_request lfi_request;
  * @brief Creates a new LFI asynchronous request.
  *
  * This function creates a new request object associated with the given client ID.
+ * 
+ * @note It is valid to reuse the request when it has been completed or cancelled.
  *
  * @param id The ID of the client.
  * @return A pointer to the newly created `lfi_request` object on success, or NULL on failure.
@@ -49,7 +51,7 @@ lfi_request *lfi_request_create(int id);
  *
  * This function frees the memory associated with the given request object.
  *
- * @note It is only safe to free a request if it is completed or canceled.
+ * @note It is only safe to free a request if it has been completed or cancelled.
  *
  * @param request Pointer to the `lfi_request` object to free.
  */
