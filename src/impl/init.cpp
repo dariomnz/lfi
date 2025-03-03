@@ -53,6 +53,9 @@ LFI::LFI() {
         // Create LFI_ANY_COMM for peer_ep
         LFI::create_any_comm(peer_ep, ANY_COMM_PEER);
     }
+
+    ret = ft_thread_start();
+
     debug_info("[LFI] End = " << ret);
 }
 
@@ -248,8 +251,6 @@ int LFI::init(lfi_ep &lfi_ep) {
     }
 
     lfi_ep.enable_ep = true;
-
-    ret = ft_thread_start();
 
     debug_info("[LFI] End = " << ret);
 

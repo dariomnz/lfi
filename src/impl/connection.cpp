@@ -23,6 +23,7 @@
 #include "impl/lfi.hpp"
 #include "impl/ns.hpp"
 #include "impl/socket.hpp"
+#include "impl/env.hpp"
 
 namespace LFI {
 
@@ -136,7 +137,9 @@ int LFI::init_server(int socket, int32_t comm_id) {
         return msg.error;
     }
 
-    comm->in_fut = true;
+    if (env::get_instance().LFI_async_connection) {
+        comm->in_fut = true;
+    }
 
     debug_info("[LFI] End = " << ret);
     return ret;
@@ -253,7 +256,9 @@ int LFI::init_client(int socket, int32_t comm_id) {
         return msg.error;
     }
 
-    comm->in_fut = true;
+    if (env::get_instance().LFI_async_connection) {
+        comm->in_fut = true;
+    }
 
     debug_info("[LFI] End = " << ret);
     return ret;

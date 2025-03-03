@@ -66,7 +66,7 @@ int socket::server_init(const std::string& addr, int& port) {
     // listen
     debug_info("Socket listen");
 
-    ret = PROXY(listen)(socket, 20);
+    ret = PROXY(listen)(socket, 1024);
     if (ret < 0) {
         print_error("ERROR: listen fails");
         socket::close(socket);

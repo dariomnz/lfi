@@ -82,15 +82,15 @@ bool ld_preload::is_caller_libfabric()
         exit(EXIT_FAILURE);
     }
 
-    bool out = true;
-    for (int i = 0; i < nptrs; i++)
-    {
-        if (std::string_view(symbols[i]).find("libmpi.so") != std::string_view::npos)
-        {
-            out = false;
-            break;
-        }
-    }
+    bool out = false;
+    // for (int i = 0; i < nptrs; i++)
+    // {
+    //     if (std::string_view(symbols[i]).find("libmpi.so") != std::string_view::npos)
+    //     {
+    //         out = false;
+    //         break;
+    //     }
+    // }
 
 
     if (out == false) {
@@ -408,6 +408,7 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
         debug("[LFI LD_PRELOAD] Error comm_id -1");
         return -1;
     }
+    debug("[LFI LD_PRELOAD] comm "<<comm_id);
 
     auto comm = m_lfi->get_comm(comm_id);
     if (comm == nullptr){
@@ -624,6 +625,7 @@ extern "C"
         {
             print_error("socket::client_init (" << server_addr << ", " << LFI::env::get_instance().LFI_port << ")");
         }
+        std::unique_lock lock(preload.m_map_comm_socket_mutex);
         auto new_fd = preload.m_lfi->init_client(client_socket);
         if (new_fd < 0)
         {
@@ -633,11 +635,8 @@ extern "C"
         // TODO handle error in close
         socket::close(client_socket);
         preload.socket_ids[sockfd].lfi_id = new_fd;
-        debug("[LFI LD_PRELOAD] save fd " << sockfd << " in lfi_ids");
-        {
-            std::unique_lock lock(preload.m_map_comm_socket_mutex);
-            preload.m_map_comm_socket.emplace(std::piecewise_construct, std::forward_as_tuple(new_fd), std::forward_as_tuple(sockfd));
-        }
+        debug("[LFI LD_PRELOAD] save sockfd " << sockfd << " with lfi_id " << new_fd);
+        preload.m_map_comm_socket.emplace(std::piecewise_construct, std::forward_as_tuple(new_fd), std::forward_as_tuple(sockfd));
         preload.create_eventfd(preload.socket_ids[sockfd]);
         errno = save_errno;
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << addr << ", " << addrlen << ") = " << ret << " " << STR_ERRNO);
@@ -726,6 +725,7 @@ extern "C"
             print_error("socket::client_init (" << server_socket << ")");
         }
         
+        std::unique_lock lock(preload.m_map_comm_socket_mutex);
         auto new_fd = preload.m_lfi->init_server(client_socket);
 
         // TODO handle error in close
@@ -744,10 +744,7 @@ extern "C"
             buff.lfi_id = new_fd;
             preload.create_eventfd(preload.socket_ids[ret]);
         }
-        {
-            std::unique_lock lock(preload.m_map_comm_socket_mutex);
-            preload.m_map_comm_socket.emplace(std::piecewise_construct, std::forward_as_tuple(new_fd), std::forward_as_tuple(ret));
-        }
+        preload.m_map_comm_socket.emplace(std::piecewise_construct, std::forward_as_tuple(new_fd), std::forward_as_tuple(ret));
         debug("[LFI LD_PRELOAD] save new lfi_socket fd " << ret << " lfi " << new_fd);
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << addr << ", " << addrlen << ", " << getAcceptFlags(flags) << ") = " << ret << " " << STR_ERRNO);
         return ret;

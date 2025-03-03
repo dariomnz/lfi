@@ -31,38 +31,32 @@ int LFI::cancel(lfi_request &request) {
     debug_info("[LFI] Start " << request.to_string());
     fid_ep *p_ep = nullptr;
     int ret = 0;
-    std::unique_lock request_lock(request.mutex);
-    if (request.is_inject || request.is_completed()) return LFI_SUCCESS;
-    
-    if (request.is_send) {
-        p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
-    } else {
-        p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
-    }
-    // Cancel request and notify
-
-    // Ignore return value
-    // ref: https://github.com/ofiwg/libfabric/issues/7795
-    fi_cancel(&p_ep->fid, &request);
-    debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
-
-    if (request.is_send == true) {
-        // Try one progress to read the canceled and not accumulate errors
-        request_lock.unlock();
-        protected_progress(request.m_comm->m_ep);
-        request_lock.lock();
-
-        // Check if completed to no report error
-        if (request.wait_context) {
-            std::unique_lock request_lock(request.mutex);
-            request.wait_context = false;
-            request.error = -LFI_CANCELED;
-            request.cv.notify_all();
+    {
+        std::unique_lock request_lock(request.mutex);
+        if (request.is_inject || request.is_completed()) return LFI_SUCCESS;
+        
+        if (request.is_send) {
+            p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
+        } else {
+            p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
         }
-    } else {
-        request_lock.unlock();
-        // For the recvs wait to the completion of the cancel
-        ret = wait(request);
+        // Cancel request and notify
+        
+        // Ignore return value
+        // ref: https://github.com/ofiwg/libfabric/issues/7795
+        fi_cancel(&p_ep->fid, &request);
+        debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
+    }
+
+    // Try one progress to read the canceled and not accumulate errors
+    protected_progress(request.m_comm->m_ep);
+
+    // Check if completed to no report error
+    std::unique_lock request_lock(request.mutex);
+    if (request.wait_context) {
+        request.wait_context = false;
+        request.error = -LFI_CANCELED;
+        request.cv.notify_all();
     }
 
     debug_info("[LFI] End " << std::hex << &request << std::dec);

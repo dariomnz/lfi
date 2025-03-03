@@ -131,10 +131,11 @@ int LFI::progress(lfi_ep &lfi_ep) {
         fi_cq_readerr(lfi_ep.cq, &err, 0);
         debug_info(fi_cq_err_entry_to_string(err, lfi_ep.cq));
 
+        if (std::abs(err.err) == -FI_ECANCELED) return ret;
+
         lfi_request *request_p = static_cast<lfi_request *>(err.op_context);
         std::unique_lock request_lock(request_p->mutex);
         debug_info("[Error] " << request_p->to_string() << " cq error");
-        request_p->wait_context = false;
         if (std::abs(err.err) == FI_ECANCELED) {
             request_p->error = -LFI_CANCELED;
         } else if (std::abs(err.err) == FI_ENOMSG) {
@@ -142,6 +143,7 @@ int LFI::progress(lfi_ep &lfi_ep) {
         } else {
             request_p->error = -LFI_LIBFABRIC_ERROR;
         }
+        request_p->wait_context = false;
         request_p->cv.notify_all();
         if (request_p->shared_wait_struct != nullptr) {
             auto &shared_wait_struct = *request_p->shared_wait_struct;
@@ -165,6 +167,18 @@ int LFI::progress(lfi_ep &lfi_ep) {
             request->size = comp[i].len;
             request->tag = (comp[i].tag & MASK_TAG);
             request->source = (comp[i].tag & MASK_RANK) >> MASK_RANK_BYTES;
+
+            if (env::get_instance().LFI_fault_tolerance) {
+                // Update time
+                if (request->m_comm->rank_peer == ANY_COMM_SHM || request->m_comm->rank_peer == ANY_COMM_PEER) {
+                    auto comm = get_comm(request->source);
+                    if (comm) {
+                        comm->update_request_time();
+                    }
+                } else {
+                    request->m_comm->update_request_time();
+                }
+            }
         }
         request->error = LFI_SUCCESS;
         request->wait_context = false;
@@ -195,10 +209,10 @@ void LFI::wake_up_requests(lfi_ep &ep) {
         std::unique_lock lock(ep.requests_mutex);
         for (auto &var : ep.waiting_requests) {
             // Notify the threads
-            if (lfi_request* req = *std::get_if<lfi_request*>(&var)) {
-                req->cv.notify_all();
-            } else if (wait_struct* w_struct = *std::get_if<wait_struct*>(&var)) {
-                w_struct->wait_cv.notify_all();
+            if (auto req = std::get_if<lfi_request *>(&var)) {
+                (*req)->cv.notify_all();
+            } else if (auto w_struct = std::get_if<wait_struct *>(&var)) {
+                (*w_struct)->wait_cv.notify_all();
             }
             // If progress is made one thread has to be running the progress so no more threads are necesary to wake up
             if (ep.progress.load()) {
@@ -320,52 +334,61 @@ int LFI::wait_num(std::vector<std::reference_wrapper<lfi_request>> &requests, in
             wait_peer = true;
         }
     }
-    if (wait_shm) {
-        std::unique_lock lock(shm_ep.requests_mutex);
-        shm_ep.waiting_requests.emplace(&shared_wait);
-    }
-    if (wait_peer) {
-        std::unique_lock lock(peer_ep.requests_mutex);
-        peer_ep.waiting_requests.emplace(&shared_wait);
-    }
+    if (shared_wait.wait_count > 0) {
+        if (wait_shm) {
+            std::unique_lock lock(shm_ep.requests_mutex);
+            shm_ep.waiting_requests.emplace(&shared_wait);
+        }
+        if (wait_peer) {
+            std::unique_lock lock(peer_ep.requests_mutex);
+            peer_ep.waiting_requests.emplace(&shared_wait);
+        }
 
-    {
-        std::unique_lock wait_lock(shared_wait.wait_mutex);
-        bool made_progress = false;
-        while (shared_wait.wait_count > 0 && !is_timeout) {
-            // debug_info("shared_wait.wait_count "<<shared_wait.wait_count);
-            made_progress = false;
-            wait_lock.unlock();
-            if (wait_shm) {
-                made_progress = protected_progress(shm_ep);
-            }
-            if (wait_peer) {
-                made_progress = protected_progress(peer_ep);
-            }
-            wait_lock.lock();
-            if (!made_progress) {
-                if (timeout_ms >= 0) {
-                    int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             std::chrono::high_resolution_clock::now() - start)
-                                             .count();
-                    shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
-                } else {
-                    shared_wait.wait_cv.wait(wait_lock);
+        {
+            std::unique_lock wait_lock(shared_wait.wait_mutex);
+            bool made_progress = false;
+            while (shared_wait.wait_count > 0 && !is_timeout) {
+                // debug_info("shared_wait.wait_count "<<shared_wait.wait_count);
+                made_progress = false;
+                wait_lock.unlock();
+                if (wait_shm) {
+                    made_progress = protected_progress(shm_ep);
                 }
+                if (wait_peer) {
+                    made_progress = protected_progress(peer_ep);
+                }
+                wait_lock.lock();
+                if (!made_progress) {
+                    if (timeout_ms >= 0) {
+                        int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                 std::chrono::high_resolution_clock::now() - start)
+                                                 .count();
+                        shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
+                    } else {
+                        shared_wait.wait_cv.wait(wait_lock);
+                    }
+                }
+                is_timeout = wait_check_timeout(timeout_ms, start);
             }
-            is_timeout = wait_check_timeout(timeout_ms, start);
+        }
+
+        // Clean wait
+        if (wait_shm) {
+            {
+                std::unique_lock lock(shm_ep.requests_mutex);
+                shm_ep.waiting_requests.erase(&shared_wait);
+            }
+            wake_up_requests(shm_ep);
+        }
+        if (wait_peer) {
+            {
+                std::unique_lock lock(peer_ep.requests_mutex);
+                peer_ep.waiting_requests.erase(&shared_wait);
+            }
+            wake_up_requests(peer_ep);
         }
     }
 
-    // Clean wait
-    if (wait_shm) {
-        std::unique_lock lock(shm_ep.requests_mutex);
-        shm_ep.waiting_requests.erase(&shared_wait);
-    }
-    if (wait_peer) {
-        std::unique_lock lock(peer_ep.requests_mutex);
-        peer_ep.waiting_requests.erase(&shared_wait);
-    }
     int out_index = -1;
     int first_rand = rand() % requests.size();
     int index = 0;
@@ -390,13 +413,6 @@ int LFI::wait_num(std::vector<std::reference_wrapper<lfi_request>> &requests, in
             debug_info("[LFI] erase request " << request.to_string() << " in comm " << request.m_comm->rank_peer);
             request.m_comm->ft_requests.erase(&request);
         }
-    }
-
-    if (wait_shm) {
-        wake_up_requests(shm_ep);
-    }
-    if (wait_peer) {
-        wake_up_requests(peer_ep);
     }
 
     if (is_timeout) {

@@ -83,8 +83,9 @@ static constexpr const char *lfi_strerror(int error) {
 }
 
 // Reserved tags
-#define LFI_TAG_FT                  (0xFFFFFFFF - 1)
-#define LFI_TAG_RECV_LD_PRELOAD     (0xFFFFFFFF - 2)
+#define LFI_TAG_FT_PING             (0xFFFFFFFF - 1)
+#define LFI_TAG_FT_PONG             (0xFFFFFFFF - 2)
+#define LFI_TAG_RECV_LD_PRELOAD     (0xFFFFFFFF - 3)
 #define LFI_TAG_BUFFERED_LD_PRELOAD 100000
 
 // Forward declaration
@@ -146,10 +147,13 @@ struct lfi_request {
         std::stringstream out;
         out << "Request " << std::hex << this;
         if (is_send) {
-            out << " is_send ";
+            out << " is_send";
         }
         if (is_inject) {
-            out << "is_inject";
+            out << " is_inject";
+        }
+        if (is_completed()) {
+            out << " is_completed";
         }
         return out.str();
     }
@@ -166,8 +170,14 @@ struct lfi_comm {
     lfi_ep &m_ep;
 
     // For fault tolerance
-    std::recursive_mutex ft_mutex;
+    std::mutex ft_mutex;
     std::unordered_set<lfi_request *> ft_requests;
+
+   private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> last_request_time =
+        std::chrono::high_resolution_clock::now();
+
+   public:
     bool ft_error = false;
 
     bool is_canceled = false;
@@ -176,6 +186,16 @@ struct lfi_comm {
     std::atomic_bool in_fut = false;
 
     lfi_comm(lfi_ep &ep) : m_ep(ep) {}
+
+    void update_request_time() {
+        std::unique_lock lock(ft_mutex);
+        last_request_time = std::chrono::high_resolution_clock::now();
+    }
+
+    auto get_request_time() {
+        std::unique_lock lock(ft_mutex);
+        return last_request_time;
+    }
 };
 
 struct lfi_ep {
@@ -254,8 +274,10 @@ class LFI {
     int ft_thread_start();
     int ft_thread_destroy();
     static int ft_thread_loop();
+    static int ft_thread_ping_pong();
     // Fault tolerance
     std::thread ft_thread;
+    std::thread ft_thread_pp;
     std::mutex ft_mutex;
     std::condition_variable ft_cv;
     bool ft_is_running = false;
