@@ -49,8 +49,8 @@ void lfi_request_free(lfi_request *req) {
     if (req == nullptr) return;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
-    delete request;
     debug_info("(" << req << ")>> End");
+    delete request;
 }
 
 bool lfi_request_completed(lfi_request *req) {

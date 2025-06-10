@@ -50,7 +50,7 @@ namespace bw_examples
 
     static std::vector<bw_test> &get_test_vector()
     {
-        static std::vector<bw_test> tests(30);
+        static std::vector<bw_test> tests(23);
         static bool initialized = false;
         if (!initialized)
         {
@@ -59,7 +59,7 @@ namespace bw_examples
             for (size_t i = 0; i < tests.size(); i++)
             {
                 tests[i].test_size = 1ull << i;
-                tests[i].test_count = 1;
+                tests[i].test_count = 100;
                 tests[i].test_tag = 1000+i;
             }
         }

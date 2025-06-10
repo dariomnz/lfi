@@ -31,19 +31,6 @@ namespace LFI {
 LFI::LFI() {
     int ret = 0;
     debug_info("[LFI] Start");
-    if (!shm_ep.initialized()) {
-        set_hints(shm_ep, "shm");
-        ret = init(shm_ep);
-        if (ret < 0) {
-            set_hints(shm_ep, "sm2");
-            ret = init(shm_ep);
-            if (ret < 0) {
-                throw std::runtime_error("LFI cannot init the intra-node endpoints");
-            }
-        }
-        // Create LFI_ANY_COMM for shm_ep
-        LFI::create_any_comm(shm_ep, ANY_COMM_SHM);
-    }
     if (!peer_ep.initialized()) {
         set_hints(peer_ep, "");
         ret = init(peer_ep);
@@ -52,6 +39,28 @@ LFI::LFI() {
         }
         // Create LFI_ANY_COMM for peer_ep
         LFI::create_any_comm(peer_ep, ANY_COMM_PEER);
+    }
+    if (!shm_ep.initialized()) {
+        std::string prov_name(peer_ep.info->fabric_attr->prov_name);
+        if (prov_name.find("verbs") != std::string::npos){
+            set_hints(shm_ep, "");
+            ret = init(shm_ep);
+            if (ret < 0) {
+                throw std::runtime_error("LFI cannot init the intra-node endpoints");
+            }
+        }else{
+            set_hints(shm_ep, "shm");
+            ret = init(shm_ep);
+            if (ret < 0) {
+                set_hints(shm_ep, "sm2");
+                ret = init(shm_ep);
+                if (ret < 0) {
+                    throw std::runtime_error("LFI cannot init the intra-node endpoints");
+                }
+            }
+        }
+        // Create LFI_ANY_COMM for shm_ep
+        LFI::create_any_comm(shm_ep, ANY_COMM_SHM);
     }
 
     ret = ft_thread_start();

@@ -224,7 +224,7 @@ void LFI::wake_up_requests(lfi_ep &ep) {
 
 bool LFI::protected_progress(lfi_ep &ep) {
     bool made_progress = false;
-    if (!ep.progress.exchange(true)) {
+    if (!env::get_instance().LFI_efficient_progress || !ep.progress.exchange(true)) {
         progress(ep);
         ep.progress.store(false);
         made_progress = true;
@@ -255,7 +255,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
     {
         std::unique_lock request_lock(request.mutex);
         while (request.wait_context && !is_timeout) {
-            if (!ep.progress.exchange(true)) {
+            if (!env::get_instance().LFI_efficient_progress || !ep.progress.exchange(true)) {
                 while (request.wait_context && !is_timeout) {
                     request_lock.unlock();
                     progress(ep);
