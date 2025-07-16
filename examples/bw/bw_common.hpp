@@ -29,6 +29,7 @@
 #include <thread>
 #include <string>
 #include <algorithm>
+#include "mpi.h"
 
 namespace bw_examples
 {

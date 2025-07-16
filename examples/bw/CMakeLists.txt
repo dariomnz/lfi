@@ -27,3 +27,28 @@ foreach (file ${EXAMPLES_BW})
 	add_executable(${file} ${file}.cpp)
 	install(TARGETS ${file} RUNTIME DESTINATION bin)
 endforeach (file)
+
+find_library(MERCURY_LIBRARY NAMES mercury PATHS /usr/lib /usr/local/lib ${MERCURY_PATH}/lib)
+find_library(MERCURY_NA_LIBRARY NAMES na PATHS /usr/lib /usr/local/lib ${MERCURY_PATH}/lib)
+find_path(MERCURY_INCLUDE_DIR mercury.h PATHS /usr/include /usr/local/include ${MERCURY_PATH}/include)
+
+if(MERCURY_LIBRARY AND MERCURY_NA_LIBRARY AND MERCURY_INCLUDE_DIR)
+    include_directories(${MERCURY_INCLUDE_DIR})
+    link_libraries(${MERCURY_LIBRARY} ${MERCURY_NA_LIBRARY})
+    message(STATUS "MERCURY_LIBRARY: ${MERCURY_LIBRARY}")
+    message(STATUS "MERCURY_NA_LIBRARY: ${MERCURY_NA_LIBRARY}")
+    message(STATUS "MERCURY_INCLUDE_DIR: ${MERCURY_INCLUDE_DIR}")
+    
+    set(EXAMPLES_BW_MERCURY
+        bw_mercury_client
+        bw_mercury_server
+    )
+
+    # add the executables cpp
+    foreach (file ${EXAMPLES_BW_MERCURY})
+        add_executable(${file} ${file}.cpp)
+        install(TARGETS ${file} RUNTIME DESTINATION bin)
+    endforeach (file)
+else()
+    message(STATUS "MERCURY not found. No mercury test will be built.")
+endif()
