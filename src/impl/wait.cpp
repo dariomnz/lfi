@@ -122,76 +122,132 @@ int LFI::progress(lfi_ep &lfi_ep) {
     // Libfabric progress
     ret = fi_cq_read(lfi_ep.cq, comp, comp_count);
     if (ret == -FI_EAGAIN) {
-        return LFI_SUCCESS;
-    }
-
-    if (ret == -FI_EAVAIL) {
+        ret = LFI_SUCCESS;
+    } else if (ret == -FI_EAVAIL) {
         debug_info("[Error] fi_cq_read " << ret << " " << fi_strerror(ret));
         fi_cq_err_entry err;
         fi_cq_readerr(lfi_ep.cq, &err, 0);
         debug_info(fi_cq_err_entry_to_string(err, lfi_ep.cq));
 
-        if (std::abs(err.err) == -FI_ECANCELED) return ret;
-
-        lfi_request *request_p = static_cast<lfi_request *>(err.op_context);
-        std::unique_lock request_lock(request_p->mutex);
-        debug_info("[Error] " << request_p->to_string() << " cq error");
         if (std::abs(err.err) == FI_ECANCELED) {
-            request_p->error = -LFI_CANCELED;
-        } else if (std::abs(err.err) == FI_ENOMSG) {
-            request_p->error = -LFI_PEEK_NO_MSG;
+            return ret;
         } else {
-            request_p->error = -LFI_LIBFABRIC_ERROR;
-        }
-        request_p->wait_context = false;
-        request_p->cv.notify_all();
-        if (request_p->shared_wait_struct != nullptr) {
-            auto &shared_wait_struct = *request_p->shared_wait_struct;
-            std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
-            shared_wait_struct.wait_count--;
-            if (shared_wait_struct.wait_count <= 0) {
-                shared_wait_struct.wait_cv.notify_all();
+            lfi_request *request_p = static_cast<lfi_request *>(err.op_context);
+            std::unique_lock request_lock(request_p->mutex);
+            debug_info("[Error] " << request_p->to_string() << " cq error");
+            if (std::abs(err.err) == FI_ECANCELED) {
+                request_p->error = -LFI_CANCELED;
+            } else if (std::abs(err.err) == FI_ENOMSG) {
+                request_p->error = -LFI_PEEK_NO_MSG;
+            } else {
+                request_p->error = -LFI_LIBFABRIC_ERROR;
             }
-        }
-        return ret;
-    }
-
-    // Handle the cq entries
-    for (int i = 0; i < ret; i++) {
-        lfi_request *request = static_cast<lfi_request *>(comp[i].op_context);
-        debug_info(fi_cq_tagged_entry_to_string(comp[i]));
-
-        std::unique_lock request_lock(request->mutex);
-        // If len is not 0 is a RECV
-        if (comp[i].len != 0) {
-            request->size = comp[i].len;
-            request->tag = (comp[i].tag & MASK_TAG);
-            request->source = (comp[i].tag & MASK_RANK) >> MASK_RANK_BYTES;
-
+            request_p->wait_context = false;
+            request_p->cv.notify_all();
+            if (request_p->shared_wait_struct != nullptr) {
+                auto &shared_wait_struct = *request_p->shared_wait_struct;
+                std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
+                shared_wait_struct.wait_count--;
+                if (shared_wait_struct.wait_count <= 0) {
+                    shared_wait_struct.wait_cv.notify_all();
+                }
+            }
             if (env::get_instance().LFI_fault_tolerance) {
-                // Update time
-                if (request->m_comm->rank_peer == ANY_COMM_SHM || request->m_comm->rank_peer == ANY_COMM_PEER) {
-                    auto comm = get_comm(request->source);
-                    if (comm) {
-                        comm->update_request_time();
+                {
+                    std::unique_lock ft_lock(request_p->m_comm->ft_mutex);
+                    debug_info("[LFI] erase request " << request_p->to_string() << " in comm "
+                                                      << request_p->m_comm->rank_peer);
+                    request_p->m_comm->ft_requests.erase(request_p);
+                }
+                if (request_p->m_comm->rank_peer != ANY_COMM_SHM && request_p->m_comm->rank_peer != ANY_COMM_PEER) {
+                    request_p->m_comm->ft_comm_count--;
+                    if (request_p->m_comm->ft_comm_count == 0) {
+                        std::unique_lock lock(request_p->m_comm->m_ep.requests_mutex);
+                        request_p->m_comm->m_ep.ft_comms.erase(request_p->m_comm);
                     }
-                } else {
-                    request->m_comm->update_request_time();
+                }
+                if (request_p->callback) {
+                    request_p->callback(request_p->error);
                 }
             }
         }
-        request->error = LFI_SUCCESS;
-        request->wait_context = false;
-        request->cv.notify_all();
-        if (request->shared_wait_struct != nullptr) {
-            auto &shared_wait_struct = *request->shared_wait_struct;
-            std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
-            shared_wait_struct.wait_count--;
-            if (shared_wait_struct.wait_count <= 0) {
-                shared_wait_struct.wait_cv.notify_all();
+    } else if (ret > 0) {
+        // Handle the cq entries
+        for (int i = 0; i < ret; i++) {
+            lfi_request *request = static_cast<lfi_request *>(comp[i].op_context);
+            debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+
+            std::unique_lock request_lock(request->mutex);
+            // If len is not 0 is a RECV
+            if (!request->is_send) {
+                request->size = comp[i].len;
+                request->tag = (comp[i].tag & MASK_TAG);
+                request->source = ((comp[i].tag & MASK_RANK) >> MASK_RANK_BYTES);
+
+                if (env::get_instance().LFI_fault_tolerance) {
+                    // Update time
+                    if (request->m_comm->rank_peer == ANY_COMM_SHM || request->m_comm->rank_peer == ANY_COMM_PEER) {
+                        auto comm = get_comm(request->source);
+                        if (comm) {
+                            comm->update_request_time();
+                        }
+                    } else {
+                        request->m_comm->update_request_time();
+                    }
+                }
             }
+            request->error = LFI_SUCCESS;
+            request->wait_context = false;
+            request->cv.notify_all();
+            if (request->shared_wait_struct != nullptr) {
+                auto &shared_wait_struct = *request->shared_wait_struct;
+                std::unique_lock shared_wait_lock(shared_wait_struct.wait_mutex);
+                shared_wait_struct.wait_count--;
+                if (shared_wait_struct.wait_count <= 0) {
+                    shared_wait_struct.wait_cv.notify_all();
+                }
+            }
+
+            if (env::get_instance().LFI_fault_tolerance) {
+                {
+                    std::unique_lock ft_lock(request->m_comm->ft_mutex);
+                    debug_info("[LFI] erase request " << request->to_string() << " in comm "
+                                                      << request->m_comm->rank_peer);
+                    request->m_comm->ft_requests.erase(request);
+                }
+                request->m_comm->ft_comm_count--;
+                if (request->m_comm->ft_comm_count == 0) {
+                    std::unique_lock lock(request->m_comm->m_ep.requests_mutex);
+                    if (request->m_comm->rank_peer == ANY_COMM_SHM || request->m_comm->rank_peer == ANY_COMM_PEER) {
+                        auto comm = get_comm(request->source);
+                        if (comm) {
+                            comm->m_ep.ft_comms.erase(comm);
+                        }
+                    } else {
+                        request->m_comm->m_ep.ft_comms.erase(request->m_comm);
+                    }
+                }
+            }
+            if (request->callback) {
+                request->callback(LFI_SUCCESS);
+            }
+            debug_info("Completed: " << request->to_string());
         }
     }
+
+    if (env::get_instance().LFI_fault_tolerance) {
+        static auto last_ft_execution_time = std::chrono::high_resolution_clock::now();
+        auto current_time = std::chrono::high_resolution_clock::now();
+        auto elapsed_time =
+            std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_ft_execution_time);
+
+        if (elapsed_time > std::chrono::milliseconds(10)) {
+            debug_info("[LFI] runing ft");
+            ft_one_loop(lfi_ep);
+            last_ft_execution_time = current_time;
+        }
+    }
+
     return ret;
 }
 
@@ -214,10 +270,15 @@ void LFI::wake_up_requests(lfi_ep &ep) {
             } else if (auto w_struct = std::get_if<wait_struct *>(&var)) {
                 (*w_struct)->wait_cv.notify_all();
             }
-            // If progress is made one thread has to be running the progress so no more threads are necesary to wake up
+            // If progress is made one thread has to be running the progress so no more threads are necesary to wake
+            // up
             if (ep.progress.load()) {
                 break;
             }
+        }
+        // Wake the ping pong thread
+        if (ep.waiting_requests.empty()) {
+            ft_cv.notify_one();
         }
     }
 }
@@ -225,6 +286,7 @@ void LFI::wake_up_requests(lfi_ep &ep) {
 bool LFI::protected_progress(lfi_ep &ep) {
     bool made_progress = false;
     if (!env::get_instance().LFI_efficient_progress || !ep.progress.exchange(true)) {
+        // debug_info("Run progress from protected_progress");
         progress(ep);
         ep.progress.store(false);
         made_progress = true;
@@ -237,7 +299,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
 
     // Check cancelled comm
     if (request.m_comm->is_canceled) {
-        return -LFI_CANCELED;
+        return -LFI_BROKEN_COMM;
     }
 
     lfi_ep &ep = request.m_comm->m_ep;
@@ -288,12 +350,6 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
         request.error = -LFI_TIMEOUT;
         debug_info("[LFI] End wait with timeout " << request.to_string());
         return -LFI_TIMEOUT;
-    }
-
-    if (env::get_instance().LFI_fault_tolerance) {
-        std::unique_lock ft_lock(request.m_comm->ft_mutex);
-        debug_info("[LFI] erase request " << request.to_string() << " in comm " << request.m_comm->rank_peer);
-        request.m_comm->ft_requests.erase(&request);
     }
 
     debug_info("[LFI] End wait " << request.to_string());
@@ -406,12 +462,6 @@ int LFI::wait_num(std::vector<std::reference_wrapper<lfi_request>> &requests, in
             } else {
                 request.error = -LFI_TIMEOUT;
             }
-        }
-
-        if (env::get_instance().LFI_fault_tolerance) {
-            std::unique_lock ft_lock(request.m_comm->ft_mutex);
-            debug_info("[LFI] erase request " << request.to_string() << " in comm " << request.m_comm->rank_peer);
-            request.m_comm->ft_requests.erase(&request);
         }
     }
 

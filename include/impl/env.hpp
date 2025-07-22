@@ -56,6 +56,7 @@ namespace LFI
             parse_env("LFI_FAULT_TOLERANCE", LFI_fault_tolerance);
             parse_env("LFI_FAULT_TOLERANCE_TIME", LFI_fault_tolerance_time);
             parse_env("LFI_PORT", LFI_port);
+            parse_env("LFI_GROUP_PORT", LFI_group_port);
             parse_env("LFI_MS_WAIT_SLEEP", LFI_ms_wait_sleep);
             parse_env("LFI_USE_INJECT", LFI_use_inject);
             parse_env("LFI_ASYNC_CONNECTION", LFI_async_connection);
@@ -74,6 +75,7 @@ namespace LFI
         bool LFI_fault_tolerance = true;
         int LFI_fault_tolerance_time = 5;
         int LFI_port = 56789;
+        int LFI_group_port = 56790;
         int LFI_ms_wait_sleep = 10;
         bool LFI_use_inject = false;
         bool LFI_async_connection = true;

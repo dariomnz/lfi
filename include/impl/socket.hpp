@@ -21,29 +21,30 @@
 
 #pragma once
 
-#include <string>
-#include <netdb.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/tcp.h>
 
-namespace LFI
-{
+#include <string>
 
-    class socket
-    {
-    private:
-        static int open();
+namespace LFI {
 
-    public:
-        static int server_init(const std::string &addr, int &port);
-        static int client_init(const std::string &addr, int port, bool is_ip = false);
-        static int accept(int socket);
-        static int close(int socket);
+class socket {
+   private:
+    static int open();
 
-        static ssize_t send(int socket, const void *data, size_t len);
-        static ssize_t recv(int socket, void *data, size_t len);
-        static int64_t send_str(int socket, const std::string& str);
-        static int64_t recv_str(int socket, std::string& str);
-    };
+   public:
+    static int server_init(const std::string &addr, int &port);
+    static int retry_connect(int socket, sockaddr *addr, socklen_t len, int timeout_ms, int time_to_sleep_ms);
+    static int accept_timeout(int socket, int timeout_ms);
+    static int client_init(const std::string &addr, int port, int timeout_ms = 0, bool is_ip = false);
+    static int accept(int socket, int timeout_ms = 0);
+    static int close(int socket);
 
-} // namespace LFI
+    static ssize_t send(int socket, const void *data, size_t len);
+    static ssize_t recv(int socket, void *data, size_t len);
+    static int64_t send_str(int socket, const std::string &str);
+    static int64_t recv_str(int socket, std::string &str);
+};
+
+}  // namespace LFI

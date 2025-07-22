@@ -27,21 +27,21 @@
 namespace LFI {
 
 int LFI::cancel(lfi_request &request) {
-    // The inject is not cancelled
     debug_info("[LFI] Start " << request.to_string());
     fid_ep *p_ep = nullptr;
     int ret = 0;
     {
         std::unique_lock request_lock(request.mutex);
+        // The inject is not cancelled
         if (request.is_inject || request.is_completed()) return LFI_SUCCESS;
-        
+
         if (request.is_send) {
             p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.tx_ep : request.m_comm->m_ep.ep;
         } else {
             p_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
         }
         // Cancel request and notify
-        
+
         // Ignore return value
         // ref: https://github.com/ofiwg/libfabric/issues/7795
         fi_cancel(&p_ep->fid, &request);
@@ -53,13 +53,17 @@ int LFI::cancel(lfi_request &request) {
 
     // Check if completed to no report error
     std::unique_lock request_lock(request.mutex);
-    if (request.wait_context) {
+    if (!request.is_completed() || request.error) {
         request.wait_context = false;
-        request.error = -LFI_CANCELED;
+        if (request.m_comm->is_canceled) {
+            request.error = -LFI_BROKEN_COMM;
+        } else {
+            request.error = -LFI_CANCELED;
+        }
         request.cv.notify_all();
     }
 
-    debug_info("[LFI] End " << std::hex << &request << std::dec);
+    debug_info("[LFI] End " << request.to_string());
     return ret;
 }
 }  // namespace LFI

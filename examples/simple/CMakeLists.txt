@@ -2,7 +2,11 @@ set(EXAMPLES_SIMPLE
     simple_socket_client
     simple_socket_server
     simple_lfi_client
+    simple_lfi_client_pp
+    simple_lfi_client_async
     simple_lfi_server
+    simple_lfi_server_pp
+    simple_lfi_coll
 )
 
 # add the executables cpp

@@ -20,6 +20,7 @@ set(EXAMPLES_BW
     bw_lfi_any_comm_server
     bw_mpi_client
     bw_mpi_server
+    simple_mpi_coll
 )
 
 # add the executables cpp

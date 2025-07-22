@@ -41,14 +41,15 @@ int lfi_server_create(const char *serv_addr, int *port) {
     return ret;
 }
 
-int lfi_client_create(const char *serv_addr, int port) {
+int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms) {
     int out = -1;
     int client_socket;
     debug_info("(" << serv_addr << ", " << port << ")>> Begin");
 
-    client_socket = LFI::socket::client_init(serv_addr, port);
+    client_socket = LFI::socket::client_init(serv_addr, port, timeout_ms);
     if (client_socket < 0) {
         print_error("socket::client_init (" << serv_addr << ", " << port << ")");
+        return client_socket;
     }
     LFI::LFI &lfi = LFI::LFI::get_instance();
 
@@ -72,14 +73,19 @@ int lfi_client_create(const char *serv_addr, int port) {
     return out;
 }
 
-int lfi_server_accept(int socket) {
+int lfi_client_create(const char *serv_addr, int port) {
+    return lfi_client_create_t(serv_addr, port, 0);
+}
+
+int lfi_server_accept_t(int socket, int timeout_ms) {
     uint32_t out = -1;
     int client_socket;
     debug_info("(" << socket << ") >> Begin");
 
-    client_socket = LFI::socket::accept(socket);
+    client_socket = LFI::socket::accept(socket, timeout_ms);
     if (client_socket < 0) {
-        print_error("socket::client_init (" << socket << ")");
+        print_error("socket::accept (" << socket << ", " << timeout_ms << ")");
+        return client_socket;
     }
     LFI::LFI &lfi = LFI::LFI::get_instance();
 
@@ -100,6 +106,10 @@ int lfi_server_accept(int socket) {
 
     debug_info("(" << socket << ")=" << out << " >> End");
     return out;
+}
+
+int lfi_server_accept(int socket) {
+    return lfi_server_accept_t(socket, 0);
 }
 
 ssize_t lfi_send(int id, const void *data, size_t size) { return lfi_tsend(id, data, size, 0); }

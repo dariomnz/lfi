@@ -25,13 +25,13 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #include "lfi.h"
 #define PORT 8080
-int main(void)
-{
+int main(void) {
     int server_fd, new_socket;
     ssize_t valread, valsend;
-    char buffer[1024] = { 0 };
+    char buffer[1024] = {0};
     char* hello = "Hello from server";
 
     // Creating socket file descriptor
@@ -45,8 +45,8 @@ int main(void)
         exit(EXIT_FAILURE);
     }
     valread = lfi_recv(new_socket, buffer,
-                   strlen(hello)); // subtract 1 for the null
-                              // terminator at the end
+                       1024);  // subtract 1 for the null
+                               // terminator at the end
     printf("Recv msg size %ld: %s\n", valread, buffer);
     valsend = lfi_send(new_socket, hello, strlen(hello));
     printf("Hello message sent size %ld\n", valsend);

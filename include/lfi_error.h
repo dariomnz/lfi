@@ -27,16 +27,19 @@ extern "C" {
 #endif
 
 #define LFI_SUCCESS         0   // Success
-#define LFI_ERROR           1   // Error
+#define LFI_ERROR           1   // General error
 #define LFI_TIMEOUT         2   // Timeout
 #define LFI_CANCELED        3   // Canceled
-#define LFI_CANCELED_COMM   4   // Canceled COMM
-#define LFI_COMM_NOT_FOUND  5   // COMM not found
+#define LFI_BROKEN_COMM     4   // Broken comunicator
+#define LFI_COMM_NOT_FOUND  5   // Comunicator not found
 #define LFI_PEEK_NO_MSG     6   // No msg encounter
 #define LFI_NOT_COMPLETED   7   // Request not completed
 #define LFI_NULL_REQUEST    8   // Request is NULL
 #define LFI_SEND_ANY_COMM   9   // Use of ANY_COMM in send
 #define LFI_LIBFABRIC_ERROR 10  // Internal libfabric error
+#define LFI_GROUP_NO_INIT   11  // The group is not initialized
+#define LFI_GROUP_NO_SELF   12  // The hostname of the current process is missing
+#define LFI_GROUP_INVAL     13  // Invalid argument
 
 #ifdef __cplusplus
 }

@@ -62,6 +62,17 @@ int lfi_server_create(const char *serv_addr, int *port);
 int lfi_server_accept(int id);
 
 /**
+ * @brief Accepts a connection from a client with a timeout.
+ *
+ * This function accepts a connection request on the server associated with the given ID.
+ *
+ * @param id The server ID.
+ * @param timeout_ms The maximum time in milliseconds to wait for a connection.
+ * @return A non-negative integer representing the client ID on success, or a negative error code on failure.
+ */
+int lfi_server_accept_t(int id, int timeout_ms);
+
+/**
 * @brief Closes a server.
 *
 * This function closes the server associated with the given ID.
@@ -81,6 +92,18 @@ int lfi_server_close(int id);
  * @return A non-negative integer representing the client ID on success, or a negative error code on failure.
  */
 int lfi_client_create(const char *serv_addr, int port);
+
+/**
+ * @brief Creates a new LFI client and connects to a server with a timeout.
+ *
+ * This function creates a client and connects it to the server at the specified address and port.
+ *
+ * @param serv_addr The server address (IP address or hostname).
+ * @param port The server port.
+ * @param timeout_ms The maximum time in milliseconds to wait for the connection to be established.
+ * @return A non-negative integer representing the client ID on success, or a negative error code on failure.
+ */
+int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms);
 
 /**
 * @brief Closes a client.

@@ -36,15 +36,14 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 #include <variant>
+#include <vector>
 
 #include "lfi.h"
 #include "lfi_async.h"
 #include "lfi_error.h"
 
-#define DECLARE_LFI_ERROR(name, msg)  \
-    static constexpr const char *name##_str = msg;
+#define DECLARE_LFI_ERROR(name, msg) static constexpr const char *name##_str = msg;
 
 #define CASE_STR_ERROR(name) \
     case name:               \
@@ -52,31 +51,37 @@
 
 namespace LFI {
 // Error codes
-DECLARE_LFI_ERROR(LFI_SUCCESS,           "Success");
-DECLARE_LFI_ERROR(LFI_ERROR,             "Error");
-DECLARE_LFI_ERROR(LFI_TIMEOUT,           "Timeout");
-DECLARE_LFI_ERROR(LFI_CANCELED,          "Canceled");
-DECLARE_LFI_ERROR(LFI_CANCELED_COMM,     "Canceled COMM");
-DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND,    "COMM not found");
-DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG,       "No msg encounter");
-DECLARE_LFI_ERROR(LFI_NOT_COMPLETED,     "Request not completed");
-DECLARE_LFI_ERROR(LFI_NULL_REQUEST,      "Request is NULL");
-DECLARE_LFI_ERROR(LFI_SEND_ANY_COMM,     "Use of ANY_COMM in send");
-DECLARE_LFI_ERROR(LFI_LIBFABRIC_ERROR,   "Internal libfabric error");
+DECLARE_LFI_ERROR(LFI_SUCCESS, "Success");
+DECLARE_LFI_ERROR(LFI_ERROR, "General error");
+DECLARE_LFI_ERROR(LFI_TIMEOUT, "Timeout");
+DECLARE_LFI_ERROR(LFI_CANCELED, "Canceled");
+DECLARE_LFI_ERROR(LFI_BROKEN_COMM, "Broken comunicator");
+DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND, "Comunicator not found");
+DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG, "No msg encounter");
+DECLARE_LFI_ERROR(LFI_NOT_COMPLETED, "Request not completed");
+DECLARE_LFI_ERROR(LFI_NULL_REQUEST, "Request is NULL");
+DECLARE_LFI_ERROR(LFI_SEND_ANY_COMM, "Use of ANY_COMM in send");
+DECLARE_LFI_ERROR(LFI_LIBFABRIC_ERROR, "Internal libfabric error");
+DECLARE_LFI_ERROR(LFI_GROUP_NO_INIT, "The group is not initialized");
+DECLARE_LFI_ERROR(LFI_GROUP_NO_SELF, "The hostname of the current process is missing");
+DECLARE_LFI_ERROR(LFI_GROUP_INVAL, "Invalid argument");
 
 static constexpr const char *lfi_strerror(int error) {
-    switch (error) {
+    switch (std::abs(error)) {
         CASE_STR_ERROR(LFI_SUCCESS);
         CASE_STR_ERROR(LFI_ERROR);
         CASE_STR_ERROR(LFI_TIMEOUT);
         CASE_STR_ERROR(LFI_CANCELED);
-        CASE_STR_ERROR(LFI_CANCELED_COMM);
+        CASE_STR_ERROR(LFI_BROKEN_COMM);
         CASE_STR_ERROR(LFI_COMM_NOT_FOUND);
         CASE_STR_ERROR(LFI_PEEK_NO_MSG);
         CASE_STR_ERROR(LFI_NOT_COMPLETED);
         CASE_STR_ERROR(LFI_NULL_REQUEST);
         CASE_STR_ERROR(LFI_SEND_ANY_COMM);
         CASE_STR_ERROR(LFI_LIBFABRIC_ERROR);
+        CASE_STR_ERROR(LFI_GROUP_NO_INIT);
+        CASE_STR_ERROR(LFI_GROUP_NO_SELF);
+        CASE_STR_ERROR(LFI_GROUP_INVAL);
         default:
             return "Unknown";
     }
@@ -87,6 +92,8 @@ static constexpr const char *lfi_strerror(int error) {
 #define LFI_TAG_FT_PONG             (0xFFFFFFFF - 2)
 #define LFI_TAG_RECV_LD_PRELOAD     (0xFFFFFFFF - 3)
 #define LFI_TAG_BUFFERED_LD_PRELOAD 100000
+#define LFI_TAG_BARRIER             (0xFFFFFFFF - 4)
+#define LFI_TAG_BROADCAST           (0xFFFFFFFF - 5)
 
 // Forward declaration
 struct lfi_ep;
@@ -114,10 +121,9 @@ struct lfi_msg {
 struct lfi_request {
     // context necesary for fabric interface
     struct fi_context context = {};
-
     std::shared_ptr<lfi_comm> m_comm;
-    std::mutex mutex = {};
-    std::condition_variable cv = {};
+    std::recursive_mutex mutex = {};
+    std::condition_variable_any cv = {};
     int error = 0;
     bool wait_context = true;
 
@@ -129,6 +135,7 @@ struct lfi_request {
     uint32_t source = -1;
 
     wait_struct *shared_wait_struct = nullptr;
+    std::function<void(int)> callback = nullptr;
     lfi_request() = delete;
     lfi_request(std::shared_ptr<lfi_comm> comm) : m_comm(comm) {}
     lfi_request(const lfi_request &&request) : m_comm(request.m_comm) {}
@@ -146,6 +153,7 @@ struct lfi_request {
     std::string to_string() {
         std::stringstream out;
         out << "Request " << std::hex << this;
+        out << std::dec << " {s:" << size << ", t:" << tag << ", so:" << source << "}";
         if (is_send) {
             out << " is_send";
         }
@@ -154,6 +162,9 @@ struct lfi_request {
         }
         if (is_completed()) {
             out << " is_completed";
+        }
+        if (error) {
+            out << " Error: " << lfi_strerror(error);
         }
         return out.str();
     }
@@ -172,10 +183,20 @@ struct lfi_comm {
     // For fault tolerance
     std::mutex ft_mutex;
     std::unordered_set<lfi_request *> ft_requests;
-
-   private:
-    std::chrono::time_point<std::chrono::high_resolution_clock> last_request_time =
-        std::chrono::high_resolution_clock::now();
+    using clock = std::chrono::high_resolution_clock;
+    std::chrono::time_point<clock> ft_pp_time = clock::now();
+    uint32_t ft_comm_count = 0;
+    uint32_t ft_ping_retry = 0, ft_pong_retry = 0;
+    std::unique_ptr<lfi_request> ft_ping = nullptr, ft_pong = nullptr;
+    std::chrono::time_point<clock> last_request_time = clock::now();
+    enum ft_status {
+        IDLE,
+        SEND_PING,
+        RECV_PONG,
+        WAIT_PING_PONG,
+        ERROR,
+    };
+    ft_status ft_current_status = ft_status::IDLE;
 
    public:
     bool ft_error = false;
@@ -189,7 +210,7 @@ struct lfi_comm {
 
     void update_request_time() {
         std::unique_lock lock(ft_mutex);
-        last_request_time = std::chrono::high_resolution_clock::now();
+        last_request_time = clock::now();
     }
 
     auto get_request_time() {
@@ -213,9 +234,10 @@ struct lfi_ep {
     bool is_shm = false;
 
     std::atomic_bool progress = {false};
-    
-    std::mutex requests_mutex = {};
+
+    std::recursive_mutex requests_mutex = {};
     std::unordered_set<std::variant<lfi_request *, wait_struct *>> waiting_requests = {};
+    std::unordered_set<std::shared_ptr<lfi_comm>> ft_comms = {};
 
     bool initialized() { return enable_ep; }
 
@@ -275,8 +297,10 @@ class LFI {
     int ft_thread_destroy();
     static int ft_thread_loop();
     static int ft_thread_ping_pong();
+    int ft_one_loop(lfi_ep &lfi_ep);
+    int ft_cancel_comm(lfi_comm &lfi_comm);
+    int ft_setup_ping_pong();
     // Fault tolerance
-    std::thread ft_thread;
     std::thread ft_thread_pp;
     std::mutex ft_mutex;
     std::condition_variable ft_cv;
@@ -337,8 +361,10 @@ class LFI {
     int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
         return async_send_internal(buffer, size, send_type::SEND, tag, request, timeout_ms);
     }
-    int async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
-        return async_send_internal(reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag, request, timeout_ms);
+    int async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request,
+                    int32_t timeout_ms = -1) {
+        return async_send_internal(reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag, request,
+                                   timeout_ms);
     }
     // wait.cpp
    private:

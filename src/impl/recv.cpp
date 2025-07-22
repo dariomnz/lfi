@@ -208,10 +208,14 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
 int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
                              int32_t timeout_ms) {
     int ret;
+    uint32_t run_loop = 0;
+#ifdef DEBUG
+    defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async recv"); });
+#endif
 
     // Check cancelled comm
     if (request.m_comm->is_canceled) {
-        return -LFI_CANCELED_COMM;
+        return -LFI_BROKEN_COMM;
     }
 
     std::unique_lock req_lock(request.mutex);
@@ -228,6 +232,13 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
     if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
         mask = MASK_RANK;
+    }
+
+    if (env::get_instance().LFI_fault_tolerance && request.m_comm->rank_peer != ANY_COMM_SHM &&
+        request.m_comm->rank_peer != ANY_COMM_PEER) {
+        std::unique_lock lock(request.m_comm->m_ep.requests_mutex);
+        request.m_comm->m_ep.ft_comms.emplace(request.m_comm);
+        request.m_comm->ft_comm_count++;
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
@@ -262,9 +273,10 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
             }
 
             if (request.m_comm->is_canceled) {
-                return -LFI_CANCELED_COMM;
+                return -LFI_BROKEN_COMM;
             }
         }
+        run_loop++;
     } while (ret == -FI_EAGAIN);
 
     if (ret != 0) {
@@ -305,7 +317,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
 
     // Check cancelled comm
     if (request.m_comm->is_canceled) {
-        msg.error = -LFI_CANCELED_COMM;
+        msg.error = -LFI_BROKEN_COMM;
         return msg;
     }
 
@@ -348,7 +360,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
             protected_progress(request.m_comm->m_ep);
 
             if (request.m_comm->is_canceled) {
-                msg.error = -LFI_CANCELED_COMM;
+                msg.error = -LFI_BROKEN_COMM;
                 return msg;
             }
         }
@@ -379,7 +391,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
                 protected_progress(request.m_comm->m_ep);
 
                 if (request.m_comm->is_canceled) {
-                    msg.error = -LFI_CANCELED_COMM;
+                    msg.error = -LFI_BROKEN_COMM;
                     return msg;
                 }
             }

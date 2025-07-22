@@ -34,6 +34,7 @@ int run_test(std::vector<int>& ids, bw_test &test)
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
     debug_info("Start run_test size "<<test.test_size);
+    // std::this_thread::sleep_for(std::chrono::seconds(10));
     MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++)
@@ -56,7 +57,7 @@ int run_test(std::vector<int>& ids, bw_test &test)
             }
         }
     }
-    
+
     MPI_Barrier(MPI_COMM_WORLD);
     test.nanosec += t.resetElapsedNano();
     

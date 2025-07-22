@@ -52,6 +52,7 @@ LFI offers a C API structured in three header files:
   **[lfi_async.h](include/lfi_async.h)**
   ```c
   typedef struct lfi_request lfi_request;
+  typedef void (*lfi_request_callback)(int error, void *context);
 
   lfi_request *lfi_request_create(int id);
   void lfi_request_free(lfi_request *request);
@@ -60,6 +61,7 @@ LFI offers a C API structured in three header files:
   ssize_t lfi_request_size(lfi_request *request);
   ssize_t lfi_request_source(lfi_request *request);
   ssize_t lfi_request_error(lfi_request *request);
+  void lfi_request_set_callback(lfi_request *request, lfi_request_callback func_ptr, void *context);
 
   ssize_t lfi_send_async(lfi_request *request, const void *data, size_t size);
   ssize_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int tag);
@@ -76,16 +78,19 @@ LFI offers a C API structured in three header files:
   **[lfi_error.h](include/lfi_error.h)**
   ```c
   #define LFI_SUCCESS         0   // Success
-  #define LFI_ERROR           1   // Error
+  #define LFI_ERROR           1   // General error
   #define LFI_TIMEOUT         2   // Timeout
   #define LFI_CANCELED        3   // Canceled
-  #define LFI_CANCELED_COMM   4   // Canceled COMM
-  #define LFI_COMM_NOT_FOUND  5   // COMM not found
+  #define LFI_BROKEN_COMM     4   // Broken comunicator
+  #define LFI_COMM_NOT_FOUND  5   // Comunicator not found
   #define LFI_PEEK_NO_MSG     6   // No msg encounter
   #define LFI_NOT_COMPLETED   7   // Request not completed
   #define LFI_NULL_REQUEST    8   // Request is NULL
   #define LFI_SEND_ANY_COMM   9   // Use of ANY_COMM in send
   #define LFI_LIBFABRIC_ERROR 10  // Internal libfabric error
+  #define LFI_GROUP_NO_INIT   11  // The group is not initialized
+  #define LFI_GROUP_NO_SELF   12  // The hostname of the current process is missing
+  #define LFI_GROUP_INVAL     13  // Invalid argument
   ```
   </details>
 

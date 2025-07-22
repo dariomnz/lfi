@@ -36,6 +36,7 @@ int run_test(int id, bw_test &test)
     ssize_t data_recv = 0;
     ssize_t test_size = test.test_size;
     debug_info("Start run_test id "<<id<<" size "<<test.test_size);
+    // std::this_thread::sleep_for(std::chrono::seconds(12));
     for (size_t i = 0; i < test.test_count; i++)
     {
         debug_info("count "<<i<<" lfi_recv("<<id<<", data.data(), "<<test_size<<")");

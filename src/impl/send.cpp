@@ -71,10 +71,13 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
                              int32_t timeout_ms) {
     int ret;
-
+    uint32_t run_loop = 0;
+#ifdef DEBUG
+    defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async send"); });
+#endif
     // Check cancelled comm
     if (request.m_comm->is_canceled) {
-        return -LFI_CANCELED_COMM;
+        return -LFI_BROKEN_COMM;
     }
 
     // Check if any_comm in send is error
@@ -93,6 +96,13 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     uint64_t aux_rank_self_in_peer = request.m_comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
     uint64_t tag_send = (aux_rank_self_in_peer << MASK_RANK_BYTES) | aux_tag;
+
+    if (env::get_instance().LFI_fault_tolerance && request.m_comm->rank_peer != ANY_COMM_SHM &&
+        request.m_comm->rank_peer != ANY_COMM_PEER) {
+        std::unique_lock lock(request.m_comm->m_ep.requests_mutex);
+        request.m_comm->m_ep.ft_comms.emplace(request.m_comm);
+        request.m_comm->ft_comm_count++;
+    }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
                                    << request.m_comm->rank_self_in_peer << " tag " << tag << " send_context "
@@ -122,9 +132,10 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
                 }
 
                 if (request.m_comm->is_canceled) {
-                    return -LFI_CANCELED_COMM;
+                    return -LFI_BROKEN_COMM;
                 }
             }
+            run_loop++;
         } while (ret == -FI_EAGAIN);
 
         // To not wait in this request
@@ -158,9 +169,10 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
                 }
 
                 if (request.m_comm->is_canceled) {
-                    return -LFI_CANCELED_COMM;
+                    return -LFI_BROKEN_COMM;
                 }
             }
+            run_loop++;
         } while (ret == -FI_EAGAIN);
 
         if (env::get_instance().LFI_fault_tolerance && ret == 0) {

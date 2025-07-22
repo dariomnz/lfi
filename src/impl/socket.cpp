@@ -21,6 +21,7 @@
 
 #include "impl/socket.hpp"
 
+#include <poll.h>
 #include <unistd.h>
 
 #include "impl/debug.hpp"
@@ -81,7 +82,28 @@ int socket::server_init(const std::string& addr, int& port) {
     return socket;
 }
 
-int socket::client_init(const std::string& addr, int port, bool is_ip) {
+int socket::retry_connect(int socket, sockaddr* addr, socklen_t len, int timeout_ms, int time_to_sleep_ms) {
+    int ret = -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (ret < 0) {
+        debug_info("Try to connect server");
+        ret = ::connect(socket, addr, len);
+        if (ret < 0) {
+            auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start)
+                    .count();
+            debug_error("Failed to connect. Elapsed time " << elapsed << " ms");
+            if (elapsed > timeout_ms) {
+                debug_error("Socket connection");
+                return ret;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_ms));
+        }
+    }
+    return ret;
+}
+
+int socket::client_init(const std::string& addr, int port, int timeout_ms, bool is_ip) {
     int ret = -1;
     int socket = -1;
     debug_info(">> Begin");
@@ -108,7 +130,7 @@ int socket::client_init(const std::string& addr, int port, bool is_ip) {
             }
             // Attempt to connect
             debug_info("Attempt connect to " << ns::sockaddr_to_str(p->ai_addr) << " on port " << port);
-            if ((ret = ::connect(socket, p->ai_addr, p->ai_addrlen)) == -1) {
+            if ((ret = retry_connect(socket, p->ai_addr, p->ai_addrlen, timeout_ms, timeout_ms / 10)) == -1) {
                 print_error("connect " << addr << " port " << port);
                 socket::close(socket);
                 continue;
@@ -121,7 +143,7 @@ int socket::client_init(const std::string& addr, int port, bool is_ip) {
 
         // Free the linked list created by getaddrinfo
         ::freeaddrinfo(res);
-    }else{
+    } else {
         struct sockaddr_in server_addr = {};
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
@@ -203,14 +225,50 @@ int socket::open() {
     return out_socket;
 }
 
-int socket::accept(int socket) {
-    int ret, flag, new_socket;
+int socket::accept_timeout(int socket, int timeout_ms) {
     sockaddr_in client_addr;
     socklen_t size = sizeof(sockaddr_in);
+    if (timeout_ms == 0) {
+        return ::accept(socket, (struct sockaddr*)&client_addr, &size);
+    }
+    struct pollfd fds[1];
+    fds[0].fd = socket;
+    fds[0].events = POLLIN;
+    int current_timeout_ms = timeout_ms;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (current_timeout_ms > 0) {
+        int ret = poll(fds, 1, current_timeout_ms);
+
+        if (ret < 0) {
+            if (errno == EINTR) {
+                // Interrumped for signal
+                current_timeout_ms -= std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::high_resolution_clock::now() - start)
+                                          .count();
+                if (current_timeout_ms <= 0) return -1;
+                continue;
+            }
+            return -1;
+        } else if (ret == 0) {
+            // Timeout
+            return -1;
+        } else {
+            if (fds[0].revents & POLLIN) {
+                return ::accept(socket, (struct sockaddr*)&client_addr, &size);
+            } else {
+                return -1;
+            }
+        }
+    }
+    return -1;
+}
+
+int socket::accept(int socket, int timeout_ms) {
+    int ret, flag, new_socket;
     // Accept
     debug_info(">> Begin");
 
-    new_socket = ::accept(socket, (sockaddr*)&client_addr, &size);
+    new_socket = accept_timeout(socket, timeout_ms);
     if (new_socket < 0) {
         print_error("ERROR: accept fails");
         return -1;
@@ -289,10 +347,10 @@ int64_t socket::send_str(int socket, const std::string& str) {
     int64_t ret;
     size_t size_str = str.size();
     debug_info("Send_str size " << size_str);
-    
-    do{
+
+    do {
         ret = socket::send(socket, &size_str, sizeof(size_str));
-    }while(ret < 0 && errno == EAGAIN);
+    } while (ret < 0 && errno == EAGAIN);
     if (ret != sizeof(size_str)) {
         print_error("send size of string");
         return ret;
@@ -301,9 +359,9 @@ int64_t socket::send_str(int socket, const std::string& str) {
         return size_str;
     }
     debug_info("Send_str " << str);
-    do{
+    do {
         ret = socket::send(socket, &str[0], size_str);
-    }while(ret < 0 && errno == EAGAIN);
+    } while (ret < 0 && errno == EAGAIN);
     if (ret != static_cast<int64_t>(size_str)) {
         print_error("send string");
         return ret;
@@ -314,9 +372,9 @@ int64_t socket::send_str(int socket, const std::string& str) {
 int64_t socket::recv_str(int socket, std::string& str) {
     int64_t ret;
     size_t size_str = 0;
-    do{
+    do {
         ret = socket::recv(socket, &size_str, sizeof(size_str));
-    }while(ret < 0 && errno == EAGAIN);
+    } while (ret < 0 && errno == EAGAIN);
     if (ret != sizeof(size_str)) {
         print_error("send size of string");
         return ret;
@@ -327,9 +385,9 @@ int64_t socket::recv_str(int socket, std::string& str) {
     }
     str.clear();
     str.resize(size_str, '\0');
-    do{
+    do {
         ret = socket::recv(socket, &str[0], size_str);
-    }while(ret < 0 && errno == EAGAIN);
+    } while (ret < 0 && errno == EAGAIN);
     if (ret != static_cast<int64_t>(size_str)) {
         print_error("send string");
         return ret;

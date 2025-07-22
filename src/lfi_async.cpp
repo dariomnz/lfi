@@ -31,6 +31,19 @@
 extern "C" {
 #endif
 
+void lfi_request_set_callback(lfi_request *req, lfi_request_callback func_ptr, void *context) {
+    debug_info("(" << req << ")>> Begin");
+    if (req == nullptr) return;
+    LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
+    std::unique_lock request_lock(request->mutex);
+    if (func_ptr) {
+        request->callback = [func_ptr, context](int error) { func_ptr(error, context); };
+    } else {
+        request->callback = nullptr;
+    }
+    debug_info("(" << req << ")>> End");
+}
+
 lfi_request *lfi_request_create(int id) {
     debug_info("(" << id << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -153,13 +166,9 @@ inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_man
     return ret;
 }
 
-ssize_t lfi_wait_any(lfi_request *reqs[], size_t size) {
-    return lfi_wait_wrapper(reqs, size, 1);
-}
+ssize_t lfi_wait_any(lfi_request *reqs[], size_t size) { return lfi_wait_wrapper(reqs, size, 1); }
 
-ssize_t lfi_wait_all(lfi_request *reqs[], size_t size) {
-    return lfi_wait_wrapper(reqs, size, size);
-}
+ssize_t lfi_wait_all(lfi_request *reqs[], size_t size) { return lfi_wait_wrapper(reqs, size, size); }
 
 ssize_t lfi_cancel(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
