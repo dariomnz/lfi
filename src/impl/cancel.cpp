@@ -22,6 +22,7 @@
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "lfi_error.h"
 #include "sstream"
 
 namespace LFI {
@@ -54,13 +55,12 @@ int LFI::cancel(lfi_request &request) {
     // Check if completed to no report error
     std::unique_lock request_lock(request.mutex);
     if (!request.is_completed() || request.error) {
-        request.wait_context = false;
-        if (request.m_comm->is_canceled) {
+        if (request.m_comm->is_canceled || request.error == -LFI_BROKEN_COMM) {
             request.error = -LFI_BROKEN_COMM;
         } else {
             request.error = -LFI_CANCELED;
         }
-        request.cv.notify_all();
+        request.complete();
     }
 
     debug_info("[LFI] End " << request.to_string());

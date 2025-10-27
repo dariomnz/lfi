@@ -89,11 +89,13 @@ std::shared_ptr<lfi_comm> LFI::get_comm(uint32_t id) {
         auto &fut = fut_it->second;
 
         if (fut.valid()) {
+            debug_info("[LFI] Need to wait for the connection to end");
             fut_lock.unlock();
             comms_lock.unlock();
             fut.get();
             comms_lock.lock();
             fut_lock.lock();
+            debug_info("[LFI] Finish waiting for the connection");
         }
 
         m_fut_comms.erase(id);
@@ -132,9 +134,14 @@ int LFI::close_comm(uint32_t id) {
     // }
 
     remove_addr(comm);
-
-    std::unique_lock comms_lock(m_comms_mutex);
-    m_comms.erase(comm->rank_peer);
+    {
+        std::unique_lock comms_lock(m_comms_mutex);
+        m_comms.erase(comm->rank_peer);
+    }
+    {
+        std::unique_lock lock(comm->m_ep.requests_mutex);
+        comm->m_ep.ft_comms.erase(comm);
+    }
 
     debug_info("[LFI] End = " << ret);
 

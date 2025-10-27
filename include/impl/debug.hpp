@@ -27,6 +27,7 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <thread>
 
 namespace LFI {
@@ -43,7 +44,8 @@ constexpr const char *file_name(const char *path) {
 static inline std::string getTime() {
     auto now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-    std::tm local_tm = *std::localtime(&now_c);
+    std::tm local_tm{};
+    ::localtime_r(&now_c, &local_tm);
 
     auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
@@ -55,44 +57,40 @@ static inline std::string getTime() {
     return oss.str();
 }
 
-class debug_lock {
-   public:
-    static std::mutex &get_lock() {
-        static std::mutex mutex;
-        return mutex;
-    }
-};
-
-#define print_error(out_format)                                                                                    \
-    {                                                                                                              \
-        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                       \
-        std::cerr << std::dec << ::LFI::getTime() << " [ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
-                  << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << " : "       \
-                  << std::strerror(errno) << std::endl                                                             \
-                  << std::flush;                                                                                   \
+#define print_error(out_format)                                                                                \
+    {                                                                                                          \
+        std::ostringstream __out;                                                                              \
+        __out << std::dec << ::LFI::getTime() << " [ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
+              << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << " : "       \
+              << std::strerror(errno) << std::endl;                                                            \
+        fprintf(stderr, "%s", __out.str().c_str());                                                            \
+        fflush(stderr);                                                                                        \
     }
 
 #ifdef DEBUG
-#define debug_error(out_format)                                                                                    \
-    {                                                                                                              \
-        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                       \
-        std::cerr << std::dec << ::LFI::getTime() << " [ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
-                  << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl   \
-                  << std::flush;                                                                                   \
+#define debug_error(out_format)                                                                                \
+    {                                                                                                          \
+        std::ostringstream __out;                                                                              \
+        __out << std::dec << ::LFI::getTime() << " [ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
+              << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl;  \
+        fprintf(stderr, "%s", __out.str().c_str());                                                            \
+        fflush(stderr);                                                                                        \
     }
-#define debug_warning(out_format)                                                                                    \
-    {                                                                                                                \
-        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                         \
-        std::cerr << std::dec << ::LFI::getTime() << " [WARNING] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
-                  << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl     \
-                  << std::flush;                                                                                     \
+#define debug_warning(out_format)                                                                                \
+    {                                                                                                            \
+        std::ostringstream __out;                                                                                \
+        __out << std::dec << ::LFI::getTime() << " [WARNING] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
+              << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl;    \
+        fprintf(stderr, "%s", __out.str().c_str());                                                              \
+        fflush(stderr);                                                                                          \
     }
-#define debug_info(out_format)                                                                                    \
-    {                                                                                                             \
-        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                      \
-        std::cerr << std::dec << ::LFI::getTime() << " [INFO] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
-                  << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl  \
-                  << std::flush;                                                                                  \
+#define debug_info(out_format)                                                                                         \
+    {                                                                                                                  \
+        std::ostringstream __out;                                                                                      \
+        __out << std::dec << ::LFI::getTime() << " [INFO] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" \
+              << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl;                   \
+        fprintf(stderr, "%s", __out.str().c_str());                                                                    \
+        fflush(stderr);                                                                                                \
     }
 #else
 #define debug_error(out_format)
@@ -100,10 +98,12 @@ class debug_lock {
 #define debug_info(out_format)
 #endif
 
-#define print(out_format)                                                    \
-    {                                                                        \
-        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock()); \
-        std::cerr << std::dec << out_format << std::endl << std::flush;      \
+#define print(out_format)                             \
+    {                                                 \
+        std::ostringstream __out;                     \
+        __out << std::dec << out_format << std::endl; \
+        fprintf(stdout, "%s", __out.str().c_str());   \
+        fflush(stdout);                               \
     }
 
 class DeferAction {

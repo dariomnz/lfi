@@ -38,6 +38,7 @@ void lfi_request_set_callback(lfi_request *req, lfi_request_callback func_ptr, v
     std::unique_lock request_lock(request->mutex);
     if (func_ptr) {
         request->callback = [func_ptr, context](int error) { func_ptr(error, context); };
+        debug_info("Setting callback to func_ptr wth context");
     } else {
         request->callback = nullptr;
     }
@@ -61,6 +62,10 @@ void lfi_request_free(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
+    std::unique_lock request_lock(request->mutex);
+    if (!request->is_completed()){
+        lfi_cancel(req);
+    }
     debug_info(request->to_string());
     debug_info("(" << req << ")>> End");
     delete request;
@@ -159,7 +164,6 @@ inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_man
 
     for (size_t i = 0; i < size; i++) {
         v_requests.emplace_back(*requests[i]);
-        debug_info(requests[i]->to_string());
     }
     const ssize_t ret = lfi.wait_num(v_requests, how_many);
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")=" << ret << ">> End");

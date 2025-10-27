@@ -141,6 +141,33 @@ int lfi_barrier(lfi_group *group);
  */
 int lfi_broadcast(lfi_group *group, int root, void *data, size_t size);
 
+enum lfi_op_enum {
+    LFI_OP_MIN,
+    LFI_OP_MAX,
+    LFI_OP_SUM,
+    LFI_OP_PROD,
+};
+
+enum lfi_op_type_enum {
+    LFI_OP_TYPE_INT,
+};
+
+/**
+ * @brief Broadcasts data from a root process to all other processes in a group.
+ *
+ * This function initiates a broadcast operation, where data residing on the root process
+ * is sent to every other process within the specified communication group. This implementation
+ * uses asynchronous send and receive operations.
+ *
+ * @param group A pointer to the `lfi_group` object.
+ * @param root The rank of the root process that initiates and sends the broadcast data.
+ * @param data A pointer to the buffer containing the data to be sent (if self is root),
+ * or a pointer to the buffer where the received data will be stored (if self is not root).
+ * @param size The size of the data buffer in bytes.
+ * @return 0 on success, or a negative error code on failure.
+ */
+int lfi_allreduce(lfi_group *group, void *data, enum lfi_op_type_enum type, enum lfi_op_enum op);
+
 #ifdef __cplusplus
 }
 #endif

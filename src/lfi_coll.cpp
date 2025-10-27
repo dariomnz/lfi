@@ -265,6 +265,108 @@ cleanup:
     return ret;
 }
 
+int lfi_allreduce(lfi_group *group, void *data, enum lfi_op_type_enum type, enum lfi_op_enum op) {
+    debug_info("lfi_reduce(" << group << ")");
+    if (group->size <= 0) {
+        return -1;
+    }
+    if (type != lfi_op_type_enum::LFI_OP_TYPE_INT) {
+        // TODO: currently only support int
+        return -1;
+    }
+    ssize_t ret = 0;
+    std::vector<lfi_request *> requests;
+    std::vector<int32_t> buffers;
+    int root = 0;
+    if (group->rank == root) {
+        requests.reserve(group->size - 1);
+        buffers.reserve(group->size - 1);
+        for (size_t i = 0; i < group->size; i++) {
+            if (static_cast<int>(i) != root) {
+                auto recv_req = requests.emplace_back(lfi_request_create(group->ranks[i]));
+                auto &recv_req_buffer = buffers.emplace_back();
+                ret = lfi_trecv_async(recv_req, &recv_req_buffer, sizeof(recv_req_buffer), LFI_TAG_ALLREDUCE);
+                if (ret < 0) {
+                    goto error;
+                }
+            }
+        }
+    } else {
+        requests.reserve(1);
+        auto send_req = requests.emplace_back(lfi_request_create(group->ranks[root]));
+        ret = lfi_tsend_async(send_req, data, sizeof(int32_t), LFI_TAG_ALLREDUCE);
+        if (ret < 0) {
+            goto error;
+        }
+    }
+
+    lfi_wait_all(requests.data(), requests.size());
+    for (auto &&req : requests) {
+        lfi_request_free(req);
+    }
+    requests.clear();
+
+    if (group->rank == root) {
+        int32_t result = *static_cast<int *>(data);
+        for (auto &&buf : buffers) {
+            switch (op) {
+                case lfi_op_enum::LFI_OP_MIN: {
+                    result = buf < result ? buf : result;
+                } break;
+                case lfi_op_enum::LFI_OP_MAX: {
+                    result = result < buf ? buf : result;
+                } break;
+                case lfi_op_enum::LFI_OP_SUM: {
+                    result = result + buf;
+                } break;
+                case lfi_op_enum::LFI_OP_PROD: {
+                    result = result * buf;
+                } break;
+
+                default: {
+                    ret = -1;
+                    goto error;
+                } break;
+            }
+        }
+        
+        *static_cast<int *>(data) = result;
+
+        requests.reserve(group->size - 1);
+        for (size_t i = 0; i < group->size; i++) {
+            if (static_cast<int>(i) != root) {
+                auto recv_req = requests.emplace_back(lfi_request_create(group->ranks[i]));
+                ret = lfi_tsend_async(recv_req, &result, sizeof(result), LFI_TAG_ALLREDUCE);
+                if (ret < 0) {
+                    goto error;
+                }
+            }
+        }
+    } else {
+        requests.reserve(1);
+        auto send_req = requests.emplace_back(lfi_request_create(group->ranks[root]));
+        ret = lfi_trecv_async(send_req, data, sizeof(int), LFI_TAG_ALLREDUCE);
+        if (ret < 0) {
+            goto error;
+        }
+    }
+
+    ret = 0;
+    goto cleanup;
+error:
+    for (auto &&req : requests) {
+        lfi_cancel(req);
+    }
+cleanup:
+    lfi_wait_all(requests.data(), requests.size());
+    for (auto &&req : requests) {
+        lfi_request_free(req);
+    }
+
+    debug_info("lfi_reduce(" << group << ") = " << ret);
+    return ret;
+}
+
 #ifdef __cplusplus
 }
 #endif

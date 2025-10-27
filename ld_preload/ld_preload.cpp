@@ -27,6 +27,7 @@
 #include <execinfo.h>
 #include <sys/eventfd.h>
 
+#include "lfi.hpp"
 #include "proxy.hpp"
 #include "debug.hpp"
 
@@ -153,8 +154,8 @@ void ld_preload::thread_eventfd_loop()
     std::vector<uint64_t> noti_buffered(1024, 0);
     std::vector<uint64_t> aux_buff_shm(1024, 0);
     std::vector<uint64_t> aux_buff_peer(1024, 0);
-    std::unique_ptr<LFI::lfi_request> shm_request, peer_request;
-    auto any_recv = [&](LFI::lfi_request& req, bool is_shm){
+    std::unique_ptr<::LFI::lfi_request> shm_request, peer_request;
+    auto any_recv = [&](::LFI::lfi_request& req, bool is_shm){
         int ret;
         if (is_shm){
             ret = lfi->async_recv(aux_buff_shm.data(), aux_buff_shm.size()*sizeof(aux_buff_shm[0]), LFI_TAG_RECV_LD_PRELOAD, req);
@@ -167,15 +168,17 @@ void ld_preload::thread_eventfd_loop()
         }
         return 0;
     };
+    std::vector<std::unique_ptr<::LFI::lfi_request>> recv_requests;
+    std::vector<std::reference_wrapper<::LFI::lfi_request>> ref_requests;
     while (ld_preload.m_thread_eventfd_is_running)
     {
         if (!shm_request){
-            auto comm = lfi->get_comm(LFI::ANY_COMM_SHM);
+            auto comm = lfi->get_comm(::LFI::ANY_COMM_SHM);
             if (!comm){
                 print("Error get_comm ANY_COMM_SHM");
                 continue;
             }
-            shm_request = std::make_unique<LFI::lfi_request>(comm);
+            shm_request = std::make_unique<::LFI::lfi_request>(comm);
             if (!shm_request){
                 print("Error shm_request is null");
                 continue;
@@ -187,12 +190,12 @@ void ld_preload::thread_eventfd_loop()
         }
 
         if (!peer_request){
-            auto comm = lfi->get_comm(LFI::ANY_COMM_PEER);
+            auto comm = lfi->get_comm(::LFI::ANY_COMM_PEER);
             if (!comm){
                 print("Error get_comm ANY_COMM_PEER");
                 continue;
             }
-            peer_request = std::make_unique<LFI::lfi_request>(comm);
+            peer_request = std::make_unique<::LFI::lfi_request>(comm);
             if (!peer_request){
                 print("Error peer_request is null");
                 continue;
@@ -203,7 +206,7 @@ void ld_preload::thread_eventfd_loop()
             }
         }
 
-        std::vector<std::reference_wrapper<LFI::lfi_request>> requests = {*shm_request, *peer_request};
+        std::vector<std::reference_wrapper<::LFI::lfi_request>> requests = {*shm_request, *peer_request};
         int completed = lfi->wait_num(requests, 1, 1000);
         int source = -1;
         uint64_t how_many = 0;
@@ -260,16 +263,15 @@ void ld_preload::thread_eventfd_loop()
             print_error("Error find the comm "<<source);
             continue;
         }
-        std::vector<LFI::lfi_request> recv_requests;
-        std::vector<std::reference_wrapper<LFI::lfi_request>> ref_requests;
-        recv_requests.reserve(how_many);
-        ref_requests.reserve(how_many);
+
+        recv_requests.clear();
+        ref_requests.clear();
 
         uint64_t buff_size = 0;
         for (size_t i = 0; i < how_many; i++)
         {
-            recv_requests.emplace_back(comm);
-            ref_requests.emplace_back(recv_requests[i]);
+            recv_requests.emplace_back(std::make_unique<::LFI::lfi_request>(comm));
+            ref_requests.emplace_back(*recv_requests[i]);
             buff_size += noti_buffered[i];
         }
 
@@ -281,7 +283,7 @@ void ld_preload::thread_eventfd_loop()
         int error = 0;
         for (size_t i = 0; i < how_many; i++)
         {
-            auto ret = lfi->async_recv(new_buffer.buffer.data()+already_recv, noti_buffered[i], LFI_TAG_BUFFERED_LD_PRELOAD+i, recv_requests[i]);
+            auto ret = lfi->async_recv(new_buffer.buffer.data()+already_recv, noti_buffered[i], LFI_TAG_BUFFERED_LD_PRELOAD+i, *recv_requests[i]);
             if (ret < 0){
                 print_error("Error recv buffered in comm "<<lfi_socket.lfi_id<<" error "<<ret);
                 error = 1;
@@ -486,8 +488,8 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
         }
     }
     
-    std::vector<LFI::lfi_request> requests;
-    std::vector<std::reference_wrapper<LFI::lfi_request>> ref_requests;
+    std::vector<std::unique_ptr<::LFI::lfi_request>> requests;
+    std::vector<std::reference_wrapper<::LFI::lfi_request>> ref_requests;
     requests.reserve(v_iov.size());
     ref_requests.reserve(v_iov.size());
 
@@ -497,8 +499,8 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
 
     for (size_t i = 0; i < v_iov.size(); i++)
     {
-        requests.emplace_back(comm);
-        ref_requests.emplace_back(requests[i]);
+        requests.emplace_back(std::make_unique<::LFI::lfi_request>(comm));
+        ref_requests.emplace_back(*requests[i]);
         noti_buffered.emplace_back(v_iov[i].iov_len);
         to_send += v_iov[i].iov_len;
     }
@@ -506,7 +508,7 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
     debug("[LFI LD_PRELOAD] Send notification of "<<v_iov.size()<<" msgs");
     auto msg_not = m_lfi->send(comm_id, noti_buffered.data(), noti_buffered.size()*sizeof(noti_buffered[0]), LFI_TAG_RECV_LD_PRELOAD);
     if (msg_not.error < 0){
-        debug("[LFI LD_PRELOAD] Error in send notification "<<msg_not.error<<" "<<LFI::lfi_strerror(msg_not.error));
+        debug("[LFI LD_PRELOAD] Error in send notification "<<msg_not.error<<" "<<::LFI::lfi_strerror(msg_not.error));
         return msg_not.error;
     }
     debug("[LFI LD_PRELOAD] Sended notification of "<<v_iov.size()<<" msgs");
@@ -515,16 +517,16 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
     for (size_t i = 0; i < v_iov.size(); i++)
     {
         debug("[LFI LD_PRELOAD] Start async send");
-        auto ret = m_lfi->async_send(v_iov[i].iov_base, v_iov[i].iov_len, LFI_TAG_BUFFERED_LD_PRELOAD+i, requests[i]);
+        auto ret = m_lfi->async_send(v_iov[i].iov_base, v_iov[i].iov_len, LFI_TAG_BUFFERED_LD_PRELOAD+i, *requests[i]);
         if (ret < 0){
-            debug("[LFI LD_PRELOAD] Error in async send "<<ret<<" "<<LFI::lfi_strerror(ret));
+            debug("[LFI LD_PRELOAD] Error in async send "<<ret<<" "<<::LFI::lfi_strerror(ret));
             return ret;
         }
     }
     
     ret = m_lfi->wait_num(ref_requests, ref_requests.size());
     if (ret < 0){
-        debug("[LFI LD_PRELOAD] Error in wait sends "<<ret<<" "<<LFI::lfi_strerror(ret));
+        debug("[LFI LD_PRELOAD] Error in wait sends "<<ret<<" "<<::LFI::lfi_strerror(ret));
         return ret;
     }
 
@@ -535,7 +537,7 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
 extern "C"
 {
 #endif
-    int socket(int domain, int type, int protocol)
+    int socket(int domain, int type, int protocol) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {
@@ -620,10 +622,10 @@ extern "C"
         debug("[LFI LD_PRELOAD] recved host_ip "<<server_addr);
         debug("Try connect to " << server_addr);
 
-        int client_socket = socket::client_init(server_addr, LFI::env::get_instance().LFI_port, true);
+        int client_socket = socket::client_init(server_addr, ::LFI::env::get_instance().LFI_port, true);
         if (client_socket < 0)
         {
-            print_error("socket::client_init (" << server_addr << ", " << LFI::env::get_instance().LFI_port << ")");
+            print_error("socket::client_init (" << server_addr << ", " << ::LFI::env::get_instance().LFI_port << ")");
         }
         std::unique_lock lock(preload.m_map_comm_socket_mutex);
         auto new_fd = preload.m_lfi->init_client(client_socket);
@@ -692,8 +694,8 @@ extern "C"
             return ret;
         }
 
-        std::string host_ip = LFI::ns::get_host_ip();
-        int server_socket = socket::server_init("", LFI::env::get_instance().LFI_port);
+        std::string host_ip = ::LFI::ns::get_host_ip();
+        int server_socket = socket::server_init("", ::LFI::env::get_instance().LFI_port);
         if (server_socket < 0){
             return server_socket;
         }
@@ -936,7 +938,7 @@ extern "C"
 #endif
     }
 
-    int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+    int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {
@@ -955,7 +957,7 @@ extern "C"
 #endif
     }
 
-    int listen(int sockfd, int backlog)
+    int listen(int sockfd, int backlog) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {
@@ -1134,7 +1136,7 @@ extern "C"
 #endif
     }
 
-    int shutdown(int sockfd, int how)
+    int shutdown(int sockfd, int how) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {
@@ -1146,7 +1148,7 @@ extern "C"
         return ret;
     }
 
-    int getpeername(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen)
+    int getpeername(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {
@@ -1158,7 +1160,7 @@ extern "C"
         return ret;
     }
 
-    int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *__restrict optlen)
+    int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *__restrict optlen) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {
@@ -1170,7 +1172,7 @@ extern "C"
         return ret;
     }
 
-    int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
+    int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen) throw()
     {
         if (ld_preload::is_caller_libfabric())
         {

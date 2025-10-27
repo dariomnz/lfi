@@ -20,52 +20,20 @@
  */
 
 #include <thread>
-#include "bw_common.hpp"
+
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "lfi.h"
 #include "lfi_async.h"
-#include "mpi.h"
+#include "lfi_error.h"
 
-using namespace bw_examples;
-
-int run_test(int id, bw_test &test) {
-    std::vector<uint8_t> data(test.test_size);
-    ssize_t data_send = 0;
-    ssize_t data_recv = 0;
-    ssize_t test_size = test.test_size;
-    debug_info("Start run_test id " << id << " size " << test.test_size);
-    for (size_t i = 0; i < test.test_count; i++) {
-        debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
-        data_recv = lfi_trecv(id, data.data(), test_size, test.test_tag);
-        if (data_recv != test_size) {
-            print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
-            return -1;
-        }
-    }
-    int ack = 0;
-    debug_info("ack lfi_send(" << id << ", ack, " << sizeof(ack) << ")");
-    data_send = lfi_tsend(id, &ack, sizeof(ack), test.test_tag);
-    if (data_send != sizeof(ack)) {
-        print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
-        return -1;
-    }
-
-    debug_info("End run_test id " << id << " size " << test.test_size);
-
-    return 0;
-}
-
-int main(int argc, char *argv[]) {
-    int ret;
+#define PORT 8080
+int main() {
     const int max_clients = 1024;
-    int server_fd, new_socket;
+    int server_fd;
 
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
-
-    ret = MPI_Init(&argc, &argv);
-    if (ret < 0) exit(EXIT_FAILURE);
 
     // Creating socket file descriptor
     int port = PORT;
@@ -74,13 +42,11 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    auto &tests = get_test_vector();
-
     std::cout << "Server start accepting " << LFI::ns::get_host_name() << " :" << std::endl;
-    int iter = 0;
-    std::thread([&tests]() {
-        int ack = 0;
+    std::thread echo_thread([]() {
         int iter = 0;
+        int32_t ack_shm = 0;
+        int32_t ack_peer = 0;
 
         std::unique_ptr<lfi_request, void (*)(lfi_request *)> shm_request(lfi_request_create(LFI_ANY_COMM_SHM),
                                                                           lfi_request_free);
@@ -90,7 +56,10 @@ int main(int argc, char *argv[]) {
         peer_request.reset();
         while (iter < max_clients) {
             print("Start recv any ack");
+            int ret = 0;
             int source = -1;
+            int error = 0;
+            int32_t ack = 0;
 
             if (!shm_request) {
                 shm_request = {lfi_request_create(LFI_ANY_COMM_SHM), lfi_request_free};
@@ -98,8 +67,10 @@ int main(int argc, char *argv[]) {
                     print("Error shm_request is null");
                 }
 
-                if (lfi_trecv_async(shm_request.get(), &ack, sizeof(ack), 0) < 0) {
-                    print("Error in lfi_trecv_async") return -1;
+                ret = lfi_recv_async(shm_request.get(), &ack_shm, sizeof(ack_shm));
+                if (ret < 0) {
+                    print("Error in lfi_trecv_async " << lfi_strerror(ret));
+                    return -1;
                 }
             }
 
@@ -109,8 +80,10 @@ int main(int argc, char *argv[]) {
                     print("Error peer_request is null");
                 }
 
-                if (lfi_trecv_async(peer_request.get(), &ack, sizeof(ack), 0) < 0) {
-                    print("Error in lfi_trecv_async") return -1;
+                ret = lfi_recv_async(peer_request.get(), &ack_peer, sizeof(ack_peer));
+                if (ret < 0) {
+                    print("Error in lfi_trecv_async " << lfi_strerror(ret));
+                    return -1;
                 }
             }
 
@@ -121,32 +94,39 @@ int main(int argc, char *argv[]) {
             std::cout << "Completed wait_num with " << completed << std::endl;
             if (completed == 0) {
                 source = lfi_request_source(shm_request.get());
+                error = lfi_request_error(shm_request.get());
+                ack = ack_shm;
                 shm_request.reset();
             } else if (completed == 1) {
                 source = lfi_request_source(peer_request.get());
+                error = lfi_request_error(peer_request.get());
+                ack = ack_peer;
                 peer_request.reset();
             } else {
-                print("Error in wait_num") exit(1);
+                print("Error in wait_num ");
+                exit(1);
             }
 
-            // ssize_t any_recv = lfi_any_shm_recv(&ack, sizeof(ack), &source);
-            // if (any_recv != sizeof(ack)){
-            //     print("Error lfi_any_recv = " << any_recv << " " << lfi_strerror(any_recv));
-            //     exit(1);
-            // }
-            std::cout << "Start test for client " << source << std::endl;
-            std::thread([id = source, &tests]() {
-                int ret = 0;
-                for (auto &test : tests) {
-                    ret = run_test(id, test);
-                    if (ret < 0) break;
+            print("Received from " << source << " " << lfi_strerror(error));
+
+            if (error == LFI_SUCCESS) {
+                int32_t response = ack + 10;
+                print("Send to " << source << " " << response);
+                int ret = lfi_send(source, &response, sizeof(response));
+                if (ret < 0) {
+                    print("Error: lfi_send " << lfi_strerror(ret));
                 }
-                lfi_client_close(id);
-                std::cout << "End test for client " << id << std::endl;
-            }).detach();
+            }
+            lfi_client_close(source);
+
+            iter++;
         }
         return 0;
-    }).detach();
+    });
+    echo_thread.detach();
+
+    int iter = 0;
+    int new_socket;
     while (iter < max_clients) {
         if ((new_socket = lfi_server_accept(server_fd)) < 0) {
             perror("accept");
@@ -155,11 +135,9 @@ int main(int argc, char *argv[]) {
         std::cout << "Server accept client " << new_socket << std::endl;
         iter++;
     }
+
     // closing the listening socket
     lfi_server_close(server_fd);
-
-    ret = MPI_Finalize();
-    if (ret < 0) exit(EXIT_FAILURE);
 
     return 0;
 }

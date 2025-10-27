@@ -208,8 +208,8 @@ std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, s
 int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
                              int32_t timeout_ms) {
     int ret;
-    uint32_t run_loop = 0;
 #ifdef DEBUG
+    uint32_t run_loop = 0;
     defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async recv"); });
 #endif
 
@@ -232,6 +232,11 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
     if (request.m_comm->rank_peer == ANY_COMM_SHM || request.m_comm->rank_peer == ANY_COMM_PEER) {
         mask = MASK_RANK;
+        if (env::get_instance().LFI_fault_tolerance && tag != LFI_TAG_FT_PING && tag != LFI_TAG_FT_PONG) {
+            std::unique_lock lock(request.m_comm->m_ep.requests_mutex);
+            debug_info("Save request in any_comm_requests " << request.to_string());
+            request.m_comm->m_ep.ft_any_comm_requests.emplace(&request);
+        }
     }
 
     if (env::get_instance().LFI_fault_tolerance && request.m_comm->rank_peer != ANY_COMM_SHM &&
@@ -242,8 +247,8 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
-                                   << request.m_comm->rank_self_in_peer << " tag " << tag << " recv_context "
-                                   << (void *)&request.context);
+                                   << request.m_comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
+                                   << " recv_context " << (void *)&request.context);
 
     fid_ep *p_rx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
     request.wait_context = true;
@@ -276,11 +281,13 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
                 return -LFI_BROKEN_COMM;
             }
         }
+#ifdef DEBUG
         run_loop++;
+#endif
     } while (ret == -FI_EAGAIN);
 
     if (ret != 0) {
-        printf("error posting recv buffer (%d)\n", ret);
+        printf("error posting recv buffer (%d) %s\n", ret, fi_strerror(ret));
         return -LFI_LIBFABRIC_ERROR;
     }
 
@@ -297,8 +304,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     request.tag = tag;
     request.source = request.m_comm->rank_peer;
 
-    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error "
-                                 << request.error);
+    debug_info("[LFI] msg size " << request.to_string());
     debug_info("[LFI] End = " << size);
     return LFI_SUCCESS;
 }
@@ -332,8 +338,8 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
-                                   << request.m_comm->rank_self_in_peer << " tag " << tag << " recv_context "
-                                   << (void *)&request.context);
+                                   << request.m_comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
+                                   << " recv_context " << (void *)&request.context);
 
     fid_ep *p_rx_ep = request.m_comm->m_ep.use_scalable_ep ? request.m_comm->m_ep.rx_ep : request.m_comm->m_ep.ep;
     request.reset();
@@ -367,7 +373,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     } while (ret == -FI_EAGAIN);
 
     if (ret != 0) {
-        printf("error PEEK recv buffer (%d)\n", ret);
+        printf("error PEEK recv buffer (%d) %s\n", ret, fi_strerror(ret));
         msg.error = -LFI_LIBFABRIC_ERROR;
         return msg;
     }
@@ -376,7 +382,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
 
     ret = wait(request);
     if (ret != 0) {
-        printf("error waiting recv peek (%d)\n", ret);
+        printf("error waiting recv peek (%d) %s\n", ret, fi_strerror(ret));
         msg.error = ret;
         return msg;
     }
@@ -398,7 +404,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         } while (ret == -FI_EAGAIN);
 
         if (ret != 0) {
-            printf("error CLAIM recv buffer (%d)\n", ret);
+            printf("error CLAIM recv buffer (%d) %s\n", ret, fi_strerror(ret));
             msg.error = -LFI_LIBFABRIC_ERROR;
             return msg;
         }
@@ -406,14 +412,13 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         debug_info("[LFI] Waiting for " << request.to_string());
         ret = wait(request);
         if (ret != 0) {
-            printf("error waiting recv claim (%d)\n", ret);
+            printf("error waiting recv claim (%d) %s\n", ret, fi_strerror(ret));
             msg.error = ret;
             return msg;
         }
     }
 
-    debug_info("[LFI] request size " << request.size << " source " << request.source << " tag " << request.tag
-                                     << " error " << request.error);
+    debug_info("[LFI] request " << request.to_string());
     debug_info("[LFI] End = " << size);
     return request;
 }

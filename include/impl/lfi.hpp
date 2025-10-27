@@ -39,6 +39,7 @@
 #include <variant>
 #include <vector>
 
+#include "impl/env.hpp"
 #include "lfi.h"
 #include "lfi_async.h"
 #include "lfi_error.h"
@@ -94,6 +95,60 @@ static constexpr const char *lfi_strerror(int error) {
 #define LFI_TAG_BUFFERED_LD_PRELOAD 100000
 #define LFI_TAG_BARRIER             (0xFFFFFFFF - 4)
 #define LFI_TAG_BROADCAST           (0xFFFFFFFF - 5)
+#define LFI_TAG_ALLREDUCE           (0xFFFFFFFF - 6)
+#define LFI_TAG_DUMMY               (0xFFFFFFFF - 7)
+#define LFI_TAG_INITIAL_SEND_SRV    (0xFFFFFFFF - 8)
+#define LFI_TAG_INITIAL_SEND_CLI    (0xFFFFFFFF - 9)
+
+// Constants
+constexpr static const uint32_t UNINITIALIZED_COMM = 0xFFFFFFFF;
+constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
+constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
+
+constexpr static const uint64_t MASK_RANK = 0xFFFF'FFFF'0000'0000;
+constexpr static const uint64_t MASK_RANK_BYTES = 32;
+constexpr static const uint64_t MASK_TAG = 0x0000'0000'FFFF'FFFF;
+constexpr static const uint64_t MASK_TAG_BYTES = 32;
+
+static inline std::string lfi_tag_to_string(int64_t tag) {
+    switch (tag) {
+        case LFI_TAG_FT_PING:
+            return "LFI_TAG_FT_PING";
+        case LFI_TAG_FT_PONG:
+            return "LFI_TAG_FT_PONG";
+        case LFI_TAG_RECV_LD_PRELOAD:
+            return "LFI_TAG_RECV_LD_PRELOAD";
+        case LFI_TAG_BUFFERED_LD_PRELOAD:
+            return "LFI_TAG_BUFFERED_LD_PRELOAD";
+        case LFI_TAG_BARRIER:
+            return "LFI_TAG_BARRIER";
+        case LFI_TAG_BROADCAST:
+            return "LFI_TAG_BROADCAST";
+        case LFI_TAG_ALLREDUCE:
+            return "LFI_TAG_ALLREDUCE";
+        case LFI_TAG_DUMMY:
+            return "LFI_TAG_DUMMY";
+        case LFI_TAG_INITIAL_SEND_SRV:
+            return "LFI_TAG_INITIAL_SEND_SRV";
+        case LFI_TAG_INITIAL_SEND_CLI:
+            return "LFI_TAG_INITIAL_SEND_CLI";
+        default:
+            return std::to_string(tag);
+    }
+}
+
+static inline std::string lfi_source_to_string(int64_t source) {
+    switch (source) {
+        case LFI_ANY_COMM_SHM:
+            return "LFI_ANY_COMM_SHM";
+        case LFI_ANY_COMM_PEER:
+            return "LFI_ANY_COMM_PEER";
+        case UNINITIALIZED_COMM:
+            return "UNINITIALIZED_COMM";
+        default:
+            return std::to_string(source);
+    }
+}
 
 // Forward declaration
 struct lfi_ep;
@@ -113,7 +168,8 @@ struct lfi_msg {
 
     std::string to_string() {
         std::stringstream out;
-        out << "lfi_msg " << " size " << size << " source " << source << " tag " << tag << " error " << error;
+        out << "lfi_msg "
+            << " size " << size << " source " << source << " tag " << tag << " error " << error;
         return out.str();
     }
 };
@@ -132,13 +188,22 @@ struct lfi_request {
 
     size_t size = 0;
     uint32_t tag = 0;
-    uint32_t source = -1;
+    uint32_t source = UNINITIALIZED_COMM;
 
     wait_struct *shared_wait_struct = nullptr;
     std::function<void(int)> callback = nullptr;
-    lfi_request() = delete;
     lfi_request(std::shared_ptr<lfi_comm> comm) : m_comm(comm) {}
-    lfi_request(const lfi_request &&request) : m_comm(request.m_comm) {}
+    
+    // Delete default constructor
+    lfi_request() = delete;
+    // Delete copy constructor
+    lfi_request(const lfi_request &) = delete;
+    // Delete copy assignment operator
+    lfi_request &operator=(const lfi_request &) = delete;
+    // Delete move constructor
+    lfi_request(lfi_request &&) = delete;
+    // Delete move assignment operator
+    lfi_request &operator=(lfi_request &&) = delete;
 
     void reset() {
         wait_context = true;
@@ -150,24 +215,9 @@ struct lfi_request {
 
     bool is_completed() { return !wait_context; }
 
-    std::string to_string() {
-        std::stringstream out;
-        out << "Request " << std::hex << this;
-        out << std::dec << " {s:" << size << ", t:" << tag << ", so:" << source << "}";
-        if (is_send) {
-            out << " is_send";
-        }
-        if (is_inject) {
-            out << " is_inject";
-        }
-        if (is_completed()) {
-            out << " is_completed";
-        }
-        if (error) {
-            out << " Error: " << lfi_strerror(error);
-        }
-        return out.str();
-    }
+    void complete();
+
+    std::string to_string();
 
     operator lfi_msg() const { return lfi_msg{.size = size, .source = source, .tag = tag, .error = error}; }
 };
@@ -236,6 +286,8 @@ struct lfi_ep {
     std::atomic_bool progress = {false};
 
     std::recursive_mutex requests_mutex = {};
+    std::unordered_set<lfi_request *> ft_any_comm_requests = {};
+    std::unordered_set<std::shared_ptr<lfi_comm>> ft_pending_failed_comms = {};
     std::unordered_set<std::variant<lfi_request *, wait_struct *>> waiting_requests = {};
     std::unordered_set<std::shared_ptr<lfi_comm>> ft_comms = {};
 
@@ -254,15 +306,6 @@ struct lfi_ep {
         return false;
     }
 };
-
-// Constants
-constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
-constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
-
-constexpr static const uint64_t MASK_RANK = 0xFFFF'FFFF'0000'0000;
-constexpr static const uint64_t MASK_RANK_BYTES = 32;
-constexpr static const uint64_t MASK_TAG = 0x0000'0000'FFFF'FFFF;
-constexpr static const uint64_t MASK_TAG_BYTES = 32;
 
 class LFI {
     // address.cpp

@@ -126,12 +126,12 @@ int LFI::init_server(int socket, int32_t comm_id) {
     // Do a send recv because some providers need it
     int buf = 123;
     lfi_msg msg;
-    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), 123);
+    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
     if (msg.error < 0) {
         print_error("LFI::send");
         return msg.error;
     }
-    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), 1234);
+    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
     if (msg.error < 0) {
         print_error("LFI::recv");
         return msg.error;
@@ -245,12 +245,12 @@ int LFI::init_client(int socket, int32_t comm_id) {
     // Do a recv send because some providers need it
     int buf = 123;
     lfi_msg msg;
-    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), 123);
+    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
     if (msg.error < 0) {
         print_error("LFI::recv");
         return msg.error;
     }
-    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), 1234);
+    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
     if (msg.error < 0) {
         print_error("LFI::send");
         return msg.error;

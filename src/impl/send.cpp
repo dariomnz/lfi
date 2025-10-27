@@ -71,8 +71,8 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
                              int32_t timeout_ms) {
     int ret;
-    uint32_t run_loop = 0;
 #ifdef DEBUG
+    uint32_t run_loop = 0;
     defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async send"); });
 #endif
     // Check cancelled comm
@@ -105,8 +105,8 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm->rank_peer << " rank_self_in_peer "
-                                   << request.m_comm->rank_self_in_peer << " tag " << tag << " send_context "
-                                   << (void *)&request.context);
+                                   << request.m_comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
+                                   << " send_context " << (void *)&request.context);
 
     request.is_send = true;
     if (env::get_instance().LFI_use_inject && type == send_type::SEND &&
@@ -135,7 +135,9 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
                     return -LFI_BROKEN_COMM;
                 }
             }
+#ifdef DEBUG
             run_loop++;
+#endif
         } while (ret == -FI_EAGAIN);
 
         // To not wait in this request
@@ -172,7 +174,9 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
                     return -LFI_BROKEN_COMM;
                 }
             }
+#ifdef DEBUG
             run_loop++;
+#endif
         } while (ret == -FI_EAGAIN);
 
         if (env::get_instance().LFI_fault_tolerance && ret == 0) {
@@ -186,7 +190,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     }
 
     if (ret != 0) {
-        printf("error posting send buffer (%d)\n", ret);
+        printf("error posting send buffer %p (%d) %s\n", buffer, ret, fi_strerror(ret));
         return -LFI_LIBFABRIC_ERROR;
     }
 
@@ -194,8 +198,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     request.tag = tag;
     request.source = request.m_comm->rank_peer;
 
-    debug_info("[LFI] msg size " << request.size << " source " << request.source << " tag " << request.tag << " error "
-                                 << request.error);
+    debug_info("[LFI] msg " << request.to_string());
     debug_info("[LFI] End = " << size);
     return LFI_SUCCESS;
 }
