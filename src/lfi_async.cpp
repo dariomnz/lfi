@@ -63,7 +63,7 @@ void lfi_request_free(lfi_request *req) {
     if (req == nullptr) return;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     std::unique_lock request_lock(request->mutex);
-    if (!request->is_completed()){
+    if (!request->is_completed()) {
         lfi_cancel(req);
     }
     debug_info(request->to_string());
@@ -88,7 +88,16 @@ ssize_t lfi_request_size(lfi_request *req) {
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
     std::unique_lock request_lock(request->mutex);
-    const auto ret = request->is_completed() ? request->size : -LFI_NOT_COMPLETED;
+    ssize_t ret;
+    if (request->is_completed()) {
+        if (request->error) {
+            ret = request->error;
+        } else {
+            ret = request->size;
+        }
+    } else {
+        ret = -LFI_NOT_COMPLETED;
+    }
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
 }
