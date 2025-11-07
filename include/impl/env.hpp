@@ -63,6 +63,7 @@ namespace LFI
             parse_env("LFI_EFFICIENT_PROGRESS", LFI_efficient_progress);
             parse_env("LFI_LD_PRELOAD_THREADS", LFI_ld_preload_threads);
             parse_env("LFI_LD_PRELOAD_BUFFERED", LFI_ld_preload_buffered);
+            parse_env("LFI_DEBUG_DUMP_INTERVAL", LFI_debug_dump_interval);
         }
         // Delete copy constructor
         env(const env &) = delete;
@@ -82,6 +83,7 @@ namespace LFI
         bool LFI_efficient_progress = true;
         size_t LFI_ld_preload_threads = 1;
         size_t LFI_ld_preload_buffered = 64 * 1024;
+        int LFI_debug_dump_interval = 0;
 
     public:
         static env &get_instance()

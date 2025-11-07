@@ -21,6 +21,11 @@ target_include_directories(lfi PUBLIC
 	"${PROJECT_SOURCE_DIR}/include/impl"
 )
 
+target_include_directories(lfi_static PUBLIC
+	"${PROJECT_SOURCE_DIR}/include"
+	"${PROJECT_SOURCE_DIR}/include/impl"
+)
+
 if(LIBFABRIC_LIBRARY AND LIBFABRIC_INCLUDE_DIR)
     target_include_directories(lfi PUBLIC ${LIBFABRIC_INCLUDE_DIR})
     target_include_directories(lfi_static PUBLIC ${LIBFABRIC_INCLUDE_DIR})

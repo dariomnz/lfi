@@ -169,7 +169,7 @@ void ld_preload::thread_eventfd_loop()
         return 0;
     };
     std::vector<std::unique_ptr<::LFI::lfi_request>> recv_requests;
-    std::vector<std::reference_wrapper<::LFI::lfi_request>> ref_requests;
+    std::vector<::LFI::lfi_request*> ref_requests;
     while (ld_preload.m_thread_eventfd_is_running)
     {
         if (!shm_request){
@@ -178,7 +178,7 @@ void ld_preload::thread_eventfd_loop()
                 print("Error get_comm ANY_COMM_SHM");
                 continue;
             }
-            shm_request = std::make_unique<::LFI::lfi_request>(comm);
+            shm_request = std::make_unique<::LFI::lfi_request>(*comm);
             if (!shm_request){
                 print("Error shm_request is null");
                 continue;
@@ -195,7 +195,7 @@ void ld_preload::thread_eventfd_loop()
                 print("Error get_comm ANY_COMM_PEER");
                 continue;
             }
-            peer_request = std::make_unique<::LFI::lfi_request>(comm);
+            peer_request = std::make_unique<::LFI::lfi_request>(*comm);
             if (!peer_request){
                 print("Error peer_request is null");
                 continue;
@@ -206,7 +206,7 @@ void ld_preload::thread_eventfd_loop()
             }
         }
 
-        std::vector<std::reference_wrapper<::LFI::lfi_request>> requests = {*shm_request, *peer_request};
+        std::vector<::LFI::lfi_request*> requests = {shm_request.get(), peer_request.get()};
         int completed = lfi->wait_num(requests, 1, 1000);
         int source = -1;
         uint64_t how_many = 0;
@@ -270,8 +270,8 @@ void ld_preload::thread_eventfd_loop()
         uint64_t buff_size = 0;
         for (size_t i = 0; i < how_many; i++)
         {
-            recv_requests.emplace_back(std::make_unique<::LFI::lfi_request>(comm));
-            ref_requests.emplace_back(*recv_requests[i]);
+            recv_requests.emplace_back(std::make_unique<::LFI::lfi_request>(*comm));
+            ref_requests.emplace_back(recv_requests[i].get());
             buff_size += noti_buffered[i];
         }
 
@@ -489,7 +489,7 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
     }
     
     std::vector<std::unique_ptr<::LFI::lfi_request>> requests;
-    std::vector<std::reference_wrapper<::LFI::lfi_request>> ref_requests;
+    std::vector<::LFI::lfi_request*> ref_requests;
     requests.reserve(v_iov.size());
     ref_requests.reserve(v_iov.size());
 
@@ -499,8 +499,8 @@ ssize_t ld_preload::internal_sendmsg(lfi_socket& lfi_socket, const struct iovec 
 
     for (size_t i = 0; i < v_iov.size(); i++)
     {
-        requests.emplace_back(std::make_unique<::LFI::lfi_request>(comm));
-        ref_requests.emplace_back(*requests[i]);
+        requests.emplace_back(std::make_unique<::LFI::lfi_request>(*comm));
+        ref_requests.emplace_back(requests[i].get());
         noti_buffered.emplace_back(v_iov[i].iov_len);
         to_send += v_iov[i].iov_len;
     }

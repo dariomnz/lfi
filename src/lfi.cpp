@@ -169,6 +169,8 @@ int lfi_client_close(int id) {
 
 const char *lfi_strerror(int error) { return LFI::lfi_strerror(std::abs(error)); }
 
+void lfi_dump_stats() { return LFI::LFI::get_instance().dump_stats(); }
+
 #ifdef __cplusplus
 }
 #endif

@@ -41,6 +41,26 @@ constexpr const char *file_name(const char *path) {
     return file;
 }
 
+template <typename clock>
+struct format_time {
+    std::chrono::time_point<clock> m_point;
+    format_time(std::chrono::time_point<clock> point) : m_point(point) {}
+    friend std::ostream &operator<<(std::ostream &os, const format_time<clock> &ftime) {
+        std::time_t now_c = clock::to_time_t(ftime.m_point);
+        std::tm local_tm{};
+        ::localtime_r(&now_c, &local_tm);
+
+        auto milliseconds =
+            std::chrono::duration_cast<std::chrono::milliseconds>(ftime.m_point.time_since_epoch()) % 1000;
+
+        os << std::setw(2) << std::setfill('0') << local_tm.tm_hour << ":" << std::setw(2) << std::setfill('0')
+           << local_tm.tm_min << ":" << std::setw(2) << std::setfill('0') << local_tm.tm_sec << ":" << std::setw(3)
+           << std::setfill('0') << milliseconds.count();
+
+        return os;
+    }
+};
+
 static inline std::string getTime() {
     auto now = std::chrono::system_clock::now();
     std::time_t now_c = std::chrono::system_clock::to_time_t(now);

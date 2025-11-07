@@ -39,6 +39,8 @@ extern "C" {
  */
 const char *lfi_strerror(int error);
 
+void lfi_dump_stats();
+
 /**
  * @brief Creates a new LFI server.
  *

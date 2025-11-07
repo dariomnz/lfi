@@ -48,12 +48,12 @@ void lfi_request_set_callback(lfi_request *req, lfi_request_callback func_ptr, v
 lfi_request *lfi_request_create(int id) {
     debug_info("(" << id << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    std::shared_ptr<LFI::lfi_comm> comm = lfi.get_comm(id);
+    LFI::lfi_comm *comm = lfi.get_comm(id);
     if (!comm) {
         debug_info("(" << id << ")=" << nullptr << " >> End");
         return nullptr;
     }
-    const auto ret = reinterpret_cast<lfi_request *>(new (std::nothrow) LFI::lfi_request(comm));
+    const auto ret = reinterpret_cast<lfi_request *>(new (std::nothrow) LFI::lfi_request(*comm));
     debug_info("(" << id << ")=" << ret << " >> End");
     return ret;
 }
@@ -62,11 +62,14 @@ void lfi_request_free(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    std::unique_lock request_lock(request->mutex);
-    if (!request->is_completed()) {
-        lfi_cancel(req);
+    {
+        std::unique_lock request_lock(request->mutex);
+        if (!request->is_completed()) {
+            request_lock.unlock();
+            debug_info(request->to_string());
+            request->cancel();
+        }
     }
-    debug_info(request->to_string());
     debug_info("(" << req << ")>> End");
     delete request;
 }
@@ -168,11 +171,11 @@ inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_man
     if (reqs == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request **requests = reinterpret_cast<LFI::lfi_request **>(reqs);
-    std::vector<std::reference_wrapper<LFI::lfi_request>> v_requests;
+    std::vector<LFI::lfi_request*> v_requests;
     v_requests.reserve(size);
 
     for (size_t i = 0; i < size; i++) {
-        v_requests.emplace_back(*requests[i]);
+        v_requests.emplace_back(requests[i]);
     }
     const ssize_t ret = lfi.wait_num(v_requests, how_many);
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")=" << ret << ">> End");
@@ -186,12 +189,11 @@ ssize_t lfi_wait_all(lfi_request *reqs[], size_t size) { return lfi_wait_wrapper
 ssize_t lfi_cancel(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
-    LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(request->to_string());
-    const auto ret = lfi.cancel(*request);
+    request->cancel();
     debug_info("(" << req << ")=" << ret << " >> End");
-    return ret;
+    return 0;
 }
 
 #ifdef __cplusplus

@@ -42,7 +42,10 @@
 #include "impl/env.hpp"
 #include "lfi.h"
 #include "lfi_async.h"
+#include "lfi_comm.hpp"
+#include "lfi_endpoint.hpp"
 #include "lfi_error.h"
+#include "lfi_request.hpp"
 
 #define DECLARE_LFI_ERROR(name, msg) static constexpr const char *name##_str = msg;
 
@@ -101,10 +104,6 @@ static constexpr const char *lfi_strerror(int error) {
 #define LFI_TAG_INITIAL_SEND_CLI    (0xFFFFFFFF - 9)
 
 // Constants
-constexpr static const uint32_t UNINITIALIZED_COMM = 0xFFFFFFFF;
-constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
-constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
-
 constexpr static const uint64_t MASK_RANK = 0xFFFF'FFFF'0000'0000;
 constexpr static const uint64_t MASK_RANK_BYTES = 32;
 constexpr static const uint64_t MASK_TAG = 0x0000'0000'FFFF'FFFF;
@@ -113,36 +112,36 @@ constexpr static const uint64_t MASK_TAG_BYTES = 32;
 static inline std::string lfi_tag_to_string(int64_t tag) {
     switch (tag) {
         case LFI_TAG_FT_PING:
-            return "LFI_TAG_FT_PING";
+            return "FT_PING";
         case LFI_TAG_FT_PONG:
-            return "LFI_TAG_FT_PONG";
+            return "FT_PONG";
         case LFI_TAG_RECV_LD_PRELOAD:
-            return "LFI_TAG_RECV_LD_PRELOAD";
+            return "RECV_LD_PRELOAD";
         case LFI_TAG_BUFFERED_LD_PRELOAD:
-            return "LFI_TAG_BUFFERED_LD_PRELOAD";
+            return "BUFFERED_LD_PRELOAD";
         case LFI_TAG_BARRIER:
-            return "LFI_TAG_BARRIER";
+            return "BARRIER";
         case LFI_TAG_BROADCAST:
-            return "LFI_TAG_BROADCAST";
+            return "BROADCAST";
         case LFI_TAG_ALLREDUCE:
-            return "LFI_TAG_ALLREDUCE";
+            return "ALLREDUCE";
         case LFI_TAG_DUMMY:
-            return "LFI_TAG_DUMMY";
+            return "DUMMY";
         case LFI_TAG_INITIAL_SEND_SRV:
-            return "LFI_TAG_INITIAL_SEND_SRV";
+            return "INITIAL_SEND_SRV";
         case LFI_TAG_INITIAL_SEND_CLI:
-            return "LFI_TAG_INITIAL_SEND_CLI";
+            return "INITIAL_SEND_CLI";
         default:
             return std::to_string(tag);
     }
 }
 
-static inline std::string lfi_source_to_string(int64_t source) {
+static inline std::string lfi_comm_to_string(int64_t source) {
     switch (source) {
         case LFI_ANY_COMM_SHM:
-            return "LFI_ANY_COMM_SHM";
+            return "ANY_SHM";
         case LFI_ANY_COMM_PEER:
-            return "LFI_ANY_COMM_PEER";
+            return "ANY_PEER";
         case UNINITIALIZED_COMM:
             return "UNINITIALIZED_COMM";
         default:
@@ -150,184 +149,23 @@ static inline std::string lfi_source_to_string(int64_t source) {
     }
 }
 
-// Forward declaration
-struct lfi_ep;
-struct lfi_comm;
-
-struct wait_struct {
-    std::mutex wait_mutex = {};
-    std::condition_variable wait_cv = {};
-    int wait_count = 0;
-};
-
-struct lfi_msg {
-    uint64_t size = 0;
-    uint32_t source = 0;
-    uint32_t tag = 0;
-    int32_t error = 0;
-
-    std::string to_string() {
-        std::stringstream out;
-        out << "lfi_msg "
-            << " size " << size << " source " << source << " tag " << tag << " error " << error;
-        return out.str();
-    }
-};
-
-struct lfi_request {
-    // context necesary for fabric interface
-    struct fi_context context = {};
-    std::shared_ptr<lfi_comm> m_comm;
-    std::recursive_mutex mutex = {};
-    std::condition_variable_any cv = {};
-    int error = 0;
-    bool wait_context = true;
-
-    bool is_send = false;
-    bool is_inject = false;
-
-    size_t size = 0;
-    uint32_t tag = 0;
-    uint32_t source = UNINITIALIZED_COMM;
-
-    wait_struct *shared_wait_struct = nullptr;
-    std::function<void(int)> callback = nullptr;
-    lfi_request(std::shared_ptr<lfi_comm> comm) : m_comm(comm) {}
-    
-    // Delete default constructor
-    lfi_request() = delete;
-    // Delete copy constructor
-    lfi_request(const lfi_request &) = delete;
-    // Delete copy assignment operator
-    lfi_request &operator=(const lfi_request &) = delete;
-    // Delete move constructor
-    lfi_request(lfi_request &&) = delete;
-    // Delete move assignment operator
-    lfi_request &operator=(lfi_request &&) = delete;
-
-    void reset() {
-        wait_context = true;
-        error = 0;
-        size = 0;
-        tag = 0;
-        source = -1;
-    }
-
-    bool is_completed() { return !wait_context; }
-
-    void complete();
-
-    std::string to_string();
-
-    operator lfi_msg() const { return lfi_msg{.size = size, .source = source, .tag = tag, .error = error}; }
-};
-
-struct lfi_comm {
-    uint32_t rank_peer;
-    uint32_t rank_self_in_peer;
-
-    fi_addr_t fi_addr = FI_ADDR_UNSPEC;
-
-    lfi_ep &m_ep;
-
-    // For fault tolerance
-    std::mutex ft_mutex;
-    std::unordered_set<lfi_request *> ft_requests;
-    using clock = std::chrono::high_resolution_clock;
-    std::chrono::time_point<clock> ft_pp_time = clock::now();
-    uint32_t ft_comm_count = 0;
-    uint32_t ft_ping_retry = 0, ft_pong_retry = 0;
-    std::unique_ptr<lfi_request> ft_ping = nullptr, ft_pong = nullptr;
-    std::chrono::time_point<clock> last_request_time = clock::now();
-    enum ft_status {
-        IDLE,
-        SEND_PING,
-        RECV_PONG,
-        WAIT_PING_PONG,
-        ERROR,
-    };
-    ft_status ft_current_status = ft_status::IDLE;
-
-   public:
-    bool ft_error = false;
-
-    bool is_canceled = false;
-
-    std::atomic_bool is_ready = false;
-    std::atomic_bool in_fut = false;
-
-    lfi_comm(lfi_ep &ep) : m_ep(ep) {}
-
-    void update_request_time() {
-        std::unique_lock lock(ft_mutex);
-        last_request_time = clock::now();
-    }
-
-    auto get_request_time() {
-        std::unique_lock lock(ft_mutex);
-        return last_request_time;
-    }
-};
-
-struct lfi_ep {
-    bool use_scalable_ep = true;
-    struct fi_info *hints = nullptr;
-    struct fi_info *info = nullptr;
-    struct fid_fabric *fabric = nullptr;
-    struct fid_domain *domain = nullptr;
-    struct fid_ep *ep = nullptr;
-    struct fid_ep *rx_ep = nullptr;
-    struct fid_ep *tx_ep = nullptr;
-    struct fid_av *av = nullptr;
-    struct fid_cq *cq = nullptr;
-    std::atomic_bool enable_ep = false;
-    bool is_shm = false;
-
-    std::atomic_bool progress = {false};
-
-    std::recursive_mutex requests_mutex = {};
-    std::unordered_set<lfi_request *> ft_any_comm_requests = {};
-    std::unordered_set<std::shared_ptr<lfi_comm>> ft_pending_failed_comms = {};
-    std::unordered_set<std::variant<lfi_request *, wait_struct *>> waiting_requests = {};
-    std::unordered_set<std::shared_ptr<lfi_comm>> ft_comms = {};
-
-    bool initialized() { return enable_ep; }
-
-    size_t get_iov_limit() { return info->tx_attr->iov_limit; }
-
-    bool operator==(const lfi_ep &other) const {
-        if (this->use_scalable_ep != other.use_scalable_ep) return false;
-
-        if (this->use_scalable_ep) {
-            return this->rx_ep == other.rx_ep && this->tx_ep == other.tx_ep;
-        } else {
-            return this->ep == other.ep;
-        }
-        return false;
-    }
-};
-
 class LFI {
     // address.cpp
    public:
-    int get_addr(std::shared_ptr<lfi_comm> lfi_comm, std::vector<uint8_t> &out_addr);
-    int register_addr(std::shared_ptr<lfi_comm> lfi_comm, std::vector<uint8_t> &addr);
-    int remove_addr(std::shared_ptr<lfi_comm> lfi_comm);
-
-    // cancel.cpp
-   public:
-    int cancel(lfi_request &request);
+    int get_addr(lfi_comm &lfi_comm, std::vector<uint8_t> &out_addr);
+    int register_addr(lfi_comm &lfi_comm, std::vector<uint8_t> &addr);
+    int remove_addr(lfi_comm &lfi_comm);
 
     // comm.cpp
    public:
     uint32_t reserve_comm();
-    std::shared_ptr<lfi_comm> init_comm(bool is_shm, int32_t comm_id = -1);
-    std::shared_ptr<lfi_comm> get_comm(uint32_t id);
+    lfi_comm *init_comm(bool is_shm, int32_t comm_id = -1);
+    lfi_comm *get_comm(uint32_t id);
     int close_comm(uint32_t id);
 
    private:
-    std::shared_ptr<lfi_comm> create_comm(lfi_ep &lfi_ep, int32_t comm_id = -1);
-    std::shared_ptr<lfi_comm> create_any_comm(lfi_ep &lfi_ep, uint32_t comm_id);
+    lfi_comm *create_comm(lfi_endpoint &lfi_ep, int32_t comm_id = -1);
+    lfi_comm *create_any_comm(lfi_endpoint &lfi_ep, uint32_t comm_id);
 
     // connection.cpp
    public:
@@ -340,7 +178,7 @@ class LFI {
     int ft_thread_destroy();
     static int ft_thread_loop();
     static int ft_thread_ping_pong();
-    int ft_one_loop(lfi_ep &lfi_ep);
+    int ft_one_loop(lfi_endpoint &lfi_ep);
     int ft_cancel_comm(lfi_comm &lfi_comm);
     int ft_setup_ping_pong();
     // Fault tolerance
@@ -356,9 +194,9 @@ class LFI {
     ~LFI();
 
    private:
-    int set_hints(lfi_ep &lfi_ep, const std::string &prov);
-    int init(lfi_ep &lfi_ep);
-    int destroy(lfi_ep &lfi_ep);
+    int set_hints(lfi_endpoint &lfi_ep, const std::string &prov);
+    int init(lfi_endpoint &lfi_ep);
+    int destroy(lfi_endpoint &lfi_ep);
 
     // recv.cpp
    public:
@@ -412,23 +250,23 @@ class LFI {
     // wait.cpp
    private:
     inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
-    void wake_up_requests(lfi_ep &ep);
+    void wake_up_requests(lfi_endpoint &ep);
 
    public:
-    bool protected_progress(lfi_ep &ep);
-    int progress(lfi_ep &lfi_ep);
     int wait(lfi_request &request, int32_t timeout_ms = -1);
-    int wait_num(std::vector<std::reference_wrapper<lfi_request>> &request, int how_many, int32_t timeout_ms = -1);
+    int wait_num(std::vector<lfi_request *> &request, int how_many, int32_t timeout_ms = -1);
 
+   public:
+    void dump_stats();
     // Variables
    public:
-    lfi_ep shm_ep = {.is_shm = true};
-    lfi_ep peer_ep = {.is_shm = false};
+    lfi_endpoint shm_ep{*this, true};
+    lfi_endpoint peer_ep{*this, false};
 
     std::mutex m_fut_mutex;
     std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
     std::mutex m_comms_mutex;
-    std::unordered_map<uint32_t, std::shared_ptr<lfi_comm>> m_comms;
+    std::unordered_map<uint32_t, std::unique_ptr<lfi_comm>> m_comms;
     std::atomic_uint32_t m_rank_counter = {0};
 
    public:

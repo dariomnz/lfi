@@ -81,7 +81,7 @@ LFI::~LFI() {
     debug_info("[LFI] End");
 }
 
-int LFI::set_hints(lfi_ep &lfi_ep, const std::string &prov) {
+int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
     debug_info("[LFI] Start");
 
     if (lfi_ep.hints != nullptr) {
@@ -108,7 +108,7 @@ int LFI::set_hints(lfi_ep &lfi_ep, const std::string &prov) {
     return LFI_SUCCESS;
 }
 
-int LFI::init(lfi_ep &lfi_ep) {
+int LFI::init(lfi_endpoint &lfi_ep) {
     int ret;
     struct fi_cq_attr cq_attr = {};
     struct fi_av_attr av_attr = {};
@@ -266,7 +266,7 @@ int LFI::init(lfi_ep &lfi_ep) {
     return ret;
 }
 
-int LFI::destroy(lfi_ep &lfi_ep) {
+int LFI::destroy(lfi_endpoint &lfi_ep) {
     int ret = 0;
 
     debug_info("[LFI] Start");

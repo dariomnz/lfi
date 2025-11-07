@@ -66,7 +66,7 @@ int LFI::init_server(int socket, int32_t comm_id) {
 
     // Initialize endpoints
     bool is_shm = host_id == peer_id;
-    std::shared_ptr<lfi_comm> comm = init_comm(is_shm, comm_id);
+    lfi_comm* comm = init_comm(is_shm, comm_id);
 
     // Exchange ranks
     ret = socket::recv(socket, &comm->rank_self_in_peer, sizeof(comm->rank_self_in_peer));
@@ -96,13 +96,13 @@ int LFI::init_server(int socket, int32_t comm_id) {
         print_error("socket::recv peer_addr.data() socket " << socket);
         return -1;
     }
-    ret = register_addr(comm, peer_addr);
+    ret = register_addr(*comm, peer_addr);
     if (ret < 0) {
         print_error("register_addr");
         return ret;
     }
 
-    ret = get_addr(comm, host_addr);
+    ret = get_addr(*comm, host_addr);
     if (ret < 0) {
         print_error("get_addr");
         return ret;
@@ -184,7 +184,7 @@ int LFI::init_client(int socket, int32_t comm_id) {
 
     // Initialize endpoints
     bool is_shm = host_id == peer_id;
-    std::shared_ptr<lfi_comm> comm = init_comm(is_shm, comm_id);
+    lfi_comm* comm = init_comm(is_shm, comm_id);
 
     // Exchange ranks
     ret = socket::send(socket, &comm->rank_peer, sizeof(comm->rank_peer));
@@ -203,7 +203,7 @@ int LFI::init_client(int socket, int32_t comm_id) {
     std::vector<uint8_t> peer_addr;
     size_t peer_addr_size = 0;
 
-    ret = get_addr(comm, host_addr);
+    ret = get_addr(*comm, host_addr);
     if (ret < 0) {
         print_error("get_addr");
         return ret;
@@ -233,7 +233,7 @@ int LFI::init_client(int socket, int32_t comm_id) {
         print_error("socket::recv peer_addr.data() socket " << socket);
         return -1;
     }
-    ret = register_addr(comm, peer_addr);
+    ret = register_addr(*comm, peer_addr);
     if (ret < 0) {
         print_error("register_addr");
         return ret;

@@ -14,12 +14,18 @@ set(EXAMPLES_BW
     bw_socket_server
     bw_lfi_client
     bw_lfi_server
+    bw_lfi_client_invert
+    bw_lfi_server_invert
+    bw_lfi_server_tpool
     bw_lfi_client_async
     bw_lfi_server_async
     bw_lfi_any_comm_client
     bw_lfi_any_comm_server
     bw_mpi_client
     bw_mpi_server
+    bw_mpi_client_invert
+    bw_mpi_server_invert
+    bw_mpi_server_tpool
     simple_mpi_coll
 )
 
