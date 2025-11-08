@@ -23,6 +23,7 @@
 #define _LFI_ASYNC_H
 
 // #include <stdint.h>
+#include <stdint.h>
 #include <sys/types.h>
 
 #ifdef __cplusplus
@@ -173,6 +174,16 @@ ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
  * @return 0 on success, or a negative error code on failure.
  */
 ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
+
+typedef struct lfi_status {
+    uint64_t size;
+    uint32_t source;
+    uint32_t tag;
+    int32_t error;
+} lfi_status;
+
+int lfi_trecv_any(lfi_request *req_shm, void *buffer_shm, lfi_request *req_peer, void *buffer_peer, size_t size,
+                  uint32_t tag, lfi_status *status);
 
 /**
  * @brief Waits for an asynchronous request to complete.

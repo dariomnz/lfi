@@ -89,9 +89,9 @@ struct lfi_request {
         source = UNINITIALIZED_COMM;
     }
 
-    bool is_completed() {
-        return !wait_context;
-    }
+    bool is_iniciated() { return source != UNINITIALIZED_COMM; }
+
+    bool is_completed() { return !wait_context; }
 
     void complete(int error);
 

@@ -48,7 +48,7 @@ int run_test(std::vector<int> &ids, bw_test &test) {
                 return -1;
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(100));
             debug_info("count " << i << " lfi_send(" << id << ", data.data(), " << test_size << ")");
             data_send = lfi_send(id, data.data(), test_size);
             if (data_send != test_size) {

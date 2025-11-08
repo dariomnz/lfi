@@ -205,7 +205,8 @@ class LFI {
         RECVV,
     };
     lfi_msg recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag);
-    std::pair<lfi_msg, lfi_msg> any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag);
+    int any_recv(lfi_request &req_shm, void *buffer_shm, lfi_request &req_peer, void *buffer_peer, size_t size,
+                 uint32_t tag, lfi_msg &msg);
     int async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
                             int32_t timeout_ms = -1);
     // Redirects
@@ -254,7 +255,7 @@ class LFI {
 
    public:
     int wait(lfi_request &request, int32_t timeout_ms = -1);
-    int wait_num(std::vector<lfi_request *> &request, int how_many, int32_t timeout_ms = -1);
+    int wait_num(lfi_request **request, int n_request, int how_many, int32_t timeout_ms = -1);
 
    public:
     void dump_stats();

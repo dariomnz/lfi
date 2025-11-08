@@ -59,12 +59,12 @@ void LFI::wake_up_requests(lfi_endpoint &ep) {
 }
 
 int LFI::wait(lfi_request &request, int32_t timeout_ms) {
-    debug_info("[LFI] Start " << request.to_string() << " timeout_ms " << timeout_ms);
+    debug_info("[LFI] Start timeout_ms " << timeout_ms);
 
     // Check cancelled comm
-    if (request.m_comm.is_canceled) {
-        return -LFI_BROKEN_COMM;
-    }
+    // if (request.m_comm.is_canceled) {
+    //     return -LFI_BROKEN_COMM;
+    // }
 
     lfi_endpoint &ep = request.m_comm.m_ep;
     decltype(std::chrono::high_resolution_clock::now()) start;
@@ -80,6 +80,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
 
     {
         std::unique_lock request_lock(request.mutex);
+        debug_info("[LFI] " << request);
         while (request.wait_context && !is_timeout) {
             if (!env::get_instance().LFI_efficient_progress || !ep.in_progress.exchange(true)) {
                 while (request.wait_context && !is_timeout) {
@@ -112,20 +113,20 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
     // Return timeout only if is not completed and timeout
     if (is_timeout && request.wait_context) {
         request.error = -LFI_TIMEOUT;
-        debug_info("[LFI] End wait with timeout " << request.to_string());
+        debug_info("[LFI] End wait with timeout " << request);
         return -LFI_TIMEOUT;
     }
 
-    debug_info("[LFI] End wait " << request.to_string());
+    debug_info("[LFI] End wait " << request);
     return LFI_SUCCESS;
 }
 
-int LFI::wait_num(std::vector<lfi_request *> &requests, int how_many, int32_t timeout_ms) {
+int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t timeout_ms) {
     debug_info("[LFI] Start how_many " << how_many << " timeout_ms " << timeout_ms);
-    if (how_many > static_cast<int>(requests.size()) || how_many <= 0 || requests.size() == 0) return -1;
+    if (how_many > n_requests || how_many <= 0 || n_requests == 0) return -1;
 
     // If only one redirect to wait
-    if (how_many == 1 && requests.size() == 1) {
+    if (how_many == 1 && n_requests == 1) {
         return wait(*requests[0], timeout_ms);
     }
 
@@ -138,11 +139,11 @@ int LFI::wait_num(std::vector<lfi_request *> &requests, int how_many, int32_t ti
         start = std::chrono::high_resolution_clock::now();
     }
     // Set up the wait
-    for (auto &request_ref : requests) {
-        auto &request = *request_ref;
+    for (int i = 0; i < n_requests; i++) {
+        auto &request = *requests[i];
         std::scoped_lock req_and_shared_wait_lock(request.mutex, shared_wait.wait_mutex);
         request.shared_wait_struct = &shared_wait;
-        debug_info(request.to_string());
+        debug_info(request);
         debug_info("Request comm " << request.m_comm.rank_peer);
         if (request.is_completed()) {
             debug_info("Request already completed");
@@ -158,7 +159,13 @@ int LFI::wait_num(std::vector<lfi_request *> &requests, int how_many, int32_t ti
             wait_peer = true;
         }
     }
-    if (shared_wait.wait_count > 0) {
+
+    int temp_wait_count;
+    {
+        std::unique_lock wait_lock(shared_wait.wait_mutex);
+        temp_wait_count = shared_wait.wait_count;
+    }
+    if (temp_wait_count > 0) {
         if (wait_shm) {
             std::unique_lock lock(shm_ep.waiting_requests_mutex);
             shm_ep.waiting_requests.emplace(&shared_wait);
@@ -214,10 +221,11 @@ int LFI::wait_num(std::vector<lfi_request *> &requests, int how_many, int32_t ti
     }
 
     int out_index = -1;
-    int first_rand = rand() % requests.size();
+    static uint32_t linear_counter = 0;
+    int first_rand = linear_counter++ % n_requests;
     int index = 0;
-    for (int i = 0; i < static_cast<int>(requests.size()); i++) {
-        index = (first_rand + i) % requests.size();
+    for (int i = 0; i < n_requests; i++) {
+        index = (first_rand + i) % n_requests;
         auto &request = *requests[index];
         {
             std::unique_lock request_lock(request.mutex);
@@ -228,7 +236,7 @@ int LFI::wait_num(std::vector<lfi_request *> &requests, int how_many, int32_t ti
                     out_index = index;
                 }
             } else if (request.error == LFI_SUCCESS) {
-                debug_info("[LFI] timeout a request in wait_num " << request.to_string());
+                debug_info("[LFI] timeout a request in wait_num " << request);
                 request.error = -LFI_TIMEOUT;
             }
         }

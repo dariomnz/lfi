@@ -21,9 +21,15 @@
 
 #include "impl/lfi_request.hpp"
 
+#include <rdma/fi_errno.h>
+
+#include <chrono>
+#include <thread>
+
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "lfi_comm.hpp"
 #include "lfi_error.h"
 #include "sstream"
 
@@ -50,10 +56,13 @@ std::ostream &operator<<(std::ostream &os, lfi_request &req) {
 }
 
 void lfi_request::complete(int err) {
-    debug_info("[LFI] >> Begin complete request " << to_string());
     std::unique_lock request_lock(mutex);
+    debug_info("[LFI] >> Begin complete request " << *this);
     // If completed do nothing
-    if (is_completed()) return;
+    if (is_completed()) {
+        debug_info("[LFI] << End complete request already completed " << *this);
+        return;
+    }
     error = err;
     wait_context = false;
     cv.notify_all();
@@ -72,7 +81,7 @@ void lfi_request::complete(int err) {
     if (env::get_instance().LFI_fault_tolerance) {
         {
             std::unique_lock ft_lock(comm.ft_mutex);
-            debug_info("[LFI] erase request " << to_string() << " in comm " << comm.rank_peer);
+            debug_info("[LFI] erase ft_requests " << this << " in comm " << comm.rank_peer);
             comm.ft_requests.erase(this);
 
             if (comm.rank_peer != ANY_COMM_SHM && comm.rank_peer != ANY_COMM_PEER) {
@@ -84,7 +93,7 @@ void lfi_request::complete(int err) {
                 }
             } else {
                 std::unique_lock lock(comm.m_ep.ft_any_comm_requests_mutex);
-                debug_info("[LFI] remove of ft_any_comm_requests " << to_string());
+                debug_info("[LFI] remove of ft_any_comm_requests " << this);
                 comm.m_ep.ft_any_comm_requests.erase(this);
             }
         }
@@ -101,13 +110,13 @@ void lfi_request::complete(int err) {
 }
 
 void lfi_request::cancel() {
-    debug_info("[LFI] Start " << to_string());
-    fid_ep *p_ep = nullptr;
     {
         std::unique_lock request_lock(mutex);
+        debug_info("[LFI] Start " << *this);
         // The inject is not cancelled
         if (is_inject || is_completed()) return;
 
+        fid_ep *p_ep = nullptr;
         if (is_send) {
             p_ep = m_comm.m_ep.use_scalable_ep ? m_comm.m_ep.tx_ep : m_comm.m_ep.ep;
         } else {
@@ -117,12 +126,19 @@ void lfi_request::cancel() {
 
         // Ignore return value
         // ref: https://github.com/ofiwg/libfabric/issues/7795
-        fi_cancel(&p_ep->fid, this);
-        debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
+        auto ret = fi_cancel(&p_ep->fid, this);
+        debug_info("fi_cancel ret " << ret << fi_strerror(ret));
+    }
+
+    if (!is_send) {
+        m_comm.m_ep.m_lfi.wait(*this, 1000);
     }
 
     // Try one progress to read the canceled and not accumulate errors
-    m_comm.m_ep.protected_progress();
+    // if (!m_comm.m_ep.protected_progress()) {
+    //     std::this_thread::sleep_for(std::chrono::microseconds(100));
+    //     // std::this_thread::yield();
+    // }
 
     // Check if completed to no report error
     int error = -LFI_CANCELED;
@@ -138,6 +154,6 @@ void lfi_request::cancel() {
     }
     complete(error);
 
-    debug_info("[LFI] End " << to_string());
+    debug_info("[LFI] End " << this);
 }
 }  // namespace LFI

@@ -19,9 +19,13 @@
  *
  */
 
+#include <mutex>
+
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "lfi_async.h"
+#include "lfi_request.hpp"
 #include "sstream"
 
 namespace LFI {
@@ -62,55 +66,51 @@ lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
     return request;
 }
 
-std::pair<lfi_msg, lfi_msg> LFI::any_recv(void *buffer_shm, void *buffer_peer, size_t size, uint32_t tag) {
-    int ret = 0;
-    lfi_msg peer_msg = {.error = -LFI_ERROR}, shm_msg = {.error = -LFI_ERROR};
+int LFI::any_recv(lfi_request &req_shm, void *buffer_shm, lfi_request &req_peer, void *buffer_peer, size_t size,
+                  uint32_t tag, lfi_msg &msg) {
+    int ret;
     debug_info("[LFI] Start");
 
-    // For the shm
-    lfi_comm *comm = get_comm(ANY_COMM_SHM);
-    if (!comm) {
-        throw std::runtime_error("There are no LFI_ANY_COMM_SHM. This should not happend");
-    }
-    lfi_request shm_request(*comm);
-    // Try a recv in shm
-    ret = async_recv(buffer_shm, size, tag, shm_request);
-    if (ret < 0) {
-        shm_msg.error = ret;
-        return {shm_msg, peer_msg};
-    }
-    // For the peer
-    comm = get_comm(ANY_COMM_PEER);
-    if (!comm) {
-        throw std::runtime_error("There are no LFI_ANY_COMM_PEER. This should not happend");
-    }
-    lfi_request peer_request(*comm);
-    // Try a recv in peer
-    ret = async_recv(buffer_peer, size, tag, peer_request);
-    if (ret < 0) {
-        peer_msg.error = ret;
-        return {shm_msg, peer_msg};
-    }
-
-    bool finish = false;
-    while (!finish) {
-        ret = wait(shm_request, 0);
-        if (ret != -LFI_TIMEOUT) {
-            // it can be succesfully completed in the cancel
-            peer_request.cancel();
-            break;
+    std::unique_lock req_shm_lock(req_shm.mutex);
+    if (!req_shm.is_iniciated()) {
+        req_shm_lock.unlock();
+        ret = async_recv(buffer_shm, size, tag, req_shm);
+        if (ret < 0) {
+            msg.error = ret;
+            return ret;
         }
-
-        ret = wait(peer_request, 0);
-        if (ret != -LFI_TIMEOUT) {
-            // it can be succesfully completed in the cancel
-            shm_request.cancel();
-            break;
+    } else {
+        req_shm_lock.unlock();
+    }
+    std::unique_lock req_peer_lock(req_peer.mutex);
+    if (!req_peer.is_iniciated()) {
+        req_peer_lock.unlock();
+        ret = async_recv(buffer_peer, size, tag, req_peer);
+        if (ret < 0) {
+            msg.error = ret;
+            return ret;
         }
+    } else {
+        req_peer_lock.unlock();
     }
 
-    debug_info("[LFI] End shm_msg " << shm_msg.to_string() << " peer_msg " << peer_msg.to_string());
-    return {shm_request, peer_request};
+    lfi_request *requests[2] = {&req_shm, &req_peer};
+    int completed = wait_num(requests, 2, 1);
+
+    if (completed == 0) {
+        msg = req_shm;
+        std::unique_lock lock(req_shm.mutex);
+        req_shm.reset();
+    } else if (completed == 1) {
+        msg = req_peer;
+        std::unique_lock lock(req_peer.mutex);
+        req_peer.reset();
+    } else {
+        msg.error = completed;
+    }
+    return completed;
+
+    debug_info("[LFI] End");
 }
 
 // any_recv with peek msg
@@ -236,7 +236,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
             req_lock.unlock();
             {
                 std::unique_lock lock(request.m_comm.m_ep.ft_any_comm_requests_mutex);
-                debug_info("Save request in any_comm_requests " << request.to_string());
+                debug_info("Save request in any_comm_requests " << request);
                 request.m_comm.m_ep.ft_any_comm_requests.emplace(&request);
             }
             req_lock.lock();
@@ -316,7 +316,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         req_lock.lock();
     }
 
-    debug_info("[LFI] msg size " << request.to_string());
+    debug_info("[LFI] msg size " << request);
     debug_info("[LFI] End = " << size);
     return LFI_SUCCESS;
 }
@@ -390,7 +390,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         return msg;
     }
 
-    debug_info("[LFI] Waiting for " << request.to_string());
+    debug_info("[LFI] Waiting for " << request);
 
     ret = wait(request);
     if (ret != 0) {
@@ -421,7 +421,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
             return msg;
         }
 
-        debug_info("[LFI] Waiting for " << request.to_string());
+        debug_info("[LFI] Waiting for " << request);
         ret = wait(request);
         if (ret != 0) {
             printf("error waiting recv claim (%d) %s\n", ret, fi_strerror(ret));
@@ -430,7 +430,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         }
     }
 
-    debug_info("[LFI] request " << request.to_string());
+    debug_info("[LFI] request " << request);
     debug_info("[LFI] End = " << size);
     return request;
 }

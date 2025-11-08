@@ -206,7 +206,7 @@ void ld_preload::thread_eventfd_loop()
             }
         }
 
-        std::vector<::LFI::lfi_request*> requests = {shm_request.get(), peer_request.get()};
+        ::LFI::lfi_request** requests = {shm_request.get(), peer_request.get()};
         int completed = lfi->wait_num(requests, 1, 1000);
         int source = -1;
         uint64_t how_many = 0;

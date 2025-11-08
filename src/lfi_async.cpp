@@ -26,6 +26,7 @@
 #include "impl/socket.hpp"
 #include "lfi.h"
 #include "lfi_error.h"
+#include "lfi_request.hpp"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,7 +67,7 @@ void lfi_request_free(lfi_request *req) {
         std::unique_lock request_lock(request->mutex);
         if (!request->is_completed()) {
             request_lock.unlock();
-            debug_info(request->to_string());
+            debug_info(*request);
             request->cancel();
         }
     }
@@ -78,7 +79,7 @@ bool lfi_request_completed(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return false;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     std::unique_lock request_lock(request->mutex);
     const bool ret = request->is_completed();
     debug_info("(" << req << ")=" << ret << " >> End");
@@ -89,7 +90,7 @@ ssize_t lfi_request_size(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     std::unique_lock request_lock(request->mutex);
     ssize_t ret;
     if (request->is_completed()) {
@@ -109,7 +110,7 @@ ssize_t lfi_request_source(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     std::unique_lock request_lock(request->mutex);
     const auto ret = request->is_completed() ? request->source : -LFI_NOT_COMPLETED;
     debug_info("(" << req << ")=" << ret << " >> End");
@@ -120,7 +121,7 @@ ssize_t lfi_request_error(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     std::unique_lock request_lock(request->mutex);
     const auto ret = request->is_completed() ? request->error : -LFI_NOT_COMPLETED;
     debug_info("(" << req << ")=" << ret << " >> End");
@@ -137,7 +138,7 @@ ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     ret = lfi.async_send(data, size, tag, *request);
     debug_info("(" << request << ", " << data << ", " << size << ", " << tag << ")=" << ret << ">> End");
     return ret;
@@ -149,9 +150,34 @@ ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     ret = lfi.async_recv(data, size, tag, *request);
     debug_info("(" << request << ", " << data << ", " << size << ", " << tag << ")=" << ret << ">> End");
+    return ret;
+}
+
+int lfi_trecv_any(lfi_request *req_shm, void *buffer_shm, lfi_request *req_peer, void *buffer_peer, size_t size,
+                  uint32_t tag, lfi_status *status) {
+    int ret = 0;
+    debug_info("(" << req_shm << ", " << buffer_shm << ", " << req_peer << ", " << buffer_peer << ", " << size << ", "
+                   << tag << ", " << status << ")>> Begin");
+    if (req_shm == nullptr || req_peer == nullptr) return -LFI_NULL_REQUEST;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    LFI::lfi_request *request_shm = reinterpret_cast<LFI::lfi_request *>(req_shm);
+    LFI::lfi_request *request_peer = reinterpret_cast<LFI::lfi_request *>(req_peer);
+    LFI::lfi_msg msg;
+    ret = lfi.any_recv(*request_shm, buffer_shm, *request_peer, buffer_peer, size, tag, msg);
+    if (ret >= 0) {
+        status->size = msg.size;
+        status->source = msg.source;
+        status->tag = msg.tag;
+        status->error = msg.error;
+        if (msg.error < 0) {
+            ret = msg.error;
+        }
+    }
+    debug_info("(" << req_shm << ", " << buffer_shm << ", " << req_peer << ", " << buffer_peer << ", " << size << ", "
+                   << tag << ", " << status << ")=" << ret << ">> End");
     return ret;
 }
 
@@ -160,7 +186,7 @@ ssize_t lfi_wait(lfi_request *req) {
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     const auto ret = lfi.wait(*request);
     debug_info("(" << req << ")=" << ret << " >> End");
     return ret;
@@ -171,13 +197,7 @@ inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_man
     if (reqs == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request **requests = reinterpret_cast<LFI::lfi_request **>(reqs);
-    std::vector<LFI::lfi_request*> v_requests;
-    v_requests.reserve(size);
-
-    for (size_t i = 0; i < size; i++) {
-        v_requests.emplace_back(requests[i]);
-    }
-    const ssize_t ret = lfi.wait_num(v_requests, how_many);
+    const ssize_t ret = lfi.wait_num(requests, size, how_many);
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")=" << ret << ">> End");
     return ret;
 }
@@ -190,9 +210,9 @@ ssize_t lfi_cancel(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    debug_info(request->to_string());
+    debug_info(*request);
     request->cancel();
-    debug_info("(" << req << ")=" << ret << " >> End");
+    debug_info("(" << req << ")=" << 0 << " >> End");
     return 0;
 }
 

@@ -187,6 +187,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 #endif
         } while (ret == -FI_EAGAIN);
 
+        debug_info("[LFI] msg " << request);
         req_lock.unlock();
         if (env::get_instance().LFI_fault_tolerance && ret == 0) {
             std::unique_lock fi_lock(request.m_comm.ft_mutex);
@@ -203,7 +204,6 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
         return -LFI_LIBFABRIC_ERROR;
     }
 
-    debug_info("[LFI] msg " << request.to_string());
     debug_info("[LFI] End = " << size);
     return LFI_SUCCESS;
 }

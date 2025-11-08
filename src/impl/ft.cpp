@@ -21,6 +21,7 @@
 
 // #define DEBUG
 #include <chrono>
+#include <mutex>
 
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
@@ -283,7 +284,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
     }
     {
         for (auto &&comm_id : canceled_coms) {
-            debug_info("Remove " << comm->rank_peer << " comm from ft_comms");
+            debug_info("Remove " << comm_id << " comm from ft_comms");
             auto comm_ptr = get_comm(comm_id);
             if (!comm_ptr) continue;
             ft_cancel_comm(*comm_ptr);
@@ -297,6 +298,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
         std::unique_lock lock(lfi_ep.ft_any_comm_requests_mutex);
         ft_any_comm_requests_size = lfi_ep.ft_any_comm_requests.size();
     }
+    std::unique_lock ft_pending_failed_lock(lfi_ep.ft_pending_failed_comms_mutex);
     if (ft_any_comm_requests_size > 0 && (lfi_ep.ft_pending_failed_comms.size() > 0 || canceled_coms.size() > 0)) {
         {
             // First if there are pending use them cancelling any comm requests
@@ -312,7 +314,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
                 auto &any_req = *any_req_it;
                 auto &canceled_comm = *canceled_comm_it;
 
-                debug_info("Use pending error to report to any_comm request " << canceled_comm->rank_peer);
+                debug_info("Use pending error to report to any_comm request " << canceled_comm);
                 {
                     std::unique_lock req_lock(any_req->mutex);
                     any_req->source = canceled_comm;
@@ -325,6 +327,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
                 canceled_comm_it = lfi_ep.ft_pending_failed_comms.erase(canceled_comm_it);
             }
         }
+        ft_pending_failed_lock.unlock();
 
         {
             // With the remaining any comm requests use the current cancelled
@@ -340,7 +343,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
                 auto &any_req = *any_req_it;
                 auto &cancel_comm = *cancel_comm_it;
 
-                debug_info("Use th cancelled comm to report to any_comm request " << cancel_comm->rank_peer);
+                debug_info("Use th cancelled comm to report to any_comm request " << cancel_comm);
                 {
                     std::unique_lock req_lock(any_req->mutex);
                     any_req->source = cancel_comm;
@@ -357,8 +360,11 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
             while (cancel_comm_it != canceled_coms.end()) {
                 auto &cancel_comm = *cancel_comm_it;
                 debug_info("Save to pending request canceled comms that coudnt be reported to any comms "
-                           << cancel_comm->rank_peer);
-                lfi_ep.ft_pending_failed_comms.emplace(cancel_comm);
+                           << cancel_comm);
+                {
+                    std::unique_lock lock(lfi_ep.ft_pending_failed_comms_mutex);
+                    lfi_ep.ft_pending_failed_comms.emplace(cancel_comm);
+                }
 
                 // Next iterators
                 ++cancel_comm_it;
@@ -374,21 +380,21 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
 }
 
 int LFI::ft_cancel_comm(lfi_comm &comm) {
-    std::unique_lock lock(comm.ft_mutex);
-    debug_info("[LFI] mark canceled comm " << comm.rank_peer);
-    comm.is_canceled = true;
+    close_comm(comm.rank_peer);
 
-    debug_info("[LFI] cancel all request in comm with error " << comm.rank_peer);
-    std::unordered_set<lfi_request *> temp_requests(comm.ft_requests);
-    lock.unlock();
-    for (auto &request : temp_requests) {
-        if (request == nullptr) continue;
-        debug_info("[LFI] cancel " << request->to_string());
-        request->cancel();
-        debug_info("[LFI] canceled " << request->to_string());
-    }
-    lock.lock();
-    comm.ft_requests.clear();
+    // std::unique_lock lock(comm.ft_mutex);
+    // debug_info("[LFI] mark canceled comm " << comm.rank_peer);
+    // comm.is_canceled = true;
+
+    // debug_info("[LFI] cancel all request in comm with error " << comm.rank_peer);
+    // std::unordered_set<lfi_request *> temp_requests(comm.ft_requests);
+    // lock.unlock();
+    // for (auto &request : temp_requests) {
+    //     if (request == nullptr) continue;
+    //     request->cancel();
+    // }
+    // lock.lock();
+    // comm.ft_requests.clear();
 
     return 0;
 }

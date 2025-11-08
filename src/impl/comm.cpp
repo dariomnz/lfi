@@ -121,15 +121,27 @@ int LFI::close_comm(uint32_t id) {
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
     }
+    std::unique_lock comms_lock(m_comms_mutex);
+    // {
+    //     std::unique_lock ft_lock(comm->ft_mutex);
+    //     debug_info("[LFI] cancel all request in closed comm " << id);
+    //     for (auto& request : comm->ft_requests) {
+    //         if (request == nullptr) continue;
+    //         request->cancel();
+    //     }
+    //     comm->ft_requests.clear();
+    // }
+
     {
-        std::unique_lock ft_lock(comm->ft_mutex);
-        debug_info("[LFI] cancel all request in closed comm " << id);
-        for (auto& request : comm->ft_requests) {
+        std::unique_lock lock(comm->ft_mutex);
+        debug_info("[LFI] cancel all request in comm with error " << comm->rank_peer);
+        std::unordered_set<lfi_request*> temp_requests(comm->ft_requests);
+        lock.unlock();
+        for (auto& request : temp_requests) {
             if (request == nullptr) continue;
-            debug_info("[LFI] cancel " << request->to_string());
             request->cancel();
-            debug_info("[LFI] canceled " << request->to_string());
         }
+        lock.lock();
         comm->ft_requests.clear();
     }
 
@@ -140,8 +152,7 @@ int LFI::close_comm(uint32_t id) {
     }
     // Here comm is deleted
     {
-        std::unique_lock comms_lock(m_comms_mutex);
-        m_comms.erase(comm->rank_peer);
+        m_comms.erase(id);
     }
 
     debug_info("[LFI] End = " << ret);

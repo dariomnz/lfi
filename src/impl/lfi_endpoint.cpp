@@ -145,7 +145,7 @@ int lfi_endpoint::progress() {
                 {
 #ifdef DEBUG
                     std::unique_lock request_lock(request_p->mutex);
-                    debug_info("[Error] " << request_p->to_string() << " cq error");
+                    debug_info("[Error] " << *request_p << " cq error");
 #endif
                 }
                 int error;
@@ -178,7 +178,7 @@ int lfi_endpoint::progress() {
                             source = request->source;
                         }
                     }
-                    debug_info("Completed: " << request->to_string());
+                    debug_info("Completed: " << *request);
                 }
                 if (source != UNINITIALIZED_COMM) {
                     // Update time outside request lock

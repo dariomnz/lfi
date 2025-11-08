@@ -45,7 +45,8 @@ void LFI::dump_stats() {
         std::unique_lock lock(m_comms_mutex);
         std::cerr << "Comms size " << m_comms.size() << std::endl;
         for (auto &&[key, comm] : m_comms) {
-            std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << std::endl;
+            std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << (comm->m_ep.is_shm ? " SHM" : " PEER")
+                      << std::endl;
             if (env::get_instance().LFI_fault_tolerance) {
                 std::unique_lock ft_comm_lock(comm->ft_mutex);
                 std::cerr << indent(2) << "Last request: " << format_time<lfi_comm::clock>(comm->last_request_time)
@@ -78,7 +79,8 @@ void LFI::dump_stats() {
         }
     }
     auto dump_endpoint = [&](lfi_endpoint &endpoint) {
-        std::cerr << "Endpoint " << (endpoint.is_shm ? "SHM" : "PEER") << std::endl;
+        std::cerr << "Endpoint " << (endpoint.is_shm ? "SHM" : "PEER")
+                  << " provider: " << endpoint.info->fabric_attr->prov_name << std::endl;
 
         {
             std::unique_lock lock(endpoint.ft_any_comm_requests_mutex);
@@ -105,7 +107,7 @@ void LFI::dump_stats() {
                 if (auto req = std::get_if<lfi_request *>(&ptr)) {
                     std::unique_lock lock_req((*req)->mutex);
                     std::cerr << indent(2) << *(*req) << std::endl;
-                } else if (auto w_struct = std::get_if<wait_struct *>(&ptr)) {
+                } else if (std::get_if<wait_struct *>(&ptr)) {
                     std::cerr << indent(2) << "wait_struct" << std::endl;
                 }
             }
