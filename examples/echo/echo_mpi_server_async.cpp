@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include <thread>
+#include <unordered_set>
 
 #include "bw_common.hpp"
 #include "impl/debug.hpp"
@@ -38,13 +39,14 @@
 
 using namespace bw_examples;
 
-static std::vector<uint8_t> data;
+std::mutex data_mutex;
+std::vector<uint8_t> data;
 
 #define TAG_MSG 100
 
 void echo_server(MPI_Comm comm) {
     int msg_size = 0;
-    ThreadPool tpool;
+    std::unordered_set<std::unique_ptr<MPI_Request>> async_req;
     while (true) {
         debug_info("Start recv any ack");
         MPI_Status status;
@@ -61,12 +63,17 @@ void echo_server(MPI_Comm comm) {
             return;
         }
 
-        tpool.enqueue([msg_size, rank = status.MPI_SOURCE, &comm]() {
-            std::vector<uint8_t> data;
-            data.resize(std::abs(msg_size));
+        auto msg_op = [msg_size, rank = status.MPI_SOURCE, &comm, &async_req]() {
+            {
+                std::unique_lock lock(data_mutex);
+                if (std::abs(msg_size) > static_cast<int>(data.size())) {
+                    data.resize(std::abs(msg_size));
+                }
+            }
+            auto [req, b] = async_req.emplace(std::make_unique<MPI_Request>());
             if (msg_size < 0) {
                 debug_info("MPI_Recv(" << rank << ", data.data(), " << std::abs(msg_size) << ")");
-                auto recv_msg = MPI_Recv(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm, MPI_STATUS_IGNORE);
+                auto recv_msg = MPI_Irecv(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm, req->get());
                 if (recv_msg != MPI_SUCCESS) {
                     char msg[1024];
                     int msg_len = 1024;
@@ -96,7 +103,7 @@ void echo_server(MPI_Comm comm) {
                 //     return -1;
                 // }
                 debug_info("MPI_Send(" << rank << ", data.data(), " << std::abs(msg_size) << ")");
-                auto send_msg = MPI_Send(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm);
+                auto send_msg = MPI_Isend(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm, req->get());
                 if (send_msg != MPI_SUCCESS) {
                     char msg[1024];
                     int msg_len = 1024;
@@ -106,7 +113,21 @@ void echo_server(MPI_Comm comm) {
                 }
             }
             return 0;
-        });
+        };
+
+        msg_op();
+        // tpool->enqueue(msg_op);
+
+        for (auto it = async_req.begin(); it != async_req.end();) {
+            int flag = 0;
+
+            MPI_Test((*it).get(), &flag, MPI_STATUS_IGNORE);
+            if (flag) {
+                it = async_req.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 }
 

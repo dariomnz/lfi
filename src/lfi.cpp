@@ -63,7 +63,7 @@ int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms) {
     };
 
     if (LFI::env::get_instance().LFI_async_connection) {
-        std::unique_lock fut_lock(lfi.m_fut_mutex);
+        std::unique_lock fut_lock(lfi.m_comms_mutex);
         lfi.m_fut_comms.emplace(out, std::async(std::launch::async, func));
     } else {
         func();
@@ -98,7 +98,7 @@ int lfi_server_accept_t(int socket, int timeout_ms) {
     };
 
     if (LFI::env::get_instance().LFI_async_connection) {
-        std::unique_lock fut_lock(lfi.m_fut_mutex);
+        std::unique_lock fut_lock(lfi.m_comms_mutex);
         lfi.m_fut_comms.emplace(out, std::async(std::launch::async, func));
     } else {
         func();

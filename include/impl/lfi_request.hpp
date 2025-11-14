@@ -50,14 +50,15 @@ struct lfi_msg {
     }
 };
 
+// Forward declaration
+struct lfi_request_context;
 struct lfi_request {
-    // context necesary for fabric interface
-    struct fi_context context = {};
     lfi_comm &m_comm;
     std::mutex mutex = {};
     std::condition_variable_any cv = {};
     int error = 0;
-    bool wait_context = true;
+    // bool wait_context = true;
+    lfi_request_context *wait_context = nullptr;
 
     bool is_send = false;
     bool is_inject = false;
@@ -81,13 +82,7 @@ struct lfi_request {
     // Delete move assignment operator
     lfi_request &operator=(lfi_request &&) = delete;
 
-    void reset() {
-        wait_context = true;
-        error = 0;
-        size = 0;
-        tag = 0;
-        source = UNINITIALIZED_COMM;
-    }
+    void reset();
 
     bool is_iniciated() { return source != UNINITIALIZED_COMM; }
 

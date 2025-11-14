@@ -60,17 +60,16 @@ class ThreadPool {
             std::unique_lock<std::mutex> lock(queueMutex);
             if (stop) throw std::runtime_error("No se pueden agregar tareas a un ThreadPool detenido");
             tasks.emplace(std::move(func));
+            condition.notify_one();
         }
-
-        condition.notify_one();
     }
 
     ~ThreadPool() {
         {
             std::unique_lock<std::mutex> lock(queueMutex);
             stop = true;
+            condition.notify_all();
         }
-        condition.notify_all();
 
         for (auto &t : workers) t.join();
     }

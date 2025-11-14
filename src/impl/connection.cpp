@@ -20,10 +20,10 @@
  */
 
 #include "impl/debug.hpp"
+#include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/ns.hpp"
 #include "impl/socket.hpp"
-#include "impl/env.hpp"
 
 namespace LFI {
 
@@ -121,25 +121,25 @@ int LFI::init_server(int socket, int32_t comm_id) {
     }
 
     ret = comm->rank_peer;
-    comm->is_ready = true;
+    comm->is_ready = 1;
 
     // Do a send recv because some providers need it
     int buf = 123;
     lfi_msg msg;
     msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
     if (msg.error < 0) {
-        print_error("LFI::send");
+        print("[LFI] [ERROR] LFI::send in init_server " << comm_id << " : " << msg.error << " "
+                                                        << lfi_strerror(msg.error));
         return msg.error;
     }
     msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
     if (msg.error < 0) {
-        print_error("LFI::recv");
+        print("[LFI] [ERROR] LFI::recv in init_server " << comm_id << " : " << msg.error << " "
+                                                        << lfi_strerror(msg.error));
         return msg.error;
     }
 
-    if (env::get_instance().LFI_async_connection) {
-        comm->in_fut = true;
-    }
+    comm->is_ready = 2;
 
     debug_info("[LFI] End = " << ret);
     return ret;
@@ -240,25 +240,24 @@ int LFI::init_client(int socket, int32_t comm_id) {
     }
 
     ret = comm->rank_peer;
-    comm->is_ready = true;
+    comm->is_ready = 1;
 
     // Do a recv send because some providers need it
     int buf = 123;
     lfi_msg msg;
     msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
     if (msg.error < 0) {
-        print_error("LFI::recv");
+        print("[LFI] [ERROR] LFI::recv in init_client " << comm_id << " : " << msg.error << " "
+                                                        << lfi_strerror(msg.error));
         return msg.error;
     }
     msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
     if (msg.error < 0) {
-        print_error("LFI::send");
+        print("[LFI] [ERROR] LFI::send in init_client " << comm_id << " : " << msg.error << " "
+                                                        << lfi_strerror(msg.error));
         return msg.error;
     }
-
-    if (env::get_instance().LFI_async_connection) {
-        comm->in_fut = true;
-    }
+    comm->is_ready = 2;
 
     debug_info("[LFI] End = " << ret);
     return ret;

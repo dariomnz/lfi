@@ -256,17 +256,17 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
                                    << request.m_comm.rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
-                                   << " recv_context " << (void *)&request.context);
+                                   << " recv_context " << request.wait_context);
 
     fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
-    request.wait_context = true;
+    request.wait_context = req_ctx_factory.create(request);
     request.is_send = false;
     do {
         if (type == recv_type::RECV) {
-            ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, &request.context);
+            ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, request.wait_context);
         } else if (type == recv_type::RECVV) {
             ret = fi_trecvv(p_rx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, request.m_comm.fi_addr,
-                            tag_recv, mask, &request.context);
+                            tag_recv, mask, request.wait_context);
         } else {
             std::runtime_error("Error unknown recv_type. This should not happend");
         }
@@ -351,11 +351,12 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
                                    << request.m_comm.rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
-                                   << " recv_context " << (void *)&request.context);
+                                   << " recv_context " << request.wait_context);
 
     fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
     request.reset();
     request.is_send = false;
+    request.wait_context = req_ctx_factory.create(request);
     iovec iov = {
         .iov_base = buffer,
         .iov_len = size,
@@ -367,7 +368,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         .addr = request.m_comm.fi_addr,
         .tag = tag_recv,
         .ignore = mask,
-        .context = &request.context,
+        .context = request.wait_context,
         .data = 0,
     };
     // First we PEEK with CLAIM to only generate one match

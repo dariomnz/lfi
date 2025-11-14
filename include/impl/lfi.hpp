@@ -46,6 +46,7 @@
 #include "lfi_endpoint.hpp"
 #include "lfi_error.h"
 #include "lfi_request.hpp"
+#include "lfi_request_context.hpp"
 
 #define DECLARE_LFI_ERROR(name, msg) static constexpr const char *name##_str = msg;
 
@@ -159,18 +160,18 @@ class LFI {
     // comm.cpp
    public:
     uint32_t reserve_comm();
-    lfi_comm *init_comm(bool is_shm, int32_t comm_id = -1);
+    lfi_comm *init_comm(bool is_shm, int32_t comm_id);
     lfi_comm *get_comm(uint32_t id);
     int close_comm(uint32_t id);
-
-   private:
-    lfi_comm *create_comm(lfi_endpoint &lfi_ep, int32_t comm_id = -1);
+    
+    private:
+    lfi_comm *init_comm(lfi_endpoint &lfi_ep, int32_t comm_id);
     lfi_comm *create_any_comm(lfi_endpoint &lfi_ep, uint32_t comm_id);
 
     // connection.cpp
    public:
-    int init_server(int socket, int32_t comm_id = -1);
-    int init_client(int socket, int32_t comm_id = -1);
+    int init_server(int socket, int32_t comm_id);
+    int init_client(int socket, int32_t comm_id);
 
     // ft.cpp
    public:
@@ -264,11 +265,13 @@ class LFI {
     lfi_endpoint shm_ep{*this, true};
     lfi_endpoint peer_ep{*this, false};
 
-    std::mutex m_fut_mutex;
-    std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
     std::mutex m_comms_mutex;
+    std::condition_variable m_fut_wait_cv;
+    std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
     std::unordered_map<uint32_t, std::unique_ptr<lfi_comm>> m_comms;
     std::atomic_uint32_t m_rank_counter = {0};
+
+    lfi_request_context_factory req_ctx_factory;
 
    public:
     static inline LFI &get_instance() {

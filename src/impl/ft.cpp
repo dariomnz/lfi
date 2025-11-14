@@ -265,12 +265,27 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
         ft_any_comm_requests_size = lfi_ep.ft_any_comm_requests.size();
     }
     if (ft_any_comm_requests_size > 0) {
-        std::unique_lock lock(m_comms_mutex);
-        for (auto &&comm : m_comms) {
-            if (comm.second->m_ep == lfi_ep && comm.second->rank_peer != LFI_ANY_COMM_SHM &&
-                comm.second->rank_peer != LFI_ANY_COMM_PEER) {
-                // debug_info("Check ft in comm " << comm.second->rank_peer << " from all comms");
-                innerloop(comm.second.get());
+        std::vector<uint32_t> temp_comms_ids;
+        {
+            std::unique_lock lock(m_comms_mutex);
+            temp_comms_ids.reserve(m_comms.size());
+            for (auto &&comm : m_comms) {
+                temp_comms_ids.emplace_back(comm.first);
+            }
+        }
+        for (auto &&comm_id : temp_comms_ids) {
+            lfi_comm *comm = nullptr;
+            {
+                std::unique_lock lock(m_comms_mutex);
+                auto it = m_comms.find(comm_id);
+                if (it == m_comms.end()) continue;
+                comm = it->second.get();
+            }
+            if (!comm) continue;
+            if (comm && comm->m_ep == lfi_ep && comm->rank_peer != LFI_ANY_COMM_SHM &&
+                comm->rank_peer != LFI_ANY_COMM_PEER) {
+                // debug_info("Check ft in comm " << comm->rank_peer << " from all comms");
+                innerloop(comm);
             }
         }
     } else {
@@ -288,9 +303,6 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
             auto comm_ptr = get_comm(comm_id);
             if (!comm_ptr) continue;
             ft_cancel_comm(*comm_ptr);
-            std::scoped_lock lock(lfi_ep.ft_comms_mutex, comm_ptr->ft_mutex);
-            lfi_ep.ft_comms.erase(comm_ptr);
-            comm_ptr->ft_comm_count = 0;
         }
     }
 
@@ -380,21 +392,25 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
 }
 
 int LFI::ft_cancel_comm(lfi_comm &comm) {
-    close_comm(comm.rank_peer);
+    std::unique_lock lock(comm.ft_mutex);
+    debug_info("[LFI] mark canceled comm " << comm.rank_peer);
+    comm.is_canceled = true;
 
-    // std::unique_lock lock(comm.ft_mutex);
-    // debug_info("[LFI] mark canceled comm " << comm.rank_peer);
-    // comm.is_canceled = true;
+    debug_info("[LFI] cancel all request in comm with error " << comm.rank_peer);
+    std::unordered_set<lfi_request *> temp_requests(comm.ft_requests);
+    lock.unlock();
+    for (auto &request : temp_requests) {
+        if (request == nullptr) continue;
+        request->cancel();
+    }
+    {
+        std::unique_lock ft_lock(comm.m_ep.ft_comms_mutex);
+        comm.m_ep.ft_comms.erase(&comm);
+    }
+    lock.lock();
+    comm.ft_requests.clear();
 
-    // debug_info("[LFI] cancel all request in comm with error " << comm.rank_peer);
-    // std::unordered_set<lfi_request *> temp_requests(comm.ft_requests);
-    // lock.unlock();
-    // for (auto &request : temp_requests) {
-    //     if (request == nullptr) continue;
-    //     request->cancel();
-    // }
-    // lock.lock();
-    // comm.ft_requests.clear();
+    comm.ft_comm_count = 0;
 
     return 0;
 }

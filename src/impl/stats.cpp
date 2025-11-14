@@ -41,10 +41,17 @@ struct indent {
 };
 
 void LFI::dump_stats() {
+    auto now = std::chrono::high_resolution_clock::now();
+    std::cerr << "-------------------------------[LFI STATS BEGIN] "
+              << format_time<std::chrono::high_resolution_clock>(now) << "-------------------------------" << std::endl;
     {
         std::unique_lock lock(m_comms_mutex);
         std::cerr << "Comms size " << m_comms.size() << std::endl;
         for (auto &&[key, comm] : m_comms) {
+            if (!comm) {
+                std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << " nullptr" << std::endl;
+                continue;
+            }
             std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << (comm->m_ep.is_shm ? " SHM" : " PEER")
                       << std::endl;
             if (env::get_instance().LFI_fault_tolerance) {
@@ -123,6 +130,11 @@ void LFI::dump_stats() {
 
     dump_endpoint(shm_ep);
     dump_endpoint(peer_ep);
+
+    req_ctx_factory.dump();
+    std::cerr << "--------------------------------[LFI STATS END] "
+              << format_time<std::chrono::high_resolution_clock>(now) << "--------------------------------"
+              << std::endl;
 }
 
 }  // namespace LFI

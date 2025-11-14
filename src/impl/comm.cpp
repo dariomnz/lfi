@@ -26,36 +26,45 @@
 
 namespace LFI {
 
-uint32_t LFI::reserve_comm() { return m_rank_counter.fetch_add(1); }
+// uint32_t LFI::reserve_comm() { return m_rank_counter.fetch_add(1); }
 
 lfi_comm* LFI::init_comm(bool is_shm, int32_t comm_id) {
     if (is_shm) {
-        return create_comm(shm_ep, comm_id);
+        return init_comm(shm_ep, comm_id);
     } else {
-        return create_comm(peer_ep, comm_id);
+        return init_comm(peer_ep, comm_id);
     }
 }
 
-lfi_comm* LFI::create_comm(lfi_endpoint& lfi_ep, int32_t comm_id) {
+uint32_t LFI::reserve_comm() {
+    std::unique_lock comms_lock(m_comms_mutex);
+    debug_info("[LFI] Start");
+    auto comm_id = m_rank_counter.fetch_add(1);
+    m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(comm_id), std::forward_as_tuple(nullptr));
+    debug_info("[LFI] rank_peer " << comm_id);
+    debug_info("[LFI] End");
+    return comm_id;
+}
+
+lfi_comm* LFI::init_comm(lfi_endpoint& lfi_ep, int32_t comm_id) {
     uint32_t new_id = comm_id;
 
     std::unique_lock comms_lock(m_comms_mutex);
     debug_info("[LFI] Start");
-    if (comm_id >= 0) {
-        if (m_comms.find(comm_id) == m_comms.end()) {
-            new_id = comm_id;
-        } else {
-            throw std::runtime_error("Want to create a comm with a id that exits");
-        }
-    } else {
-        new_id = reserve_comm();
+    auto it = m_comms.find(comm_id);
+    if (it == m_comms.end()) {
+        print("[LFI] [ERROR] internal error call to init_comm with comm that is not reserved " << comm_id);
+        std::terminate();
+    } else if (it != m_comms.end() && it->second != nullptr) {
+        print("[LFI] [ERROR] internal error call to init_comm with comm that is already initialized " << comm_id);
+        std::terminate();
     }
-    auto [key, inserted] = m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id),
-                                           std::forward_as_tuple(std::make_unique<lfi_comm>(lfi_ep)));
-    key->second->rank_peer = new_id;
-    debug_info("[LFI] rank_peer " << key->second->rank_peer);
+
+    it->second = std::make_unique<lfi_comm>(lfi_ep);
+    it->second->rank_peer = new_id;
+    debug_info("[LFI] rank_peer " << it->second->rank_peer);
     debug_info("[LFI] End");
-    return key->second.get();
+    return it->second.get();
 }
 
 lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
@@ -66,7 +75,7 @@ lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
                                            std::forward_as_tuple(std::make_unique<lfi_comm>(lfi_ep)));
     key->second->rank_peer = new_id;
     key->second->rank_self_in_peer = new_id;
-    key->second->is_ready = true;
+    key->second->is_ready = 2;
     debug_info("[LFI] rank_peer " << key->second->rank_peer);
     debug_info("[LFI] End");
     return key->second.get();
@@ -75,42 +84,42 @@ lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
 lfi_comm* LFI::get_comm(uint32_t id) {
     debug_info("[LFI] Start " << id);
     std::unique_lock comms_lock(m_comms_mutex);
-    auto it = m_comms.find(id);
-    if (it == m_comms.end() || (it != m_comms.end() && (!it->second->is_ready || it->second->in_fut))) {
-        // If fail or not ready check if is in fut comm and retry
-        std::unique_lock fut_lock(m_fut_mutex);
-
-        auto fut_it = m_fut_comms.find(id);
-        if (fut_it == m_fut_comms.end()) {
-            debug_info("[LFI] End " << id << " not found in futs");
-            return nullptr;
-        }
-
-        auto& fut = fut_it->second;
-
-        if (fut.valid()) {
-            debug_info("[LFI] Need to wait for the connection to end");
-            fut_lock.unlock();
-            comms_lock.unlock();
-            fut.get();
-            comms_lock.lock();
-            fut_lock.lock();
-            debug_info("[LFI] Finish waiting for the connection");
-        }
-
-        m_fut_comms.erase(id);
-
-        // Retry search
-        it = m_comms.find(id);
-        if (it == m_comms.end()) {
-            debug_info("[LFI] End " << id << " not found in comms nor futs");
-            return nullptr;
-        }
-        it->second->in_fut = false;
+    auto comm_it = m_comms.find(id);
+    if (comm_it == m_comms.end()) {
+        debug_info("[LFI] End " << id << " not found in comm so it is nor reserved");
+        return nullptr;
     }
 
-    debug_info("[LFI] End " << id << " found");
-    return it->second.get();
+    // Not necesary to wait when is ready internal
+    if (comm_it->second != nullptr && comm_it->second->is_ready == 1) {
+        m_fut_wait_cv.notify_all();
+        debug_info("[LFI] End comm " << id << " is ready");
+        return comm_it->second.get();
+    }
+
+    auto fut_it = m_fut_comms.extract(id);
+    if (fut_it.empty()) {
+        // There are no fut for the comm so wait to the resolution of the fut in another thread
+        if (comm_it->second == nullptr || (comm_it->second != nullptr && comm_it->second->is_ready != 2)) {
+            debug_info("[LFI] wait comm " << id << " not ready");
+            m_fut_wait_cv.wait(comms_lock, [&]() { return comm_it->second != nullptr && comm_it->second->is_ready == 2; });
+        }
+
+        debug_info("[LFI] End comm " << id << " ready");
+        return comm_it->second.get();
+    }
+
+    // Wait the fut, next wake up the other threads
+    if (fut_it.mapped().valid()) {
+        debug_info("[LFI] Need to wait for the connection to end");
+        comms_lock.unlock();
+        fut_it.mapped().get();
+        comms_lock.lock();
+        debug_info("[LFI] Finish waiting for the connection");
+    }
+    m_fut_wait_cv.notify_all();
+    debug_info("[LFI] End comm " << id << " found after wait fut");
+    return comm_it->second.get();
 }
 
 int LFI::close_comm(uint32_t id) {
@@ -122,16 +131,6 @@ int LFI::close_comm(uint32_t id) {
         return -LFI_COMM_NOT_FOUND;
     }
     std::unique_lock comms_lock(m_comms_mutex);
-    // {
-    //     std::unique_lock ft_lock(comm->ft_mutex);
-    //     debug_info("[LFI] cancel all request in closed comm " << id);
-    //     for (auto& request : comm->ft_requests) {
-    //         if (request == nullptr) continue;
-    //         request->cancel();
-    //     }
-    //     comm->ft_requests.clear();
-    // }
-
     {
         std::unique_lock lock(comm->ft_mutex);
         debug_info("[LFI] cancel all request in comm with error " << comm->rank_peer);
@@ -151,9 +150,7 @@ int LFI::close_comm(uint32_t id) {
         comm->m_ep.ft_comms.erase(comm);
     }
     // Here comm is deleted
-    {
-        m_comms.erase(id);
-    }
+    m_comms.erase(id);
 
     debug_info("[LFI] End = " << ret);
 

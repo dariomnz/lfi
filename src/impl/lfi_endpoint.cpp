@@ -140,12 +140,14 @@ int lfi_endpoint::progress() {
             fi_cq_readerr(this->cq, &err, 0);
             debug_info(fi_cq_err_entry_to_string(err, this->cq));
 
-            if (std::abs(err.err) != FI_ECANCELED) {
-                lfi_request *request_p = static_cast<lfi_request *>(err.op_context);
+            lfi_request_context *ctx = static_cast<lfi_request_context *>(err.op_context);
+
+            lfi_request *request = ctx->get_request();
+            if (request) {
                 {
 #ifdef DEBUG
-                    std::unique_lock request_lock(request_p->mutex);
-                    debug_info("[Error] " << *request_p << " cq error");
+                    std::unique_lock request_lock(request->mutex);
+                    debug_info("[Error] " << *request << " cq error");
 #endif
                 }
                 int error;
@@ -156,13 +158,21 @@ int lfi_endpoint::progress() {
                 } else {
                     error = -LFI_LIBFABRIC_ERROR;
                 }
-                request_p->complete(error);
+                request->complete(error);
             }
+            m_lfi.req_ctx_factory.destroy(ctx);
         } else if (ret > 0) {
             // Handle the cq entries
             for (int i = 0; i < ret; i++) {
-                lfi_request *request = static_cast<lfi_request *>(comp[i].op_context);
+                lfi_request_context *ctx = static_cast<lfi_request_context *>(comp[i].op_context);
                 debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+                lfi_request *request = ctx->get_request();
+                if (!request) {
+                    print(fi_cq_tagged_entry_to_string(comp[i]));
+                    print("[LFI] [ERROR] internal error, context without request");
+                    m_lfi.req_ctx_factory.destroy(ctx);
+                    continue;
+                }
                 uint32_t comm_id = UNINITIALIZED_COMM;
                 uint32_t source = UNINITIALIZED_COMM;
                 {
@@ -195,6 +205,7 @@ int lfi_endpoint::progress() {
                     }
                 }
                 request->complete(LFI_SUCCESS);
+                m_lfi.req_ctx_factory.destroy(ctx);
             }
         }
     } while (ret == MAX_COMP_COUNT || ret == -FI_EAVAIL);

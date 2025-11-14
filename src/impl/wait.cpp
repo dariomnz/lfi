@@ -189,7 +189,7 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                     made_progress = peer_ep.protected_progress();
                 }
                 wait_lock.lock();
-                if (!made_progress) {
+                if (!made_progress && shared_wait.wait_count > 0) {
                     if (timeout_ms >= 0) {
                         int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                                  std::chrono::high_resolution_clock::now() - start)

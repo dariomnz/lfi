@@ -22,6 +22,8 @@
 #include "bw_common.hpp"
 #include "impl/debug.hpp"
 #include "lfi.h"
+#include "lfi_async.h"
+#include "lfi_error.h"
 #include "mpi.h"
 
 using namespace bw_examples;
@@ -31,9 +33,13 @@ static std::vector<uint8_t> data;
 #define TAG_MSG 100
 
 int run_test(std::vector<int> &ids, bw_test &test) {
-    ssize_t data_send = 0;
+    ssize_t ret = 0;
     ssize_t test_size = test.test_size;
     debug_info("Start run_test size " << test.test_size);
+    std::vector<std::unique_ptr<lfi_request, void (*)(lfi_request *)>> v_unique_reqs;
+    std::vector<lfi_request *> v_reqs;
+    v_unique_reqs.reserve(test.test_count * ids.size() * 2);
+    v_reqs.reserve(test.test_count * ids.size() * 2);
     // std::this_thread::sleep_for(std::chrono::seconds(10));
     test.size = 0;
     MPI_Barrier(MPI_COMM_WORLD);
@@ -42,28 +48,42 @@ int run_test(std::vector<int> &ids, bw_test &test) {
         for (auto &id : ids) {
             int msg_size = -test_size;
             debug_info("msg_size " << msg_size);
-            data_send = lfi_tsend(id, &msg_size, sizeof(msg_size), TAG_MSG);
-            if (data_send != sizeof(msg_size)) {
-                print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
+            auto &unique_req1 = v_unique_reqs.emplace_back(lfi_request_create(id), lfi_request_free);
+            auto &req1 = v_reqs.emplace_back(unique_req1.get());
+            ret = lfi_tsend_async(req1, &msg_size, sizeof(msg_size), TAG_MSG);
+            if (ret != LFI_SUCCESS) {
+                print("Error lfi_send = " << ret << " " << lfi_strerror(ret));
                 return -1;
             }
 
             // std::this_thread::sleep_for(std::chrono::milliseconds(100));
             debug_info("count " << i << " lfi_send(" << id << ", data.data(), " << test_size << ")");
-            data_send = lfi_send(id, data.data(), test_size);
-            if (data_send != test_size) {
-                print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
+            auto &unique_req2 = v_unique_reqs.emplace_back(lfi_request_create(id), lfi_request_free);
+            auto &req2 = v_reqs.emplace_back(unique_req2.get());
+            ret = lfi_send_async(req2, data.data(), test_size);
+            if (ret != LFI_SUCCESS) {
+                print("Error lfi_send = " << ret << " " << lfi_strerror(ret));
                 return -1;
             }
             test.size += test_size;
             // int ack = 0;
             // debug_info("count " << i << " lfi_recv(" << id << ", ack, " << sizeof(ack) << ")");
-            // data_recv = lfi_recv(id, &ack, sizeof(ack));
-            // if (data_recv != sizeof(ack)) {
-            //     print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
+            // auto &unique_req3 = v_unique_reqs.emplace_back(lfi_request_create(id), lfi_request_free);
+            // auto &req3 = v_reqs.emplace_back(unique_req3.get());
+            // ret = lfi_recv_async(req3, &ack, sizeof(ack));
+            // if (ret != LFI_SUCCESS) {
+            //     print("Error lfi_recv = " << ret << " " << lfi_strerror(ret));
             //     return -1;
             // }
         }
+        auto res = lfi_wait_all(v_reqs.data(), v_reqs.size());
+        if (res < 0) {
+            print("Error lfi_wait_all = " << res << " " << lfi_strerror(res));
+            return -1;
+        }
+
+        v_unique_reqs.clear();
+        v_reqs.clear();
     }
 
     MPI_Barrier(MPI_COMM_WORLD);

@@ -55,6 +55,17 @@ std::ostream &operator<<(std::ostream &os, lfi_request &req) {
     return os;
 }
 
+void lfi_request::reset() {
+    if (wait_context) {
+        wait_context->unassign();
+    }
+    wait_context = nullptr;
+    error = 0;
+    size = 0;
+    tag = 0;
+    source = UNINITIALIZED_COMM;
+}
+
 void lfi_request::complete(int err) {
     std::unique_lock request_lock(mutex);
     debug_info("[LFI] >> Begin complete request " << *this);
@@ -64,7 +75,10 @@ void lfi_request::complete(int err) {
         return;
     }
     error = err;
-    wait_context = false;
+    if (wait_context) {
+        wait_context->unassign();
+    }
+    wait_context = nullptr;
     cv.notify_all();
     if (shared_wait_struct != nullptr) {
         std::unique_lock shared_wait_lock(shared_wait_struct->wait_mutex);
@@ -86,7 +100,7 @@ void lfi_request::complete(int err) {
 
             if (comm.rank_peer != ANY_COMM_SHM && comm.rank_peer != ANY_COMM_PEER) {
                 std::unique_lock lock(comm.m_ep.ft_comms_mutex);
-                comm.ft_comm_count = comm.ft_comm_count > 0 ? comm.ft_comm_count - 1 : 0;
+                comm.ft_comm_count = (comm.ft_comm_count > 0) ? (comm.ft_comm_count - 1) : 0;
                 debug_info("[LFI] ft_comm_count " << comm.ft_comm_count);
                 if (comm.ft_comm_count == 0) {
                     comm.m_ep.ft_comms.erase(&comm);
@@ -126,19 +140,9 @@ void lfi_request::cancel() {
 
         // Ignore return value
         // ref: https://github.com/ofiwg/libfabric/issues/7795
-        auto ret = fi_cancel(&p_ep->fid, this);
-        debug_info("fi_cancel ret " << ret << fi_strerror(ret));
+        [[maybe_unused]] auto ret = fi_cancel(&p_ep->fid, this);
+        debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
     }
-
-    if (!is_send) {
-        m_comm.m_ep.m_lfi.wait(*this, 1000);
-    }
-
-    // Try one progress to read the canceled and not accumulate errors
-    // if (!m_comm.m_ep.protected_progress()) {
-    //     std::this_thread::sleep_for(std::chrono::microseconds(100));
-    //     // std::this_thread::yield();
-    // }
 
     // Check if completed to no report error
     int error = -LFI_CANCELED;
@@ -153,6 +157,10 @@ void lfi_request::cancel() {
         }
     }
     complete(error);
+
+    // This is after complete because complete unassign the context
+    // Try one progress to read the canceled and not accumulate errors
+    m_comm.m_ep.protected_progress();
 
     debug_info("[LFI] End " << this);
 }

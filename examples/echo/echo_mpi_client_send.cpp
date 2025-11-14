@@ -59,13 +59,13 @@ int run_test(MPI_Comm &client_comm, int servers, bw_test &test) {
                 return -1;
             }
             test.size += test_size;
-            int ack = 0;
-            debug_info("ack MPI_Recv(ack, " << sizeof(ack) << ")");
-            ret = MPI_Recv(&ack, 1, MPI_INT, j, 0, client_comm, MPI_STATUS_IGNORE);
-            if (ret != MPI_SUCCESS) {
-                printf("Error MPI_Recv\n");
-                return -1;
-            }
+            // int ack = 0;
+            // debug_info("ack MPI_Recv(ack, " << sizeof(ack) << ")");
+            // ret = MPI_Recv(&ack, 1, MPI_INT, j, 0, client_comm, MPI_STATUS_IGNORE);
+            // if (ret != MPI_SUCCESS) {
+            //     printf("Error MPI_Recv\n");
+            //     return -1;
+            // }
         }
     }
 

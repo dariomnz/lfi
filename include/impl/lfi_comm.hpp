@@ -71,8 +71,8 @@ struct lfi_comm {
 
     bool is_canceled = false;
 
-    std::atomic_bool is_ready = false;
-    std::atomic_bool in_fut = false;
+    // 0 not ready, 1 ready internal, 2 ready
+    std::atomic_int8_t is_ready = 0;
 
     lfi_comm(lfi_endpoint &ep) : m_ep(ep) {}
 

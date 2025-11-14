@@ -18,6 +18,7 @@
  *  along with LFI.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
+// #define DEBUG
 
 #include <arpa/inet.h>
 #include <stdio.h>
@@ -39,33 +40,45 @@ static std::vector<uint8_t> data;
 int run_test(MPI_Comm &client_comm, int servers, bw_test &test) {
     int ret = 0;
     ssize_t test_size = test.test_size;
+    std::vector<MPI_Request> v_reqs;
+    v_reqs.reserve(test.test_count * servers * 3);
+
     debug_info("Start run_test size " << test.test_size);
     MPI_Barrier(MPI_COMM_WORLD);
     timer t;
     for (size_t i = 0; i < test.test_count; i++) {
         for (int j = 0; j < servers; j++) {
-            int msg_size = test_size;
+            int msg_size = -test_size;
             debug_info("msg_size " << msg_size);
-            ret = MPI_Send(&msg_size, 1, MPI_INT, j, TAG_MSG, client_comm);
+            auto &req1 = v_reqs.emplace_back();
+            ret = MPI_Isend(&msg_size, 1, MPI_INT, j, TAG_MSG, client_comm, &req1);
             if (ret != MPI_SUCCESS) {
                 printf("Error MPI_Send\n");
                 return -1;
             }
-            // debug_info("count " << i << " MPI_Isend(data.data(), " << test_size << ")");
-            // int ack = 0;
-            // ret = MPI_Send(&ack, 1, MPI_INT, j, 0, client_comm);
-            // if (ret != MPI_SUCCESS) {
-            //     printf("Error MPI_Send\n");
-            //     return -1;
-            // }
-            test.size += test_size;
-            debug_info("ack MPI_Recv(data.data(), " << test_size << ")");
-            ret = MPI_Recv(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, MPI_STATUS_IGNORE);
+            debug_info("count " << i << " MPI_Isend(data.data(), " << test_size << ")");
+            auto &req2 = v_reqs.emplace_back();
+            ret = MPI_Isend(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, &req2);
             if (ret != MPI_SUCCESS) {
-                printf("Error MPI_Recv\n");
+                printf("Error MPI_Send\n");
                 return -1;
             }
+            test.size += test_size;
+            // int ack = 0;
+            // debug_info("ack MPI_Recv(ack, " << sizeof(ack) << ")");
+            // auto &req3 = v_reqs.emplace_back();
+            // ret = MPI_Irecv(&ack, 1, MPI_INT, j, 0, client_comm, &req3);
+            // if (ret != MPI_SUCCESS) {
+            //     printf("Error MPI_Recv\n");
+            //     return -1;
+            // }
         }
+        ret = MPI_Waitall(v_reqs.size(), v_reqs.data(), MPI_STATUSES_IGNORE);
+        if (ret != MPI_SUCCESS) {
+            printf("Error MPI_Waitall\n");
+            return -1;
+        }
+        v_reqs.clear();
     }
 
     MPI_Barrier(MPI_COMM_WORLD);

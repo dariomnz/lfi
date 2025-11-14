@@ -41,12 +41,12 @@ namespace bw_examples
 
     struct bw_test
     {
-        std::atomic_uint64_t test_size = 0;
-        std::atomic_uint64_t test_count = 0;
-        std::atomic_uint64_t test_tag = 0;
+        uint64_t test_size = 0;
+        uint64_t test_count = 0;
+        uint64_t test_tag = 0;
 
-        std::atomic_uint64_t size = 0;
-        std::atomic_uint64_t nanosec = 0;
+        uint64_t size = 0;
+        uint64_t nanosec = 0;
     };
 
     [[maybe_unused]] static std::vector<bw_test> &get_test_vector()
@@ -63,6 +63,8 @@ namespace bw_examples
                 tests[i].test_count = 100;
                 tests[i].test_tag = 1000+i;
             }
+            const int TO_REMOVE_FIRST = 15;
+            tests.erase(tests.begin(), tests.begin()+TO_REMOVE_FIRST);
         }
         return tests;
     }
