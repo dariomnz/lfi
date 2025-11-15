@@ -22,11 +22,12 @@
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
-#include "sstream"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
 lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag) {
+    LFI_PROFILE_FUNCTION();
     lfi_msg msg = {};
     int ret = 0;
     debug_info("[LFI] Start");
@@ -70,6 +71,7 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 
 int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
                              int32_t timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     int ret;
 #ifdef DEBUG
     uint32_t run_loop = 0;

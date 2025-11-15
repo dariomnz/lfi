@@ -24,14 +24,15 @@
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "impl/profiler.hpp"
 #include "impl/socket.hpp"
-#include "lfi_async.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 int lfi_server_create(const char *serv_addr, int *port) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     std::string addr = "";
     if (serv_addr != nullptr) addr = serv_addr;
@@ -42,6 +43,7 @@ int lfi_server_create(const char *serv_addr, int *port) {
 }
 
 int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     int out = -1;
     int client_socket;
     debug_info("(" << serv_addr << ", " << port << ")>> Begin");
@@ -74,10 +76,12 @@ int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms) {
 }
 
 int lfi_client_create(const char *serv_addr, int port) {
+    LFI_PROFILE_FUNCTION();
     return lfi_client_create_t(serv_addr, port, 0);
 }
 
 int lfi_server_accept_t(int socket, int timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     uint32_t out = -1;
     int client_socket;
     debug_info("(" << socket << ") >> Begin");
@@ -109,12 +113,17 @@ int lfi_server_accept_t(int socket, int timeout_ms) {
 }
 
 int lfi_server_accept(int socket) {
+    LFI_PROFILE_FUNCTION();
     return lfi_server_accept_t(socket, 0);
 }
 
-ssize_t lfi_send(int id, const void *data, size_t size) { return lfi_tsend(id, data, size, 0); }
+ssize_t lfi_send(int id, const void *data, size_t size) {
+    LFI_PROFILE_FUNCTION();
+    return lfi_tsend(id, data, size, 0);
+}
 
 ssize_t lfi_tsend(int id, const void *data, size_t size, int tag) {
+    LFI_PROFILE_FUNCTION();
     ssize_t ret = -1;
     LFI::lfi_msg msg;
     debug_info("(" << id << ", " << data << ", " << size << ", " << tag << ")>> Begin");
@@ -129,9 +138,13 @@ ssize_t lfi_tsend(int id, const void *data, size_t size, int tag) {
     return ret;
 }
 
-ssize_t lfi_recv(int id, void *data, size_t size) { return lfi_trecv(id, data, size, 0); }
+ssize_t lfi_recv(int id, void *data, size_t size) {
+    LFI_PROFILE_FUNCTION();
+    return lfi_trecv(id, data, size, 0);
+}
 
 ssize_t lfi_trecv(int id, void *data, size_t size, int tag) {
+    LFI_PROFILE_FUNCTION();
     ssize_t ret = -1;
     LFI::lfi_msg msg;
     debug_info("(" << id << ", " << data << ", " << size << ", " << tag << ")>> Begin");
@@ -147,6 +160,7 @@ ssize_t lfi_trecv(int id, void *data, size_t size, int tag) {
 }
 
 int lfi_server_close(int id) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     debug_info("(" << id << ") >> Begin");
 
@@ -157,6 +171,7 @@ int lfi_server_close(int id) {
 }
 
 int lfi_client_close(int id) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     debug_info("(" << id << ") >> Begin");
 
@@ -167,9 +182,15 @@ int lfi_client_close(int id) {
     return ret;
 }
 
-const char *lfi_strerror(int error) { return LFI::lfi_strerror(std::abs(error)); }
+const char *lfi_strerror(int error) {
+    LFI_PROFILE_FUNCTION();
+    return LFI::lfi_strerror(std::abs(error));
+}
 
-void lfi_dump_stats() { return LFI::LFI::get_instance().dump_stats(); }
+void lfi_dump_stats() {
+    LFI_PROFILE_FUNCTION();
+    return LFI::LFI::get_instance().dump_stats();
+}
 
 #ifdef __cplusplus
 }

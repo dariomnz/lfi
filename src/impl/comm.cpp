@@ -21,14 +21,14 @@
 
 #include "impl/debug.hpp"
 #include "impl/lfi.hpp"
-#include "impl/ns.hpp"
-#include "impl/socket.hpp"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
 // uint32_t LFI::reserve_comm() { return m_rank_counter.fetch_add(1); }
 
 lfi_comm* LFI::init_comm(bool is_shm, int32_t comm_id) {
+    LFI_PROFILE_FUNCTION();
     if (is_shm) {
         return init_comm(shm_ep, comm_id);
     } else {
@@ -37,6 +37,7 @@ lfi_comm* LFI::init_comm(bool is_shm, int32_t comm_id) {
 }
 
 uint32_t LFI::reserve_comm() {
+    LFI_PROFILE_FUNCTION();
     std::unique_lock comms_lock(m_comms_mutex);
     debug_info("[LFI] Start");
     auto comm_id = m_rank_counter.fetch_add(1);
@@ -47,6 +48,7 @@ uint32_t LFI::reserve_comm() {
 }
 
 lfi_comm* LFI::init_comm(lfi_endpoint& lfi_ep, int32_t comm_id) {
+    LFI_PROFILE_FUNCTION();
     uint32_t new_id = comm_id;
 
     std::unique_lock comms_lock(m_comms_mutex);
@@ -68,6 +70,7 @@ lfi_comm* LFI::init_comm(lfi_endpoint& lfi_ep, int32_t comm_id) {
 }
 
 lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
+    LFI_PROFILE_FUNCTION();
     uint32_t new_id = comm_id;
 
     debug_info("[LFI] Start");
@@ -82,6 +85,7 @@ lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
 }
 
 lfi_comm* LFI::get_comm(uint32_t id) {
+    LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start " << id);
     std::unique_lock comms_lock(m_comms_mutex);
     auto comm_it = m_comms.find(id);
@@ -102,7 +106,8 @@ lfi_comm* LFI::get_comm(uint32_t id) {
         // There are no fut for the comm so wait to the resolution of the fut in another thread
         if (comm_it->second == nullptr || (comm_it->second != nullptr && comm_it->second->is_ready != 2)) {
             debug_info("[LFI] wait comm " << id << " not ready");
-            m_fut_wait_cv.wait(comms_lock, [&]() { return comm_it->second != nullptr && comm_it->second->is_ready == 2; });
+            m_fut_wait_cv.wait(comms_lock,
+                               [&]() { return comm_it->second != nullptr && comm_it->second->is_ready == 2; });
         }
 
         debug_info("[LFI] End comm " << id << " ready");
@@ -123,6 +128,7 @@ lfi_comm* LFI::get_comm(uint32_t id) {
 }
 
 int LFI::close_comm(uint32_t id) {
+    LFI_PROFILE_FUNCTION();
     int ret = 0;
     debug_info("[LFI] Start");
 

@@ -23,15 +23,12 @@
 
 #include <rdma/fi_errno.h>
 
-#include <chrono>
-#include <thread>
-
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "impl/profiler.hpp"
 #include "lfi_comm.hpp"
 #include "lfi_error.h"
-#include "sstream"
 
 namespace LFI {
 
@@ -56,6 +53,7 @@ std::ostream &operator<<(std::ostream &os, lfi_request &req) {
 }
 
 void lfi_request::reset() {
+    LFI_PROFILE_FUNCTION();
     if (wait_context) {
         wait_context->unassign();
     }
@@ -67,6 +65,7 @@ void lfi_request::reset() {
 }
 
 void lfi_request::complete(int err) {
+    LFI_PROFILE_FUNCTION();
     std::unique_lock request_lock(mutex);
     debug_info("[LFI] >> Begin complete request " << *this);
     // If completed do nothing
@@ -124,6 +123,7 @@ void lfi_request::complete(int err) {
 }
 
 void lfi_request::cancel() {
+    LFI_PROFILE_FUNCTION();
     {
         std::unique_lock request_lock(mutex);
         debug_info("[LFI] Start " << *this);

@@ -24,6 +24,7 @@
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "impl/profiler.hpp"
 #include "sstream"
 
 namespace LFI {
@@ -118,6 +119,7 @@ inline std::string fi_cq_err_entry_to_string(const fi_cq_err_entry &entry, fid_c
 }
 
 int lfi_endpoint::progress() {
+    // LFI_PROFILE_FUNCTION();
     int ret = 0;
     const int MAX_COMP_COUNT = 8;
     struct fi_cq_tagged_entry comp[MAX_COMP_COUNT] = {};
@@ -231,6 +233,7 @@ int lfi_endpoint::progress() {
 }
 
 bool lfi_endpoint::protected_progress() {
+    // LFI_PROFILE_FUNCTION();
     bool made_progress = false;
     if (!env::get_instance().LFI_efficient_progress || !in_progress.exchange(true)) {
         // debug_info("Run progress from protected_progress");

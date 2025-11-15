@@ -22,13 +22,12 @@
 #include "lfi_coll.h"
 
 #include <chrono>
-#include <thread>
 
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/ns.hpp"
-#include "impl/socket.hpp"
+#include "impl/profiler.hpp"
 #include "lfi.h"
 #include "lfi_async.h"
 
@@ -37,6 +36,7 @@ extern "C" {
 #endif
 
 double lfi_time(lfi_group *group) {
+    LFI_PROFILE_FUNCTION();
     if (group->size == 0 || group->ranks == nullptr) {
         return -LFI_GROUP_NO_INIT;
     }
@@ -48,6 +48,7 @@ double lfi_time(lfi_group *group) {
 }
 
 int lfi_group_create(const char *hostnames[], size_t n_hosts, lfi_group *out_group) {
+    LFI_PROFILE_FUNCTION();
     debug_info("lfi_group_create(" << hostnames << ", " << n_hosts << ", " << out_group << ")");
     // reset group
     out_group->ranks = nullptr;
@@ -133,6 +134,7 @@ int lfi_group_create(const char *hostnames[], size_t n_hosts, lfi_group *out_gro
 }
 
 int lfi_group_rank(lfi_group *group, int *rank) {
+    LFI_PROFILE_FUNCTION();
     if (group->size == 0 || group->ranks == nullptr) {
         return -LFI_GROUP_NO_INIT;
     }
@@ -141,6 +143,7 @@ int lfi_group_rank(lfi_group *group, int *rank) {
 }
 
 int lfi_group_size(lfi_group *group, int *size) {
+    LFI_PROFILE_FUNCTION();
     if (group->size == 0 || group->ranks == nullptr) {
         return -LFI_GROUP_NO_INIT;
     }
@@ -149,6 +152,7 @@ int lfi_group_size(lfi_group *group, int *size) {
 }
 
 int lfi_group_close(lfi_group *group) {
+    LFI_PROFILE_FUNCTION();
     debug_info("lfi_group_close(" << group << ")");
     int ret = 0;
     int res = 0;
@@ -168,6 +172,7 @@ int lfi_group_close(lfi_group *group) {
 }
 
 int lfi_barrier(lfi_group *group) {
+    LFI_PROFILE_FUNCTION();
     debug_info("lfi_barrier(" << group << ")");
     if (group->size <= 0) {
         return -1;
@@ -223,6 +228,7 @@ cleanup:
 }
 
 int lfi_broadcast(lfi_group *group, int root, void *data, size_t size) {
+    LFI_PROFILE_FUNCTION();
     debug_info("lfi_broadcast(" << group << ", " << root << ", " << data << ", " << size << ")");
     if (group->size <= 0) {
         return -1;
@@ -266,6 +272,7 @@ cleanup:
 }
 
 int lfi_allreduce(lfi_group *group, void *data, enum lfi_op_type_enum type, enum lfi_op_enum op) {
+    LFI_PROFILE_FUNCTION();
     debug_info("lfi_reduce(" << group << ")");
     if (group->size <= 0) {
         return -1;
@@ -329,7 +336,7 @@ int lfi_allreduce(lfi_group *group, void *data, enum lfi_op_type_enum type, enum
                 } break;
             }
         }
-        
+
         *static_cast<int *>(data) = result;
 
         requests.reserve(group->size - 1);

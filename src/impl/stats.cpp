@@ -23,8 +23,7 @@
 
 #include "impl/debug.hpp"
 #include "impl/lfi.hpp"
-#include "impl/ns.hpp"
-#include "impl/socket.hpp"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
@@ -41,6 +40,7 @@ struct indent {
 };
 
 void LFI::dump_stats() {
+    LFI_PROFILE_FUNCTION();
     auto now = std::chrono::high_resolution_clock::now();
     std::cerr << "-------------------------------[LFI STATS BEGIN] "
               << format_time<std::chrono::high_resolution_clock>(now) << "-------------------------------" << std::endl;

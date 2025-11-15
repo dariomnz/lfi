@@ -26,10 +26,12 @@
 
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
 int socket::server_init(const std::string& addr, int& port) {
+    LFI_PROFILE_FUNCTION();
     struct sockaddr_in server_addr = {};
     int ret;
 
@@ -83,6 +85,7 @@ int socket::server_init(const std::string& addr, int& port) {
 }
 
 int socket::retry_connect(int socket, sockaddr* addr, socklen_t len, int timeout_ms, int time_to_sleep_ms) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     auto start = std::chrono::high_resolution_clock::now();
     while (ret < 0) {
@@ -104,6 +107,7 @@ int socket::retry_connect(int socket, sockaddr* addr, socklen_t len, int timeout
 }
 
 int socket::client_init(const std::string& addr, int port, int timeout_ms, bool is_ip) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     int socket = -1;
     debug_info(">> Begin");
@@ -185,6 +189,7 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
 }
 
 int socket::open() {
+    LFI_PROFILE_FUNCTION();
     int ret, val;
     int out_socket = -1;
 
@@ -226,6 +231,7 @@ int socket::open() {
 }
 
 int socket::accept_timeout(int socket, int timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     sockaddr_in client_addr;
     socklen_t size = sizeof(sockaddr_in);
     if (timeout_ms == 0) {
@@ -264,6 +270,7 @@ int socket::accept_timeout(int socket, int timeout_ms) {
 }
 
 int socket::accept(int socket, int timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     int ret, flag, new_socket;
     // Accept
     debug_info(">> Begin");
@@ -298,6 +305,7 @@ int socket::accept(int socket, int timeout_ms) {
 }
 
 int socket::close(int socket) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     debug_info(">> Begin");
     ret = ::close(socket);
@@ -306,6 +314,7 @@ int socket::close(int socket) {
 }
 
 ssize_t socket::send(int socket, const void* data, size_t len) {
+    LFI_PROFILE_FUNCTION();
     int r;
     int l = len;
     const char* buffer = static_cast<const char*>(data);
@@ -325,6 +334,7 @@ ssize_t socket::send(int socket, const void* data, size_t len) {
 }
 
 ssize_t socket::recv(int socket, void* data, size_t len) {
+    LFI_PROFILE_FUNCTION();
     int r;
     int l = len;
     debug_info(">> Begin");
@@ -344,6 +354,7 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
 }
 
 int64_t socket::send_str(int socket, const std::string& str) {
+    LFI_PROFILE_FUNCTION();
     int64_t ret;
     size_t size_str = str.size();
     debug_info("Send_str size " << size_str);
@@ -370,6 +381,7 @@ int64_t socket::send_str(int socket, const std::string& str) {
 }
 
 int64_t socket::recv_str(int socket, std::string& str) {
+    LFI_PROFILE_FUNCTION();
     int64_t ret;
     size_t size_str = 0;
     do {

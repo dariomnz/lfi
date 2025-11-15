@@ -20,14 +20,15 @@
  */
 
 #include "impl/debug.hpp"
-#include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/ns.hpp"
+#include "impl/profiler.hpp"
 #include "impl/socket.hpp"
 
 namespace LFI {
 
 int LFI::init_server(int socket, int32_t comm_id) {
+    LFI_PROFILE_FUNCTION();
     int ret;
     debug_info("[LFI] Start");
 
@@ -146,6 +147,7 @@ int LFI::init_server(int socket, int32_t comm_id) {
 }
 
 int LFI::init_client(int socket, int32_t comm_id) {
+    LFI_PROFILE_FUNCTION();
     int ret;
     debug_info("[LFI] Start");
 

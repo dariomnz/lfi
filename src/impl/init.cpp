@@ -23,12 +23,12 @@
 
 #include "impl/debug.hpp"
 #include "impl/lfi.hpp"
-#include "impl/ns.hpp"
-#include "impl/socket.hpp"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
 LFI::LFI() {
+    LFI_PROFILE_FUNCTION();
     int ret = 0;
     debug_info("[LFI] Start");
     if (!peer_ep.initialized()) {
@@ -69,6 +69,7 @@ LFI::LFI() {
 }
 
 LFI::~LFI() {
+    LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start");
     ft_thread_destroy();
 
@@ -82,6 +83,7 @@ LFI::~LFI() {
 }
 
 int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
+    LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start");
 
     if (lfi_ep.hints != nullptr) {
@@ -109,6 +111,7 @@ int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
 }
 
 int LFI::init(lfi_endpoint &lfi_ep) {
+    LFI_PROFILE_FUNCTION();
     int ret;
     struct fi_cq_attr cq_attr = {};
     struct fi_av_attr av_attr = {};
@@ -267,6 +270,7 @@ int LFI::init(lfi_endpoint &lfi_ep) {
 }
 
 int LFI::destroy(lfi_endpoint &lfi_ep) {
+    LFI_PROFILE_FUNCTION();
     int ret = 0;
 
     debug_info("[LFI] Start");

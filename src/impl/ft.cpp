@@ -24,15 +24,16 @@
 #include <mutex>
 
 #include "impl/debug.hpp"
+#include "impl/profiler.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "lfi.h"
-#include "lfi_async.h"
 #include "lfi_error.h"
 
 namespace LFI {
 
 int LFI::ft_thread_start() {
+    LFI_PROFILE_FUNCTION();
     if (!env::get_instance().LFI_fault_tolerance) return LFI_SUCCESS;
 
     debug_info("[LFI] Start");
@@ -48,6 +49,7 @@ int LFI::ft_thread_start() {
 }
 
 int LFI::ft_thread_destroy() {
+    LFI_PROFILE_FUNCTION();
     if (!env::get_instance().LFI_fault_tolerance) return LFI_SUCCESS;
 
     debug_info("[LFI] Start");
@@ -67,6 +69,7 @@ int LFI::ft_thread_destroy() {
 }
 
 int LFI::ft_thread_ping_pong() {
+    LFI_PROFILE_FUNCTION();
     LFI &lfi = LFI::get_instance();
     debug_info("[LFI] Start");
 
@@ -101,6 +104,7 @@ int LFI::ft_thread_ping_pong() {
 }
 
 int LFI::ft_setup_ping_pong() {
+    LFI_PROFILE_FUNCTION();
     static int dummy = 0;
 
     auto create_ping = [this](auto any_comm) {
@@ -162,6 +166,7 @@ int LFI::ft_setup_ping_pong() {
 }
 
 int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
+    LFI_PROFILE_FUNCTION();
     static int dummy = 0;
     static std::mutex m;
     std::unique_lock unique_m(m, std::defer_lock);
@@ -392,6 +397,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
 }
 
 int LFI::ft_cancel_comm(lfi_comm &comm) {
+    LFI_PROFILE_FUNCTION();
     std::unique_lock lock(comm.ft_mutex);
     debug_info("[LFI] mark canceled comm " << comm.rank_peer);
     comm.is_canceled = true;

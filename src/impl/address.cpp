@@ -21,12 +21,12 @@
 
 #include "impl/debug.hpp"
 #include "impl/lfi.hpp"
-#include "impl/ns.hpp"
-#include "impl/socket.hpp"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
 int LFI::get_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& out_addr) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     debug_info("[LFI] Start");
 
@@ -48,6 +48,7 @@ int LFI::get_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& out_addr) {
 }
 
 int LFI::register_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& addr) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     fi_addr_t fi_addr;
     debug_info("[LFI] Start");
@@ -65,6 +66,7 @@ int LFI::register_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& addr) {
 }
 
 int LFI::remove_addr(lfi_comm& lfi_comm) {
+    LFI_PROFILE_FUNCTION();
     int ret = -1;
     debug_info("[LFI] Start");
 

@@ -7,6 +7,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# add_compile_options("-DLFI_PROFILE")
 # add_compile_options("-DDEBUG")
 add_compile_options("-fPIC" "-O3" "-g" "-ggdb" "-gdwarf-4" "-Wall" "-Wextra")
 

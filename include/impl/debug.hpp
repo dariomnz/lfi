@@ -21,6 +21,9 @@
 
 #pragma once
 
+#include <linux/limits.h>
+#include <unistd.h>
+
 #include <chrono>
 #include <cstring>
 #include <functional>
@@ -39,6 +42,17 @@ constexpr const char *file_name(const char *path) {
         }
     }
     return file;
+}
+
+static inline std::string file_exe_name() {
+    char buffer[PATH_MAX];
+    ssize_t longitud = readlink("/proc/self/exe", buffer, PATH_MAX - 1);
+    if (longitud != -1) {
+        buffer[longitud] = '\0';
+        return std::string(file_name(buffer));
+    } else {
+        return "";
+    }
 }
 
 template <typename clock>

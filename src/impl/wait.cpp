@@ -22,7 +22,7 @@
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
-#include "sstream"
+#include "impl/profiler.hpp"
 
 namespace LFI {
 
@@ -36,6 +36,7 @@ inline bool LFI::wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::hi
 }
 
 void LFI::wake_up_requests(lfi_endpoint &ep) {
+    LFI_PROFILE_FUNCTION();
     if (!ep.in_progress.load()) {
         std::unique_lock lock(ep.waiting_requests_mutex);
         for (auto &var : ep.waiting_requests) {
@@ -59,6 +60,7 @@ void LFI::wake_up_requests(lfi_endpoint &ep) {
 }
 
 int LFI::wait(lfi_request &request, int32_t timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start timeout_ms " << timeout_ms);
 
     // Check cancelled comm
@@ -122,6 +124,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
 }
 
 int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start how_many " << how_many << " timeout_ms " << timeout_ms);
     if (how_many > n_requests || how_many <= 0 || n_requests == 0) return -1;
 

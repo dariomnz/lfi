@@ -24,13 +24,13 @@
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
-#include "lfi_async.h"
+#include "impl/profiler.hpp"
 #include "lfi_request.hpp"
-#include "sstream"
 
 namespace LFI {
 
 lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag) {
+    LFI_PROFILE_FUNCTION();
     lfi_msg msg = {};
     int ret = 0;
     debug_info("[LFI] Start");
@@ -68,6 +68,7 @@ lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
 
 int LFI::any_recv(lfi_request &req_shm, void *buffer_shm, lfi_request &req_peer, void *buffer_peer, size_t size,
                   uint32_t tag, lfi_msg &msg) {
+    LFI_PROFILE_FUNCTION();
     int ret;
     debug_info("[LFI] Start");
 
@@ -113,100 +114,9 @@ int LFI::any_recv(lfi_request &req_shm, void *buffer_shm, lfi_request &req_peer,
     debug_info("[LFI] End");
 }
 
-// any_recv with peek msg
-// lfi_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
-// {
-//     lfi_msg msg = {};
-//     debug_info("[LFI] Start");
-
-//     bool finish = false;
-//     while(!finish){
-//         // Try a recv in peer
-//         msg = recv_peek(LFI_ANY_COMM_PEER, buffer, size, tag);
-//         if (msg.error != -LFI_PEEK_NO_MSG){
-//             break;
-//         }
-//         // Try a recv in shm
-//         msg = recv_peek(LFI_ANY_COMM_SHM, buffer, size, tag);
-//         if (msg.error != -LFI_PEEK_NO_MSG){
-//             break;
-//         }
-//     }
-
-//     debug_info("[LFI] End");
-//     return msg;
-// }
-
-// any_recv with posting the buffer checking and canceling in loop
-// lfi_msg LFI::any_recv(void *buffer, size_t size, uint32_t tag)
-// {
-//     lfi_msg peer_msg = {}, shm_msg = {};
-//     debug_info("[LFI] Start");
-
-//     // For the shm
-//     lfi_comm *comm = get_comm(LFI_ANY_COMM_SHM);
-//     if (comm == nullptr){
-//         throw std::runtime_error("There are no LFI_ANY_COMM_SHM. This should not happend");
-//     }
-//     lfi_request shm_request(*comm);
-//     // For the peer
-//     comm = get_comm(LFI_ANY_COMM_PEER);
-//     if (comm == nullptr){
-//         throw std::runtime_error("There are no LFI_ANY_COMM_PEER. This should not happend");
-//     }
-//     lfi_request peer_request(*comm);
-
-//     lfi_request* request = nullptr;
-//     bool finish = false;
-//     int ret = 0;
-//     while(!finish){
-//         // Try a recv in shm
-//         shm_msg = async_recv(buffer, size, tag, shm_request);
-//         if (shm_msg.error < 0){
-//             return shm_msg;
-//         }
-//         ret = wait(shm_request, 0);
-//         if (ret != -LFI_TIMEOUT){
-//             request = &shm_request;
-//             break;
-//         }
-//         // it can be succesfully completed in the cancel
-//         ret = cancel(shm_request);
-//         if (ret < 0 || shm_request.error == 0){
-//             request = &shm_request;
-//             break;
-//         }
-
-//         // Try a recv in peer
-//         peer_msg = async_recv(buffer, size, tag, peer_request);
-//         if (peer_msg.error < 0){
-//             return peer_msg;
-//         }
-//         ret = wait(peer_request, 0);
-//         if (ret != -LFI_TIMEOUT){
-//             request = &peer_request;
-//             break;
-//         }
-//         // it can be succesfully completed in the cancel
-//         ret = cancel(peer_request);
-//         if (ret < 0 || peer_request.error == 0){
-//             request = &peer_request;
-//             break;
-//         }
-//     }
-
-//     lfi_msg msg;
-//     msg.error = request->error;
-//     msg.size = request->entry.len;
-//     msg.tag = request->entry.tag & 0x0000'0000'0000'FFFF;
-//     msg.rank_self_in_peer = (request->entry.tag & 0xFFFF'FF00'0000'0000) >> 40;
-//     msg.rank = (request->entry.tag & 0x0000'00FF'FFFF'0000) >> 16;
-//     debug_info("[LFI] End");
-//     return msg;
-// }
-
 int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
                              int32_t timeout_ms) {
+    LFI_PROFILE_FUNCTION();
     int ret;
 #ifdef DEBUG
     uint32_t run_loop = 0;
@@ -322,6 +232,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 }
 
 lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
+    LFI_PROFILE_FUNCTION();
     int ret;
     lfi_msg msg = {};
 
