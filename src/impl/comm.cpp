@@ -73,6 +73,7 @@ lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
     LFI_PROFILE_FUNCTION();
     uint32_t new_id = comm_id;
 
+    std::unique_lock comms_lock(m_comms_mutex);
     debug_info("[LFI] Start");
     auto [key, inserted] = m_comms.emplace(std::piecewise_construct, std::forward_as_tuple(new_id),
                                            std::forward_as_tuple(std::make_unique<lfi_comm>(lfi_ep)));
@@ -84,10 +85,30 @@ lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
     return key->second.get();
 }
 
+std::pair<std::shared_lock<std::shared_mutex>, lfi_comm*> LFI::get_comm_and_mutex(uint32_t id) {
+    LFI_PROFILE_FUNCTION();
+    debug_info("[LFI] Start " << id);
+    std::shared_lock comms_lock(m_comms_mutex);
+
+    lfi_comm* comm = get_comm_internal(comms_lock, id);
+
+    debug_info("[LFI] End " << id);
+    return {std::move(comms_lock), comm};
+}
+
 lfi_comm* LFI::get_comm(uint32_t id) {
     LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start " << id);
-    std::unique_lock comms_lock(m_comms_mutex);
+    std::shared_lock comms_lock(m_comms_mutex);
+    lfi_comm* comm = get_comm_internal(comms_lock, id);
+
+    debug_info("[LFI] End " << id);
+    return comm;
+}
+
+lfi_comm* LFI::get_comm_internal(std::shared_lock<std::shared_mutex>& comms_lock, uint32_t id) {
+    LFI_PROFILE_FUNCTION();
+    debug_info("[LFI] Start " << id);
     auto comm_it = m_comms.find(id);
     if (comm_it == m_comms.end()) {
         debug_info("[LFI] End " << id << " not found in comm so it is nor reserved");
@@ -100,8 +121,11 @@ lfi_comm* LFI::get_comm(uint32_t id) {
         debug_info("[LFI] End comm " << id << " is ready");
         return comm_it->second.get();
     }
-
-    auto fut_it = m_fut_comms.extract(id);
+    decltype(m_fut_comms.extract(id)) fut_it;
+    {
+        std::unique_lock fut_lock(m_fut_comms_mutex);
+        fut_it = m_fut_comms.extract(id);
+    }
     if (fut_it.empty()) {
         // There are no fut for the comm so wait to the resolution of the fut in another thread
         if (comm_it->second == nullptr || (comm_it->second != nullptr && comm_it->second->is_ready != 2)) {
@@ -131,32 +155,37 @@ int LFI::close_comm(uint32_t id) {
     LFI_PROFILE_FUNCTION();
     int ret = 0;
     debug_info("[LFI] Start");
-
-    lfi_comm* comm = get_comm(id);
-    if (!comm) {
-        return -LFI_COMM_NOT_FOUND;
-    }
-    std::unique_lock comms_lock(m_comms_mutex);
     {
-        std::unique_lock lock(comm->ft_mutex);
-        debug_info("[LFI] cancel all request in comm with error " << comm->rank_peer);
-        std::unordered_set<lfi_request*> temp_requests(comm->ft_requests);
-        lock.unlock();
-        for (auto& request : temp_requests) {
-            if (request == nullptr) continue;
-            request->cancel();
+        auto [lock, comm] = get_comm_and_mutex(id);
+        if (!comm) {
+            return -LFI_COMM_NOT_FOUND;
         }
-        lock.lock();
-        comm->ft_requests.clear();
-    }
+        {
+            std::unique_lock lock(comm->ft_mutex);
+            debug_info("[LFI] cancel all request in comm with error " << comm->rank_peer);
+            // In a temp set because cancel call complete that erase the request from ft_requests
+            std::unordered_set<lfi_request*> temp_requests(comm->ft_requests);
+            for (auto& request : temp_requests) {
+                if (request == nullptr) continue;
+                if (id != ANY_COMM_SHM && id != ANY_COMM_PEER) {
+                    print("[LFI] [WARNING] Clossing comm with pending request: " << *request);
+                }
+                request->cancel();
+            }
+            comm->ft_requests.clear();
+        }
 
-    remove_addr(*comm);
-    {
-        std::unique_lock lock(comm->m_ep.ft_comms_mutex);
-        comm->m_ep.ft_comms.erase(comm);
+        remove_addr(*comm);
+        {
+            std::unique_lock lock(comm->m_ep.ft_mutex);
+            comm->m_ep.ft_comms.erase(comm);
+        }
     }
-    // Here comm is deleted
-    m_comms.erase(id);
+    {
+        std::unique_lock comm_lock(m_comms_mutex);
+        // Here comm is deleted
+        m_comms.erase(id);
+    }
 
     debug_info("[LFI] End = " << ret);
 

@@ -40,7 +40,10 @@ struct lfi_request_context {
 
     ~lfi_request_context() { unassign(); }
 
-    lfi_request* get_request() { return request; }
+    lfi_request* get_request() {
+        std::unique_lock lock(mutex);
+        return request;
+    }
 
     void assign(lfi_request& req) {
         std::unique_lock lock(mutex);
@@ -60,8 +63,8 @@ struct lfi_request_context_factory {
             m_stat_created++;
             return new (std::nothrow) lfi_request_context(req);
         }
-        lfi_request_context* obj = m_queue.front();
-        m_queue.pop();
+        lfi_request_context* obj = m_queue.back();
+        m_queue.resize(m_queue.size() - 1);
         obj->assign(req);
         return obj;
     }
@@ -69,15 +72,15 @@ struct lfi_request_context_factory {
     void destroy(lfi_request_context* req_ctx) {
         std::unique_lock lock(m_mutex);
         req_ctx->unassign();
-        m_queue.push(req_ctx);
+        m_queue.emplace_back(req_ctx);
     }
 
     ~lfi_request_context_factory() {
         std::unique_lock lock(m_mutex);
-        while (!m_queue.empty()) {
-            delete m_queue.front();
-            m_queue.pop();
+        for (auto&& ptr : m_queue) {
+            delete ptr;
         }
+        m_queue.clear();
     }
 
     void dump() {
@@ -88,7 +91,7 @@ struct lfi_request_context_factory {
 
    private:
     std::mutex m_mutex;
-    std::queue<lfi_request_context*> m_queue;
+    std::vector<lfi_request_context*> m_queue;
     int32_t m_stat_created;
 };
 }  // namespace LFI

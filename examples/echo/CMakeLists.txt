@@ -14,6 +14,7 @@ set(EXAMPLES_BW
     echo_lfi_client_send_async
     echo_lfi_client_recv
     echo_lfi_server_async_tpool
+    echo_lfi_server_async_auto
     echo_lfi_server_async
     echo_lfi_server
     echo_mpi_client_send
@@ -26,6 +27,5 @@ set(EXAMPLES_BW
 # add the executables cpp
 foreach (file ${EXAMPLES_BW})
 	add_executable(${file} ${file}.cpp)
-    target_link_libraries(${file} lfi_static)
 	install(TARGETS ${file} RUNTIME DESTINATION bin)
 endforeach (file)

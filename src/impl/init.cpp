@@ -99,7 +99,10 @@ int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
 
     lfi_ep.hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE;
 
-    lfi_ep.hints->mode = FI_CONTEXT;
+    lfi_ep.hints->tx_attr->msg_order = FI_ORDER_SAS;
+    lfi_ep.hints->rx_attr->msg_order = FI_ORDER_SAS;
+
+    lfi_ep.hints->mode = FI_CONTEXT2;
 
     lfi_ep.hints->domain_attr->threading = FI_THREAD_SAFE;
 

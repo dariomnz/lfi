@@ -39,7 +39,7 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
     }
 
     // Check if comm exists
-    lfi_comm *comm = get_comm(comm_id);
+    auto [lock, comm] = get_comm_and_mutex(comm_id);
     if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
@@ -103,7 +103,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
         request.m_comm.rank_peer != ANY_COMM_PEER) {
         req_lock.unlock();
         {
-            std::scoped_lock lock(request.m_comm.m_ep.ft_comms_mutex, request.m_comm.ft_mutex);
+            std::scoped_lock lock(request.m_comm.m_ep.ft_mutex, request.m_comm.ft_mutex);
             request.m_comm.m_ep.ft_comms.emplace(&request.m_comm);
             request.m_comm.ft_comm_count++;
         }
@@ -132,7 +132,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
             if (ret == -FI_EAGAIN) {
                 req_lock.unlock();
-                request.m_comm.m_ep.protected_progress();
+                request.m_comm.m_ep.protected_progress(false);
                 req_lock.lock();
 
                 if (timeout_ms >= 0) {
@@ -171,7 +171,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
             if (ret == -FI_EAGAIN) {
                 req_lock.unlock();
-                request.m_comm.m_ep.protected_progress();
+                request.m_comm.m_ep.protected_progress(false);
                 req_lock.lock();
 
                 if (timeout_ms >= 0) {
@@ -193,12 +193,15 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
         } while (ret == -FI_EAGAIN);
 
         debug_info("[LFI] msg " << request);
-        req_lock.unlock();
         if (env::get_instance().LFI_fault_tolerance && ret == 0) {
-            std::unique_lock fi_lock(request.m_comm.ft_mutex);
-            debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm "
-                                               << request.m_comm.rank_peer);
-            request.m_comm.ft_requests.insert(&request);
+            auto &comm = request.m_comm;
+            debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << comm.rank_peer);
+            req_lock.unlock();
+            {
+                std::unique_lock ft_lock(comm.ft_mutex);
+                comm.ft_requests.insert(&request);
+            }
+            req_lock.lock();
         }
 
         debug_info("[LFI] Waiting on rank_peer " << request.m_comm.rank_peer);

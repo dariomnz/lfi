@@ -44,7 +44,7 @@ static std::vector<uint8_t> data;
 
 void echo_server(MPI_Comm comm) {
     int msg_size = 0;
-    ThreadPool tpool;
+    ThreadPool tpool(16);
     while (true) {
         debug_info("Start recv any ack");
         MPI_Status status;

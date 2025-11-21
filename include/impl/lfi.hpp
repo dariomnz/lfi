@@ -31,6 +31,7 @@
 #include <condition_variable>
 #include <future>
 #include <mutex>
+#include <shared_mutex>
 #include <optional>
 #include <sstream>
 #include <thread>
@@ -66,6 +67,7 @@ DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG, "No msg encounter");
 DECLARE_LFI_ERROR(LFI_NOT_COMPLETED, "Request not completed");
 DECLARE_LFI_ERROR(LFI_NULL_REQUEST, "Request is NULL");
 DECLARE_LFI_ERROR(LFI_SEND_ANY_COMM, "Use of ANY_COMM in send");
+DECLARE_LFI_ERROR(LFI_ETRUN_RECV, "The published receive buffer is smaller than the received one.");
 DECLARE_LFI_ERROR(LFI_LIBFABRIC_ERROR, "Internal libfabric error");
 DECLARE_LFI_ERROR(LFI_GROUP_NO_INIT, "The group is not initialized");
 DECLARE_LFI_ERROR(LFI_GROUP_NO_SELF, "The hostname of the current process is missing");
@@ -83,6 +85,7 @@ static constexpr const char *lfi_strerror(int error) {
         CASE_STR_ERROR(LFI_NOT_COMPLETED);
         CASE_STR_ERROR(LFI_NULL_REQUEST);
         CASE_STR_ERROR(LFI_SEND_ANY_COMM);
+        CASE_STR_ERROR(LFI_ETRUN_RECV);
         CASE_STR_ERROR(LFI_LIBFABRIC_ERROR);
         CASE_STR_ERROR(LFI_GROUP_NO_INIT);
         CASE_STR_ERROR(LFI_GROUP_NO_SELF);
@@ -162,9 +165,11 @@ class LFI {
     uint32_t reserve_comm();
     lfi_comm *init_comm(bool is_shm, int32_t comm_id);
     lfi_comm *get_comm(uint32_t id);
+    std::pair<std::shared_lock<std::shared_mutex>, lfi_comm *> get_comm_and_mutex(uint32_t id);
+    lfi_comm *get_comm_internal(std::shared_lock<std::shared_mutex> &comms_lock, uint32_t id);
     int close_comm(uint32_t id);
-    
-    private:
+
+   private:
     lfi_comm *init_comm(lfi_endpoint &lfi_ep, int32_t comm_id);
     lfi_comm *create_any_comm(lfi_endpoint &lfi_ep, uint32_t comm_id);
 
@@ -265,8 +270,9 @@ class LFI {
     lfi_endpoint shm_ep{*this, true};
     lfi_endpoint peer_ep{*this, false};
 
-    std::mutex m_comms_mutex;
-    std::condition_variable m_fut_wait_cv;
+    std::shared_mutex m_comms_mutex;
+    std::mutex m_fut_comms_mutex;
+    std::condition_variable_any m_fut_wait_cv;
     std::unordered_map<uint32_t, std::future<uint32_t>> m_fut_comms;
     std::unordered_map<uint32_t, std::unique_ptr<lfi_comm>> m_comms;
     std::atomic_uint32_t m_rank_counter = {0};

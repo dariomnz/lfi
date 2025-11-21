@@ -38,7 +38,7 @@ int socket::server_init(const std::string& addr, int& port) {
     debug_info(">> Begin");
     int socket = socket::open();
     if (socket < 0) {
-        print_error("Error opening a socket in addr " << addr << " port " << port);
+        debug_error("Error opening a socket in addr " << addr << " port " << port);
         return socket;
     }
 
@@ -49,7 +49,7 @@ int socket::server_init(const std::string& addr, int& port) {
     if (!addr.empty()) {
         debug_info("Socket bind to " << addr);
         if (::inet_pton(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
-            print_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
+            debug_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
             return -1;
         }
     } else {
@@ -60,7 +60,7 @@ int socket::server_init(const std::string& addr, int& port) {
 
     ret = ::bind(socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if (ret < 0) {
-        print_error("ERROR: bind fails");
+        debug_error("ERROR: bind fails");
         socket::close(socket);
         return ret;
     }
@@ -70,7 +70,7 @@ int socket::server_init(const std::string& addr, int& port) {
 
     ret = ::listen(socket, 1024);
     if (ret < 0) {
-        print_error("ERROR: listen fails");
+        debug_error("ERROR: listen fails");
         socket::close(socket);
         return ret;
     }
@@ -123,7 +123,7 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
         debug_info("Before getaddrinfo");
         int status = getaddrinfo(addr.c_str(), std::to_string(port).c_str(), &hints, &res);
         if (status != 0) {
-            print_error("getaddrinfo error: " << gai_strerror(status));
+            debug_error("getaddrinfo error: " << gai_strerror(status));
             return -1;
         }
         // Try to connect to one of the results returned by getaddrinfo
@@ -135,7 +135,7 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
             // Attempt to connect
             debug_info("Attempt connect to " << ns::sockaddr_to_str(p->ai_addr) << " on port " << port);
             if ((ret = retry_connect(socket, p->ai_addr, p->ai_addrlen, timeout_ms, timeout_ms / 10)) == -1) {
-                print_error("connect " << addr << " port " << port);
+                debug_error("connect " << addr << " port " << port);
                 socket::close(socket);
                 continue;
             }
@@ -154,7 +154,7 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
 
         debug_info("Socket bind to " << addr);
         if (::inet_pton(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
-            print_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
+            debug_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
             return -1;
         }
         socket = socket::open();
@@ -162,7 +162,7 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
             return socket;
         }
         if ((ret = ::connect(socket, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr))) == -1) {
-            print_error("connect " << addr << " port " << port);
+            debug_error("connect " << addr << " port " << port);
             socket::close(socket);
             return -1;
         }
@@ -200,7 +200,7 @@ int socket::open() {
 
     out_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (out_socket < 0) {
-        print_error("ERROR: socket fails");
+        debug_error("ERROR: socket fails");
         return out_socket;
     }
 
@@ -210,7 +210,7 @@ int socket::open() {
     val = 1;
     ret = ::setsockopt(out_socket, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
     if (ret < 0) {
-        print_error("ERROR: setsockopt fails");
+        debug_error("ERROR: setsockopt fails");
         socket::close(out_socket);
         return ret;
     }
@@ -221,7 +221,7 @@ int socket::open() {
     val = 1;
     ret = ::setsockopt(out_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&val, sizeof(int));
     if (ret < 0) {
-        print_error("ERROR: setsockopt fails");
+        debug_error("ERROR: setsockopt fails");
         socket::close(out_socket);
         return ret;
     }
@@ -277,7 +277,7 @@ int socket::accept(int socket, int timeout_ms) {
 
     new_socket = accept_timeout(socket, timeout_ms);
     if (new_socket < 0) {
-        print_error("ERROR: accept fails");
+        debug_error("ERROR: accept fails");
         return -1;
     }
 
@@ -285,7 +285,7 @@ int socket::accept(int socket, int timeout_ms) {
     flag = 1;
     ret = ::setsockopt(new_socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
     if (ret < 0) {
-        print_error("setsockopt: ");
+        debug_error("setsockopt: ");
         socket::close(new_socket);
         return -1;
     }
@@ -363,7 +363,7 @@ int64_t socket::send_str(int socket, const std::string& str) {
         ret = socket::send(socket, &size_str, sizeof(size_str));
     } while (ret < 0 && errno == EAGAIN);
     if (ret != sizeof(size_str)) {
-        print_error("send size of string");
+        debug_error("send size of string");
         return ret;
     }
     if (size_str == 0) {
@@ -374,7 +374,7 @@ int64_t socket::send_str(int socket, const std::string& str) {
         ret = socket::send(socket, &str[0], size_str);
     } while (ret < 0 && errno == EAGAIN);
     if (ret != static_cast<int64_t>(size_str)) {
-        print_error("send string");
+        debug_error("send string");
         return ret;
     }
     return ret;
@@ -388,7 +388,7 @@ int64_t socket::recv_str(int socket, std::string& str) {
         ret = socket::recv(socket, &size_str, sizeof(size_str));
     } while (ret < 0 && errno == EAGAIN);
     if (ret != sizeof(size_str)) {
-        print_error("send size of string");
+        debug_error("send size of string");
         return ret;
     }
     debug_info("Recv_str size " << size_str);
@@ -401,7 +401,7 @@ int64_t socket::recv_str(int socket, std::string& str) {
         ret = socket::recv(socket, &str[0], size_str);
     } while (ret < 0 && errno == EAGAIN);
     if (ret != static_cast<int64_t>(size_str)) {
-        print_error("send string");
+        debug_error("send string");
         return ret;
     }
     debug_info("Recv_str " << str);

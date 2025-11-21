@@ -246,8 +246,8 @@ void echo_server() {
                 }
             }
 
-            auto [req, b] = async_req.emplace(std::unique_ptr<lfi_request, void (*)(lfi_request *)>(
-                lfi_request_create(id), lfi_request_free));
+            auto [req, b] = async_req.emplace(
+                std::unique_ptr<lfi_request, void (*)(lfi_request *)>(lfi_request_create(id), lfi_request_free));
             if (msg_size < 0) {
                 debug_info("lfi_recv(" << id << ", data.data(), " << std::abs(msg_size) << ")");
                 auto recv_msg = lfi_recv_async(req->get(), data.data(), std::abs(msg_size));
@@ -386,8 +386,10 @@ void echo_server() {
 // }
 
 int server_fd;
+bool request_close = false;
 void signalHandler(int signum) {
     std::cout << "\nSignal (" << signum << ") received." << std::endl;
+    request_close = true;
     lfi_server_close(server_fd);
 }
 
@@ -415,7 +417,7 @@ int main() {
     print("Server start accepting " << LFI::ns::get_host_name() << " :");
     while (true) {
         if ((new_socket = lfi_server_accept(server_fd)) < 0) {
-            perror("accept");
+            if (!request_close) perror("accept");
             break;
         }
         print("Server accept client " << new_socket);

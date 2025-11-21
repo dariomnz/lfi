@@ -81,6 +81,7 @@ class profiler {
         std::string file_name = file_exe_name();
         file_name += ".profile.";
         file_name += std::to_string(getpid());
+        file_name += ".json";
         begin_session(file_name);
     }
 

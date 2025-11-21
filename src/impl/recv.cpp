@@ -36,7 +36,7 @@ lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
     debug_info("[LFI] Start");
 
     // Check if comm exists
-    lfi_comm *comm = get_comm(comm_id);
+    auto [lock, comm] = get_comm_and_mutex(comm_id);
     if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
@@ -145,8 +145,8 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         if (env::get_instance().LFI_fault_tolerance && tag != LFI_TAG_FT_PING && tag != LFI_TAG_FT_PONG) {
             req_lock.unlock();
             {
-                std::unique_lock lock(request.m_comm.m_ep.ft_any_comm_requests_mutex);
-                debug_info("Save request in any_comm_requests " << request);
+                std::unique_lock lock(request.m_comm.m_ep.ft_mutex);
+                debug_info("Save request in any_comm_requests " << &request);
                 request.m_comm.m_ep.ft_any_comm_requests.emplace(&request);
             }
             req_lock.lock();
@@ -157,7 +157,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         request.m_comm.rank_peer != ANY_COMM_PEER) {
         req_lock.unlock();
         {
-            std::scoped_lock lock(request.m_comm.m_ep.ft_comms_mutex, request.m_comm.ft_mutex);
+            std::scoped_lock lock(request.m_comm.m_ep.ft_mutex, request.m_comm.ft_mutex);
             request.m_comm.m_ep.ft_comms.emplace(&request.m_comm);
             request.m_comm.ft_comm_count++;
         }
@@ -183,7 +183,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
         if (ret == -FI_EAGAIN) {
             req_lock.unlock();
-            request.m_comm.m_ep.protected_progress();
+            request.m_comm.m_ep.protected_progress(false);
             req_lock.lock();
 
             if (timeout_ms >= 0) {
@@ -216,12 +216,12 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     request.source = request.m_comm.rank_peer;
 
     if (env::get_instance().LFI_fault_tolerance) {
+        auto &comm = request.m_comm;
+        debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << comm.rank_peer);
         req_lock.unlock();
         {
-            std::unique_lock ft_lock(request.m_comm.ft_mutex);
-            debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm "
-                                               << request.m_comm.rank_peer);
-            request.m_comm.ft_requests.insert(&request);
+            std::unique_lock ft_lock(comm.ft_mutex);
+            comm.ft_requests.insert(&request);
         }
         req_lock.lock();
     }
@@ -237,7 +237,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     lfi_msg msg = {};
 
     // Check if comm exists
-    lfi_comm *comm = get_comm(comm_id);
+    auto [lock, comm] = get_comm_and_mutex(comm_id);
     if (!comm) {
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
@@ -287,7 +287,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
 
         if (ret == -FI_EAGAIN) {
-            request.m_comm.m_ep.protected_progress();
+            request.m_comm.m_ep.protected_progress(false);
 
             if (request.m_comm.is_canceled) {
                 msg.error = -LFI_BROKEN_COMM;
@@ -318,7 +318,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
             ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
 
             if (ret == -FI_EAGAIN) {
-                request.m_comm.m_ep.protected_progress();
+                request.m_comm.m_ep.protected_progress(false);
 
                 if (request.m_comm.is_canceled) {
                     msg.error = -LFI_BROKEN_COMM;

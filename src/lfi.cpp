@@ -50,7 +50,7 @@ int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms) {
 
     client_socket = LFI::socket::client_init(serv_addr, port, timeout_ms);
     if (client_socket < 0) {
-        print_error("socket::client_init (" << serv_addr << ", " << port << ")");
+        debug_error("socket::client_init (" << serv_addr << ", " << port << ")");
         return client_socket;
     }
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -65,7 +65,7 @@ int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms) {
     };
 
     if (LFI::env::get_instance().LFI_async_connection) {
-        std::unique_lock fut_lock(lfi.m_comms_mutex);
+        std::unique_lock fut_lock(lfi.m_fut_comms_mutex);
         lfi.m_fut_comms.emplace(out, std::async(std::launch::async, func));
     } else {
         func();
@@ -88,7 +88,7 @@ int lfi_server_accept_t(int socket, int timeout_ms) {
 
     client_socket = LFI::socket::accept(socket, timeout_ms);
     if (client_socket < 0) {
-        print_error("socket::accept (" << socket << ", " << timeout_ms << ")");
+        debug_error("socket::accept (" << socket << ", " << timeout_ms << ")");
         return client_socket;
     }
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -102,7 +102,7 @@ int lfi_server_accept_t(int socket, int timeout_ms) {
     };
 
     if (LFI::env::get_instance().LFI_async_connection) {
-        std::unique_lock fut_lock(lfi.m_comms_mutex);
+        std::unique_lock fut_lock(lfi.m_fut_comms_mutex);
         lfi.m_fut_comms.emplace(out, std::async(std::launch::async, func));
     } else {
         func();

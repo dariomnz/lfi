@@ -50,7 +50,7 @@ struct lfi_comm {
     lfi_endpoint &m_ep;
 
     // For fault tolerance
-    std::mutex ft_mutex;
+    std::recursive_mutex ft_mutex;
     std::unordered_set<lfi_request *> ft_requests;
     using clock = std::chrono::high_resolution_clock;
     uint32_t ft_comm_count = 0;
@@ -75,15 +75,5 @@ struct lfi_comm {
     std::atomic_int8_t is_ready = 0;
 
     lfi_comm(lfi_endpoint &ep) : m_ep(ep) {}
-
-    void update_request_time() {
-        std::unique_lock lock(ft_mutex);
-        last_request_time = clock::now();
-    }
-
-    auto get_request_time() {
-        std::unique_lock lock(ft_mutex);
-        return last_request_time;
-    }
 };
 }  // namespace LFI

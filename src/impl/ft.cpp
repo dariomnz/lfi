@@ -24,9 +24,9 @@
 #include <mutex>
 
 #include "impl/debug.hpp"
-#include "impl/profiler.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
+#include "impl/profiler.hpp"
 #include "lfi.h"
 #include "lfi_error.h"
 
@@ -90,17 +90,53 @@ int LFI::ft_thread_ping_pong() {
         int progresed_peer = 0;
         if (!lfi.shm_ep.in_progress.load()) {
             // debug_info("[LFI] running ft ping pong thread shm");
-            progresed_shm = lfi.shm_ep.progress();
+            progresed_shm = lfi.shm_ep.progress(true);
         }
         if (!lfi.peer_ep.in_progress.load()) {
             // debug_info("[LFI] running ft ping pong thread peer");
-            progresed_peer = lfi.peer_ep.progress();
+            progresed_peer = lfi.peer_ep.progress(true);
         }
+        // If there are some progress rerun without sleep
         if (progresed_shm > 0 || progresed_peer > 0) continue;
+
         lfi.ft_cv.wait_for(ft_lock, std::chrono::milliseconds(1));
     }
     debug_info("[LFI] End");
     return 0;
+}
+
+void pong_callback([[maybe_unused]] int error, void *context) {
+    lfi_request *req = static_cast<lfi_request *>(context);
+    delete req;
+}
+
+void ping_callback([[maybe_unused]] int error, void *context) {
+    static int dummy = 0;
+    LFI &lfi = LFI::get_instance();
+    lfi_request *req = static_cast<lfi_request *>(context);
+    if (error == LFI_SUCCESS) {
+        debug_info("[LFI] send pong to " << req->source);
+        auto [lock, comm] = lfi.get_comm_and_mutex(req->source);
+        if (!comm) {
+            print("Error get_comm of " << req->source);
+            return;
+        }
+        auto fi_pong = new lfi_request(*comm);
+        fi_pong->callback = pong_callback;
+        fi_pong->callback_ctx = fi_pong;
+        int ret = lfi.async_send(&dummy, 0, LFI_TAG_FT_PONG, *fi_pong);
+        if (ret < 0) {
+            print("Error in async_send " << ret << " " << lfi_strerror(ret));
+            return;
+        }
+    }
+
+    // Repost recv PING
+    int ret = lfi.async_recv(&dummy, 0, LFI_TAG_FT_PING, *req);
+    if (ret < 0) {
+        print("Error in async_recv " << ret << " " << lfi_strerror(ret));
+        return;
+    }
 }
 
 int LFI::ft_setup_ping_pong() {
@@ -108,41 +144,15 @@ int LFI::ft_setup_ping_pong() {
     static int dummy = 0;
 
     auto create_ping = [this](auto any_comm) {
-        auto comm = get_comm(any_comm);
+        auto [lock, comm] = get_comm_and_mutex(any_comm);
         if (!comm) {
             print("Error get_comm ANY_COMM_SHM " << any_comm);
             return -1;
         }
-        auto ft_ping_shm = std::make_shared<lfi_request>(*comm);
-        ft_ping_shm->callback = [this, ft_ping_shm](int error) mutable {
-            if (error == LFI_SUCCESS) {
-                debug_info("[LFI] send pong to " << ft_ping_shm->source);
-                auto comm = get_comm(ft_ping_shm->source);
-                if (!comm) {
-                    print("Error get_comm of " << ft_ping_shm->source);
-                    return -1;
-                }
-                auto fi_pong = std::make_shared<lfi_request>(*comm);
-                fi_pong->callback = [fi_pong](int error) mutable {
-                    (void)error;
-                    fi_pong.reset();
-                };
-                int ret = async_send(&dummy, 0, LFI_TAG_FT_PONG, *fi_pong);
-                if (ret < 0) {
-                    print("Error in async_send");
-                    return ret;
-                }
-            }
-
-            // Repost recv PING
-            int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping_shm);
-            if (ret < 0) {
-                print("Error in async_recv");
-                return ret;
-            }
-            return 0;
-        };
-        int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping_shm);
+        auto &ft_ping = comm->m_ep.ft_ping_pongs.emplace_back(std::make_unique<lfi_request>(*comm));
+        ft_ping->callback = ping_callback;
+        ft_ping->callback_ctx = ft_ping.get();
+        int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping);
         if (ret < 0) {
             print("Error in async_recv");
             return ret;
@@ -151,6 +161,8 @@ int LFI::ft_setup_ping_pong() {
     };
 
     const size_t ping_pong_count = 8;
+    shm_ep.ft_ping_pongs.reserve(ping_pong_count);
+    peer_ep.ft_ping_pongs.reserve(ping_pong_count);
     for (size_t i = 0; i < ping_pong_count; i++) {
         debug_info("[LFI] create ft_ping_shm LFI_ANY_COMM_SHM");
         if (create_ping(LFI_ANY_COMM_SHM) < 0) {
@@ -181,8 +193,13 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
         // Check if necesary emit ping pong
         auto now = std::chrono::high_resolution_clock::now();
         if (comm->ft_current_status == lfi_comm::ft_status::IDLE) {
+            decltype(comm->last_request_time) last_request_time;
+            {
+                std::unique_lock ft_lock(comm->ft_mutex);
+                last_request_time = comm->last_request_time;
+            }
             int32_t elapsed_ms_req =
-                std::chrono::duration_cast<std::chrono::milliseconds>(now - comm->get_request_time()).count();
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - last_request_time).count();
             if (elapsed_ms_req > ft_ms) {
                 debug_info("[LFI] comm " << comm->rank_peer << " elapsed_ms_req(" << elapsed_ms_req << ") > ft_ms("
                                          << ft_ms << ")");
@@ -246,6 +263,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
             count_sended++;
         }
         if (comm->ft_current_status == lfi_comm::ft_status::WAIT_PING_PONG) {
+            std::scoped_lock ping_pong_lock(comm->ft_ping->mutex, comm->ft_pong->mutex);
             if (comm->ft_ping->is_completed() && comm->ft_pong->is_completed()) {
                 debug_info("[LFI] comm " << comm->rank_peer << " WAIT_PING_PONG -> IDLE");
                 comm->ft_current_status = lfi_comm::ft_status::IDLE;
@@ -264,68 +282,46 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
     };
 
     // Report errors in comms in the any_comm requests
-    int64_t ft_any_comm_requests_size;
+    // int64_t ft_any_comm_requests_size;
+    std::unique_lock ft_ep_lock(lfi_ep.ft_mutex, std::defer_lock);
     {
-        std::unique_lock lock(lfi_ep.ft_any_comm_requests_mutex);
-        ft_any_comm_requests_size = lfi_ep.ft_any_comm_requests.size();
-    }
-    if (ft_any_comm_requests_size > 0) {
-        std::vector<uint32_t> temp_comms_ids;
-        {
-            std::unique_lock lock(m_comms_mutex);
-            temp_comms_ids.reserve(m_comms.size());
-            for (auto &&comm : m_comms) {
-                temp_comms_ids.emplace_back(comm.first);
+        std::shared_lock comm_lock(m_comms_mutex);
+        ft_ep_lock.lock();
+        if (lfi_ep.ft_any_comm_requests.size() > 0) {
+            ft_ep_lock.unlock();
+            for (auto &&[comm_id, comm] : m_comms) {
+                if (comm && comm->m_ep == lfi_ep && comm->rank_peer != LFI_ANY_COMM_SHM &&
+                    comm->rank_peer != LFI_ANY_COMM_PEER) {
+                    // debug_info("Check ft in comm " << comm->rank_peer << " from all comms");
+                    innerloop(comm.get());
+                }
             }
-        }
-        for (auto &&comm_id : temp_comms_ids) {
-            lfi_comm *comm = nullptr;
-            {
-                std::unique_lock lock(m_comms_mutex);
-                auto it = m_comms.find(comm_id);
-                if (it == m_comms.end()) continue;
-                comm = it->second.get();
-            }
-            if (!comm) continue;
-            if (comm && comm->m_ep == lfi_ep && comm->rank_peer != LFI_ANY_COMM_SHM &&
-                comm->rank_peer != LFI_ANY_COMM_PEER) {
-                // debug_info("Check ft in comm " << comm->rank_peer << " from all comms");
+        } else {
+            std::unordered_set<lfi_comm *> temp_ft_comms(lfi_ep.ft_comms);
+            ft_ep_lock.unlock();
+            for (auto &&comm : temp_ft_comms) {
+                // debug_info("Check ft in comm " << comm->rank_peer << " from lfi_ep.ft_comms");
                 innerloop(comm);
             }
         }
-    } else {
-        lfi_ep.ft_comms_mutex.lock();
-        std::unordered_set<lfi_comm *> temp_ft_comms(lfi_ep.ft_comms);
-        lfi_ep.ft_comms_mutex.unlock();
-        for (auto &&comm : temp_ft_comms) {
-            // debug_info("Check ft in comm " << comm->rank_peer << " from lfi_ep.ft_comms");
-            innerloop(comm);
-        }
-    }
-    {
         for (auto &&comm_id : canceled_coms) {
             debug_info("Remove " << comm_id << " comm from ft_comms");
-            auto comm_ptr = get_comm(comm_id);
+            auto comm_ptr = get_comm_internal(comm_lock, comm_id);
             if (!comm_ptr) continue;
             ft_cancel_comm(*comm_ptr);
         }
     }
+    ft_ep_lock.lock();
 
-    {
-        std::unique_lock lock(lfi_ep.ft_any_comm_requests_mutex);
-        ft_any_comm_requests_size = lfi_ep.ft_any_comm_requests.size();
-    }
-    std::unique_lock ft_pending_failed_lock(lfi_ep.ft_pending_failed_comms_mutex);
-    if (ft_any_comm_requests_size > 0 && (lfi_ep.ft_pending_failed_comms.size() > 0 || canceled_coms.size() > 0)) {
+    if (lfi_ep.ft_any_comm_requests.size() > 0 &&
+        (lfi_ep.ft_pending_failed_comms.size() > 0 || canceled_coms.size() > 0)) {
+        static std::vector<lfi_request *> request_to_cancel;
+        request_to_cancel.reserve(10);
+
         {
             // First if there are pending use them cancelling any comm requests
-            std::unordered_set<lfi_request *> temp_any_comm_requests;
-            {
-                std::unique_lock lock(lfi_ep.ft_any_comm_requests_mutex);
-                temp_any_comm_requests = lfi_ep.ft_any_comm_requests;
-            }
-            auto size = std::min(lfi_ep.ft_pending_failed_comms.size(), temp_any_comm_requests.size());
-            auto any_req_it = temp_any_comm_requests.begin();
+            auto size = std::min(lfi_ep.ft_pending_failed_comms.size(), lfi_ep.ft_any_comm_requests.size());
+            auto any_req_it = lfi_ep.ft_any_comm_requests.begin();
             auto canceled_comm_it = lfi_ep.ft_pending_failed_comms.begin();
             for (uint32_t i = 0; i < size; i++) {
                 auto &any_req = *any_req_it;
@@ -337,24 +333,19 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
                     any_req->source = canceled_comm;
                     any_req->error = -LFI_BROKEN_COMM;
                 }
-                any_req->cancel();
+                // Cancel without mutexs
+                request_to_cancel.emplace_back(any_req);
 
                 // Next iterators
                 ++any_req_it;
                 canceled_comm_it = lfi_ep.ft_pending_failed_comms.erase(canceled_comm_it);
             }
         }
-        ft_pending_failed_lock.unlock();
 
         {
             // With the remaining any comm requests use the current cancelled
-            std::unordered_set<lfi_request *> temp_any_comm_requests;
-            {
-                std::unique_lock lock(lfi_ep.ft_any_comm_requests_mutex);
-                temp_any_comm_requests = lfi_ep.ft_any_comm_requests;
-            }
-            auto size = std::min(canceled_coms.size(), temp_any_comm_requests.size());
-            auto any_req_it = temp_any_comm_requests.begin();
+            auto size = std::min(canceled_coms.size(), lfi_ep.ft_any_comm_requests.size());
+            auto any_req_it = lfi_ep.ft_any_comm_requests.begin();
             auto cancel_comm_it = canceled_coms.begin();
             for (uint32_t i = 0; i < size; i++) {
                 auto &any_req = *any_req_it;
@@ -366,7 +357,8 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
                     any_req->source = cancel_comm;
                     any_req->error = -LFI_BROKEN_COMM;
                 }
-                any_req->cancel();
+                // Cancel without mutexs
+                request_to_cancel.emplace_back(any_req);
 
                 // Next iterators
                 ++any_req_it;
@@ -378,14 +370,20 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
                 auto &cancel_comm = *cancel_comm_it;
                 debug_info("Save to pending request canceled comms that coudnt be reported to any comms "
                            << cancel_comm);
-                {
-                    std::unique_lock lock(lfi_ep.ft_pending_failed_comms_mutex);
-                    lfi_ep.ft_pending_failed_comms.emplace(cancel_comm);
-                }
+                lfi_ep.ft_pending_failed_comms.emplace(cancel_comm);
 
                 // Next iterators
                 ++cancel_comm_it;
             }
+        }
+
+        {
+            ft_ep_lock.unlock();
+            // Cancel request without mutexs
+            for (auto req : request_to_cancel) {
+                req->cancel();
+            }
+            request_to_cancel.clear();
         }
     }
 
@@ -403,17 +401,16 @@ int LFI::ft_cancel_comm(lfi_comm &comm) {
     comm.is_canceled = true;
 
     debug_info("[LFI] cancel all request in comm with error " << comm.rank_peer);
+    // In a temp set because cancel call complete that erase the request from ft_requests
     std::unordered_set<lfi_request *> temp_requests(comm.ft_requests);
-    lock.unlock();
     for (auto &request : temp_requests) {
         if (request == nullptr) continue;
         request->cancel();
     }
     {
-        std::unique_lock ft_lock(comm.m_ep.ft_comms_mutex);
+        std::unique_lock ft_lock(comm.m_ep.ft_mutex);
         comm.m_ep.ft_comms.erase(&comm);
     }
-    lock.lock();
     comm.ft_requests.clear();
 
     comm.ft_comm_count = 0;

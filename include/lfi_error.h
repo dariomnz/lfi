@@ -36,10 +36,11 @@ extern "C" {
 #define LFI_NOT_COMPLETED   7   // Request not completed
 #define LFI_NULL_REQUEST    8   // Request is NULL
 #define LFI_SEND_ANY_COMM   9   // Use of ANY_COMM in send
-#define LFI_LIBFABRIC_ERROR 10  // Internal libfabric error
-#define LFI_GROUP_NO_INIT   11  // The group is not initialized
-#define LFI_GROUP_NO_SELF   12  // The hostname of the current process is missing
-#define LFI_GROUP_INVAL     13  // Invalid argument
+#define LFI_ETRUN_RECV      10  // The published receive buffer is smaller than the received one
+#define LFI_LIBFABRIC_ERROR 11  // Internal libfabric error
+#define LFI_GROUP_NO_INIT   12  // The group is not initialized
+#define LFI_GROUP_NO_SELF   13  // The hostname of the current process is missing
+#define LFI_GROUP_INVAL     14  // Invalid argument
 
 #ifdef __cplusplus
 }

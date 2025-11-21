@@ -118,7 +118,7 @@ inline std::string fi_cq_err_entry_to_string(const fi_cq_err_entry &entry, fid_c
     return out.str();
 }
 
-int lfi_endpoint::progress() {
+int lfi_endpoint::progress(bool call_callbacks) {
     // LFI_PROFILE_FUNCTION();
     int ret = 0;
     const int MAX_COMP_COUNT = 8;
@@ -157,7 +157,11 @@ int lfi_endpoint::progress() {
                     error = -LFI_CANCELED;
                 } else if (std::abs(err.err) == FI_ENOMSG) {
                     error = -LFI_PEEK_NO_MSG;
+                } else if (std::abs(err.err) == FI_ETRUNC) {
+                    error = -LFI_ETRUN_RECV;
                 } else {
+                    print(fi_strerror(err.err));
+                    print(fi_cq_err_entry_to_string(err, this->cq));
                     error = -LFI_LIBFABRIC_ERROR;
                 }
                 request->complete(error);
@@ -170,13 +174,11 @@ int lfi_endpoint::progress() {
                 debug_info(fi_cq_tagged_entry_to_string(comp[i]));
                 lfi_request *request = ctx->get_request();
                 if (!request) {
-                    print(fi_cq_tagged_entry_to_string(comp[i]));
-                    print("[LFI] [ERROR] internal error, context without request");
+                    // debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+                    debug_info("[LFI] [ERROR] internal error, context without request");
                     m_lfi.req_ctx_factory.destroy(ctx);
                     continue;
                 }
-                uint32_t comm_id = UNINITIALIZED_COMM;
-                uint32_t source = UNINITIALIZED_COMM;
                 {
                     std::unique_lock request_lock(request->mutex);
                     // If len is not 0 is a RECV
@@ -184,30 +186,22 @@ int lfi_endpoint::progress() {
                         request->size = comp[i].len;
                         request->tag = (comp[i].tag & MASK_TAG);
                         request->source = ((comp[i].tag & MASK_RANK) >> MASK_RANK_BYTES);
-
-                        if (env::get_instance().LFI_fault_tolerance) {
-                            comm_id = request->m_comm.rank_peer;
-                            source = request->source;
-                        }
                     }
                     debug_info("Completed: " << *request);
                 }
-                if (source != UNINITIALIZED_COMM) {
-                    // Update time outside request lock
-                    if (comm_id == ANY_COMM_SHM || comm_id == ANY_COMM_PEER) {
-                        auto comm = m_lfi.get_comm(source);
-                        if (comm) {
-                            comm->update_request_time();
-                        }
-                    } else {
-                        auto comm = m_lfi.get_comm(comm_id);
-                        if (comm) {
-                            comm->update_request_time();
-                        }
-                    }
-                }
                 request->complete(LFI_SUCCESS);
                 m_lfi.req_ctx_factory.destroy(ctx);
+            }
+        }
+        if (call_callbacks) {
+            std::vector<std::tuple<lfi_request_callback, int, void *>> swap_callbacks;
+            {
+                std::unique_lock callback_lock(callbacks_mutex);
+                callbacks.swap(swap_callbacks);
+            }
+            for (auto &&[callback, error, ctx] : swap_callbacks) {
+                debug_info("[LFI] calling callbacks");
+                callback(error, ctx);
             }
         }
     } while (ret == MAX_COMP_COUNT || ret == -FI_EAVAIL);
@@ -232,15 +226,15 @@ int lfi_endpoint::progress() {
     return ret;
 }
 
-bool lfi_endpoint::protected_progress() {
+int lfi_endpoint::protected_progress(bool call_callbacks) {
     // LFI_PROFILE_FUNCTION();
-    bool made_progress = false;
+    int made_progress = -1;
     if (!env::get_instance().LFI_efficient_progress || !in_progress.exchange(true)) {
         // debug_info("Run progress from protected_progress");
-        progress();
+        made_progress = progress(call_callbacks);
         in_progress.store(false);
-        made_progress = true;
     }
+
     return made_progress;
 }
 }  // namespace LFI

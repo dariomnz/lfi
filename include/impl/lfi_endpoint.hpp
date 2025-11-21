@@ -24,9 +24,14 @@
 #include <rdma/fi_endpoint.h>
 
 #include <atomic>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <unordered_set>
 #include <variant>
+#include <vector>
+
+#include "lfi_async.h"
 
 namespace LFI {
 
@@ -37,9 +42,9 @@ struct lfi_request;
 struct wait_struct;
 
 struct lfi_endpoint {
-    LFI& m_lfi;
+    LFI &m_lfi;
 
-    lfi_endpoint(LFI& lfi, bool shm) : m_lfi(lfi), is_shm(shm) {}
+    lfi_endpoint(LFI &lfi, bool shm) : m_lfi(lfi), is_shm(shm) {}
 
     bool use_scalable_ep = true;
     struct fi_info *hints = nullptr;
@@ -56,17 +61,18 @@ struct lfi_endpoint {
 
     std::atomic_bool in_progress = {false};
 
-    std::mutex ft_any_comm_requests_mutex = {};
+    std::mutex ft_mutex = {};
     std::unordered_set<lfi_request *> ft_any_comm_requests = {};
-    
-    std::mutex ft_pending_failed_comms_mutex = {};
     std::unordered_set<uint32_t> ft_pending_failed_comms = {};
-    
-    std::mutex ft_comms_mutex = {};
     std::unordered_set<lfi_comm *> ft_comms = {};
+    std::vector<std::unique_ptr<lfi_request>> ft_ping_pongs;
 
     std::mutex waiting_requests_mutex = {};
     std::unordered_set<std::variant<lfi_request *, wait_struct *>> waiting_requests = {};
+
+    std::mutex callbacks_mutex = {};
+    std::vector<std::tuple<lfi_request_callback, int, void *>> callbacks = {};
+
 
     bool initialized() { return enable_ep; }
 
@@ -82,9 +88,9 @@ struct lfi_endpoint {
         }
         return false;
     }
-    
-    bool protected_progress();
-    int progress();
+
+    int protected_progress(bool call_callbacks);
+    int progress(bool call_callbacks);
 };
 
 }  // namespace LFI

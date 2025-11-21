@@ -33,8 +33,10 @@
 namespace LFI {
 
 std::ostream &operator<<(std::ostream &os, lfi_request &req) {
-    os << "Request " << (req.is_send ? "send " : "recv ");
-    os << std::hex << &req;
+    os << "Request " << (req.is_send ? "send" : "recv");
+    if (req.wait_context) {
+        os << " ctx " << std::hex << req.wait_context;
+    }
     os << std::dec << " comm " << lfi_comm_to_string(req.m_comm.rank_peer) << " {size:" << req.size
        << ", tag:" << lfi_tag_to_string(req.tag) << ", source:" << lfi_comm_to_string(req.source) << "}";
     if (req.is_inject) {
@@ -66,6 +68,36 @@ void lfi_request::reset() {
 
 void lfi_request::complete(int err) {
     LFI_PROFILE_FUNCTION();
+
+    if (env::get_instance().LFI_fault_tolerance) {
+        {
+            std::unique_lock ft_lock(m_comm.ft_mutex);
+            debug_info("[LFI] erase ft_requests " << this << " in comm " << m_comm.rank_peer);
+            m_comm.ft_requests.erase(this);
+            {
+                std::unique_lock lock(m_comm.m_ep.ft_mutex);
+                if (m_comm.rank_peer != ANY_COMM_SHM && m_comm.rank_peer != ANY_COMM_PEER) {
+                    m_comm.ft_comm_count = (m_comm.ft_comm_count > 0) ? (m_comm.ft_comm_count - 1) : 0;
+                    debug_info("[LFI] ft_comm_count " << m_comm.ft_comm_count);
+                    if (m_comm.ft_comm_count == 0) {
+                        m_comm.m_ep.ft_comms.erase(&m_comm);
+                    }
+                } else {
+                    debug_info("[LFI] remove of ft_any_comm_requests " << this);
+                    m_comm.m_ep.ft_any_comm_requests.erase(this);
+                }
+            }
+        }
+        if (!is_send && err == LFI_SUCCESS) {
+            // Update time outside request lock
+            auto [lock, comm] = m_comm.m_ep.m_lfi.get_comm_and_mutex(source);
+            if (comm) {
+                std::unique_lock ft_lock(comm->ft_mutex);
+                comm->last_request_time = lfi_comm::clock::now();
+            }
+        }
+    }
+
     std::unique_lock request_lock(mutex);
     debug_info("[LFI] >> Begin complete request " << *this);
     // If completed do nothing
@@ -87,35 +119,13 @@ void lfi_request::complete(int err) {
             shared_wait_struct->wait_cv.notify_all();
         }
     }
-
-    auto aux_callback = callback;
-    auto &comm = m_comm;
-    request_lock.unlock();
-    if (env::get_instance().LFI_fault_tolerance) {
-        {
-            std::unique_lock ft_lock(comm.ft_mutex);
-            debug_info("[LFI] erase ft_requests " << this << " in comm " << comm.rank_peer);
-            comm.ft_requests.erase(this);
-
-            if (comm.rank_peer != ANY_COMM_SHM && comm.rank_peer != ANY_COMM_PEER) {
-                std::unique_lock lock(comm.m_ep.ft_comms_mutex);
-                comm.ft_comm_count = (comm.ft_comm_count > 0) ? (comm.ft_comm_count - 1) : 0;
-                debug_info("[LFI] ft_comm_count " << comm.ft_comm_count);
-                if (comm.ft_comm_count == 0) {
-                    comm.m_ep.ft_comms.erase(&comm);
-                }
-            } else {
-                std::unique_lock lock(comm.m_ep.ft_any_comm_requests_mutex);
-                debug_info("[LFI] remove of ft_any_comm_requests " << this);
-                comm.m_ep.ft_any_comm_requests.erase(this);
-            }
-        }
-    }
-    if (aux_callback) {
+    if (callback) {
         // Call the callback with the current error of the request
-        debug_info("[LFI] calling callback on complete for request " << this);
-        aux_callback(error);
-        // Maybe the callback free the request
+        debug_info("[LFI] register callback on complete for request " << this);
+        std::unique_lock callback_lock(m_comm.m_ep.callbacks_mutex);
+        m_comm.m_ep.callbacks.emplace_back(callback, error, callback_ctx);
+        // Unlock in case the callback free the request when the callback_lock is unlocked
+        request_lock.unlock();
     } else {
         debug_info("[LFI] there are no callback to call");
         debug_info("[LFI] << End complete request");
@@ -124,11 +134,15 @@ void lfi_request::complete(int err) {
 
 void lfi_request::cancel() {
     LFI_PROFILE_FUNCTION();
+    lfi_endpoint *ep;
+    int error = -LFI_CANCELED;
     {
         std::unique_lock request_lock(mutex);
         debug_info("[LFI] Start " << *this);
         // The inject is not cancelled
         if (is_inject || is_completed()) return;
+
+        ep = &m_comm.m_ep;
 
         fid_ep *p_ep = nullptr;
         if (is_send) {
@@ -142,12 +156,8 @@ void lfi_request::cancel() {
         // ref: https://github.com/ofiwg/libfabric/issues/7795
         [[maybe_unused]] auto ret = fi_cancel(&p_ep->fid, this);
         debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
-    }
 
-    // Check if completed to no report error
-    int error = -LFI_CANCELED;
-    {
-        std::unique_lock request_lock(mutex);
+        // Check if completed to no report error
         if (!is_completed() || error) {
             if (m_comm.is_canceled || error == -LFI_BROKEN_COMM) {
                 error = -LFI_BROKEN_COMM;
@@ -156,11 +166,12 @@ void lfi_request::cancel() {
             }
         }
     }
-    complete(error);
 
     // This is after complete because complete unassign the context
     // Try one progress to read the canceled and not accumulate errors
-    m_comm.m_ep.protected_progress();
+    ep->protected_progress(false);
+
+    complete(error);
 
     debug_info("[LFI] End " << this);
 }

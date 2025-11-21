@@ -87,7 +87,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
             if (!env::get_instance().LFI_efficient_progress || !ep.in_progress.exchange(true)) {
                 while (request.wait_context && !is_timeout) {
                     request_lock.unlock();
-                    ep.progress();
+                    ep.progress(true);
                     request_lock.lock();
                     is_timeout = wait_check_timeout(timeout_ms, start);
                 }
@@ -186,10 +186,10 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                 made_progress = false;
                 wait_lock.unlock();
                 if (wait_shm) {
-                    made_progress = shm_ep.protected_progress();
+                    made_progress |= shm_ep.protected_progress(true) > 0;
                 }
                 if (wait_peer) {
-                    made_progress = peer_ep.protected_progress();
+                    made_progress |= peer_ep.protected_progress(true) > 0;
                 }
                 wait_lock.lock();
                 if (!made_progress && shared_wait.wait_count > 0) {

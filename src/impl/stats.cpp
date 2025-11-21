@@ -45,7 +45,7 @@ void LFI::dump_stats() {
     std::cerr << "-------------------------------[LFI STATS BEGIN] "
               << format_time<std::chrono::high_resolution_clock>(now) << "-------------------------------" << std::endl;
     {
-        std::unique_lock lock(m_comms_mutex);
+        std::shared_lock lock(m_comms_mutex);
         std::cerr << "Comms size " << m_comms.size() << std::endl;
         for (auto &&[key, comm] : m_comms) {
             if (!comm) {
@@ -90,7 +90,7 @@ void LFI::dump_stats() {
                   << " provider: " << endpoint.info->fabric_attr->prov_name << std::endl;
 
         {
-            std::unique_lock lock(endpoint.ft_any_comm_requests_mutex);
+            std::unique_lock lock(endpoint.ft_mutex);
             std::cerr << indent(1) << "ft_any_comm_requests size: " << endpoint.ft_any_comm_requests.size()
                       << std::endl;
             for (auto &&req : endpoint.ft_any_comm_requests) {
@@ -99,11 +99,18 @@ void LFI::dump_stats() {
             }
         }
         {
-            std::unique_lock lock(endpoint.ft_pending_failed_comms_mutex);
+            std::unique_lock lock(endpoint.ft_mutex);
             std::cerr << indent(1) << "ft_pending_failed_comms size: " << endpoint.ft_pending_failed_comms.size()
                       << std::endl;
             for (auto &&comm : endpoint.ft_pending_failed_comms) {
                 std::cerr << indent(2) << "Comm " << lfi_comm_to_string(comm) << std::endl;
+            }
+        }
+        {
+            std::unique_lock lock(endpoint.ft_mutex);
+            std::cerr << indent(1) << "ft_comms size: " << endpoint.ft_comms.size() << std::endl;
+            for (auto &&comm : endpoint.ft_comms) {
+                std::cerr << indent(2) << "Comm " << comm->rank_peer << std::endl;
             }
         }
 
@@ -117,13 +124,6 @@ void LFI::dump_stats() {
                 } else if (std::get_if<wait_struct *>(&ptr)) {
                     std::cerr << indent(2) << "wait_struct" << std::endl;
                 }
-            }
-        }
-        {
-            std::unique_lock lock(endpoint.ft_comms_mutex);
-            std::cerr << indent(1) << "ft_comms size: " << endpoint.ft_comms.size() << std::endl;
-            for (auto &&comm : endpoint.ft_comms) {
-                std::cerr << indent(2) << "Comm " << comm->rank_peer << std::endl;
             }
         }
     };

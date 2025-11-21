@@ -26,6 +26,7 @@
 #include <mutex>
 #include <sstream>
 
+#include "lfi_async.h"
 #include "lfi_comm.hpp"
 
 namespace LFI {
@@ -55,7 +56,7 @@ struct lfi_request_context;
 struct lfi_request {
     lfi_comm &m_comm;
     std::mutex mutex = {};
-    std::condition_variable_any cv = {};
+    std::condition_variable cv = {};
     int error = 0;
     // bool wait_context = true;
     lfi_request_context *wait_context = nullptr;
@@ -68,7 +69,8 @@ struct lfi_request {
     uint32_t source = UNINITIALIZED_COMM;
 
     wait_struct *shared_wait_struct = nullptr;
-    std::function<void(int)> callback = nullptr;
+    lfi_request_callback callback = nullptr;
+    void *callback_ctx = nullptr;
     lfi_request(lfi_comm &comm) : m_comm(comm) {}
 
     // Delete default constructor
@@ -88,6 +90,7 @@ struct lfi_request {
 
     bool is_completed() { return !wait_context; }
 
+    // Warning: the callback can free the request before the complete return
     void complete(int error);
 
     void cancel();

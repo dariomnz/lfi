@@ -38,10 +38,12 @@ void lfi_request_set_callback(lfi_request *req, lfi_request_callback func_ptr, v
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     std::unique_lock request_lock(request->mutex);
     if (func_ptr) {
-        request->callback = [func_ptr, context](int error) { func_ptr(error, context); };
+        request->callback = func_ptr;
+        request->callback_ctx = context;
         debug_info("Setting callback to func_ptr wth context");
     } else {
         request->callback = nullptr;
+        request->callback_ctx = nullptr;
     }
     debug_info("(" << req << ")>> End");
 }
@@ -50,7 +52,7 @@ lfi_request *lfi_request_create(int id) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << id << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    LFI::lfi_comm *comm = lfi.get_comm(id);
+    auto [lock, comm] = lfi.get_comm_and_mutex(id);
     if (!comm) {
         debug_info("(" << id << ")=" << nullptr << " >> End");
         return nullptr;

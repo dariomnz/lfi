@@ -38,7 +38,6 @@ using namespace bw_examples;
 
 #define TAG_MSG 100
 
-static std::unique_ptr<ThreadPool> tpool = std::make_unique<ThreadPool>();
 static std::atomic<int> clients = 0;
 
 // void echo_server() {
@@ -180,6 +179,7 @@ void echo_server() {
         print("Error in lfi_trecv_async");
         return;
     }
+    ThreadPool tpool(4);
     while (true) {
         debug_info("Start recv any ack");
 
@@ -240,7 +240,8 @@ void echo_server() {
                 debug_info("lfi_recv(" << id << ", data.data(), " << std::abs(msg_size) << ")");
                 auto recv_msg = lfi_recv(id, data.data(), std::abs(msg_size));
                 if (recv_msg < 0) {
-                    print("Error lfi_recv(" << id << ") = " << recv_msg << " " << lfi_strerror(recv_msg));
+                    print("Error lfi_recv(" << id << ", size=" << std::abs(msg_size) << ") = " << recv_msg << " "
+                                            << lfi_strerror(recv_msg));
                     lfi_client_close(id);
                     return -1;
                 }
@@ -264,7 +265,8 @@ void echo_server() {
                 debug_info("lfi_send(" << id << ", data.data(), " << std::abs(msg_size) << ")");
                 auto send_msg = lfi_send(id, data.data(), std::abs(msg_size));
                 if (send_msg < 0) {
-                    print("Error lfi_send(" << id << ") = " << send_msg << " " << lfi_strerror(send_msg));
+                    print("Error lfi_send(" << id << ", size=" << std::abs(msg_size) << ") = " << send_msg << " "
+                                            << lfi_strerror(send_msg));
                     lfi_client_close(id);
                     return -1;
                 }
@@ -273,7 +275,7 @@ void echo_server() {
         };
 
         // msg_op();
-        tpool->enqueue(msg_op);
+        tpool.enqueue(msg_op);
     }
 }
 
