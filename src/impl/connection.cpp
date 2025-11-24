@@ -122,7 +122,7 @@ int LFI::init_server(int socket, int32_t comm_id) {
     }
 
     ret = comm->rank_peer;
-    comm->is_ready = 1;
+    comm->is_ready = lfi_comm::comm_status::READY_INTERNAL;
 
     // Do a send recv because some providers need it
     int buf = 123;
@@ -140,7 +140,7 @@ int LFI::init_server(int socket, int32_t comm_id) {
         return msg.error;
     }
 
-    comm->is_ready = 2;
+    comm->is_ready = lfi_comm::comm_status::READY;
 
     debug_info("[LFI] End = " << ret);
     return ret;
@@ -242,7 +242,7 @@ int LFI::init_client(int socket, int32_t comm_id) {
     }
 
     ret = comm->rank_peer;
-    comm->is_ready = 1;
+    comm->is_ready = lfi_comm::comm_status::READY_INTERNAL;
 
     // Do a recv send because some providers need it
     int buf = 123;
@@ -259,7 +259,7 @@ int LFI::init_client(int socket, int32_t comm_id) {
                                                         << lfi_strerror(msg.error));
         return msg.error;
     }
-    comm->is_ready = 2;
+    comm->is_ready = lfi_comm::comm_status::READY;
 
     debug_info("[LFI] End = " << ret);
     return ret;

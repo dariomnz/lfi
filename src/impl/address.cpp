@@ -31,14 +31,14 @@ int LFI::get_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& out_addr) {
     debug_info("[LFI] Start");
 
     size_t size_addr = 0;
-    ret = fi_getname(&lfi_comm.m_ep.ep->fid, out_addr.data(), &size_addr);
+    ret = fi_getname(&lfi_comm.m_endpoint.ep->fid, out_addr.data(), &size_addr);
     if (ret != -FI_ETOOSMALL) {
         printf("fi_getname error %d\n", ret);
         return ret;
     }
     debug_info("[LFI] size_addr " << size_addr);
     out_addr.resize(size_addr);
-    ret = fi_getname(&lfi_comm.m_ep.ep->fid, out_addr.data(), &size_addr);
+    ret = fi_getname(&lfi_comm.m_endpoint.ep->fid, out_addr.data(), &size_addr);
     if (ret) {
         printf("fi_getname error %d\n", ret);
         return ret;
@@ -52,7 +52,7 @@ int LFI::register_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& addr) {
     int ret = -1;
     fi_addr_t fi_addr;
     debug_info("[LFI] Start");
-    ret = fi_av_insert(lfi_comm.m_ep.av, addr.data(), 1, &fi_addr, 0, NULL);
+    ret = fi_av_insert(lfi_comm.m_endpoint.av, addr.data(), 1, &fi_addr, 0, NULL);
     if (ret != 1) {
         printf("av insert error %d\n", ret);
         return ret;
@@ -71,7 +71,7 @@ int LFI::remove_addr(lfi_comm& lfi_comm) {
     debug_info("[LFI] Start");
 
     debug_info("[LFI] remove fi_addr = " << lfi_comm.fi_addr);
-    ret = fi_av_remove(lfi_comm.m_ep.av, &lfi_comm.fi_addr, 1, 0);
+    ret = fi_av_remove(lfi_comm.m_endpoint.av, &lfi_comm.fi_addr, 1, 0);
     if (ret != FI_SUCCESS) {
         print("av remove error " << ret << " " << fi_strerror(ret));
         return ret;

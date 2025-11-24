@@ -54,7 +54,8 @@ struct lfi_msg {
 // Forward declaration
 struct lfi_request_context;
 struct lfi_request {
-    lfi_comm &m_comm;
+    lfi_endpoint &m_endpoint;
+    uint32_t m_comm_id;
     std::mutex mutex = {};
     std::condition_variable cv = {};
     int error = 0;
@@ -71,7 +72,7 @@ struct lfi_request {
     wait_struct *shared_wait_struct = nullptr;
     lfi_request_callback callback = nullptr;
     void *callback_ctx = nullptr;
-    lfi_request(lfi_comm &comm) : m_comm(comm) {}
+    lfi_request(lfi_comm &comm) : m_endpoint(comm.m_endpoint), m_comm_id(comm.rank_peer) {}
 
     // Delete default constructor
     lfi_request() = delete;

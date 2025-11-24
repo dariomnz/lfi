@@ -79,7 +79,7 @@ lfi_comm* LFI::create_any_comm(lfi_endpoint& lfi_ep, uint32_t comm_id) {
                                            std::forward_as_tuple(std::make_unique<lfi_comm>(lfi_ep)));
     key->second->rank_peer = new_id;
     key->second->rank_self_in_peer = new_id;
-    key->second->is_ready = 2;
+    key->second->is_ready = lfi_comm::comm_status::READY;
     debug_info("[LFI] rank_peer " << key->second->rank_peer);
     debug_info("[LFI] End");
     return key->second.get();
@@ -116,7 +116,7 @@ lfi_comm* LFI::get_comm_internal(std::shared_lock<std::shared_mutex>& comms_lock
     }
 
     // Not necesary to wait when is ready internal
-    if (comm_it->second != nullptr && comm_it->second->is_ready == 1) {
+    if (comm_it->second != nullptr && comm_it->second->is_ready == lfi_comm::comm_status::READY_INTERNAL) {
         m_fut_wait_cv.notify_all();
         debug_info("[LFI] End comm " << id << " is ready");
         return comm_it->second.get();
@@ -128,10 +128,12 @@ lfi_comm* LFI::get_comm_internal(std::shared_lock<std::shared_mutex>& comms_lock
     }
     if (fut_it.empty()) {
         // There are no fut for the comm so wait to the resolution of the fut in another thread
-        if (comm_it->second == nullptr || (comm_it->second != nullptr && comm_it->second->is_ready != 2)) {
+        if (comm_it->second == nullptr ||
+            (comm_it->second != nullptr && comm_it->second->is_ready != lfi_comm::comm_status::READY)) {
             debug_info("[LFI] wait comm " << id << " not ready");
-            m_fut_wait_cv.wait(comms_lock,
-                               [&]() { return comm_it->second != nullptr && comm_it->second->is_ready == 2; });
+            m_fut_wait_cv.wait(comms_lock, [&]() {
+                return comm_it->second != nullptr && comm_it->second->is_ready == lfi_comm::comm_status::READY;
+            });
         }
 
         debug_info("[LFI] End comm " << id << " ready");
@@ -177,8 +179,8 @@ int LFI::close_comm(uint32_t id) {
 
         remove_addr(*comm);
         {
-            std::unique_lock lock(comm->m_ep.ft_mutex);
-            comm->m_ep.ft_comms.erase(comm);
+            std::unique_lock lock(comm->m_endpoint.ft_mutex);
+            comm->m_endpoint.ft_comms.erase(comm);
         }
     }
     {

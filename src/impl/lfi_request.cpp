@@ -37,7 +37,7 @@ std::ostream &operator<<(std::ostream &os, lfi_request &req) {
     if (req.wait_context) {
         os << " ctx " << std::hex << req.wait_context;
     }
-    os << std::dec << " comm " << lfi_comm_to_string(req.m_comm.rank_peer) << " {size:" << req.size
+    os << std::dec << " comm " << lfi_comm_to_string(req.m_comm_id) << " {size:" << req.size
        << ", tag:" << lfi_tag_to_string(req.tag) << ", source:" << lfi_comm_to_string(req.source) << "}";
     if (req.is_inject) {
         os << " inject";
@@ -70,27 +70,30 @@ void lfi_request::complete(int err) {
     LFI_PROFILE_FUNCTION();
 
     if (env::get_instance().LFI_fault_tolerance) {
-        {
-            std::unique_lock ft_lock(m_comm.ft_mutex);
-            debug_info("[LFI] erase ft_requests " << this << " in comm " << m_comm.rank_peer);
-            m_comm.ft_requests.erase(this);
+        auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(m_comm_id);
+        if (comm) {
             {
-                std::unique_lock lock(m_comm.m_ep.ft_mutex);
-                if (m_comm.rank_peer != ANY_COMM_SHM && m_comm.rank_peer != ANY_COMM_PEER) {
-                    m_comm.ft_comm_count = (m_comm.ft_comm_count > 0) ? (m_comm.ft_comm_count - 1) : 0;
-                    debug_info("[LFI] ft_comm_count " << m_comm.ft_comm_count);
-                    if (m_comm.ft_comm_count == 0) {
-                        m_comm.m_ep.ft_comms.erase(&m_comm);
+                std::unique_lock ft_lock(comm->ft_mutex);
+                debug_info("[LFI] erase ft_requests " << this << " in comm " << m_comm_id);
+                comm->ft_requests.erase(this);
+                {
+                    std::unique_lock lock(m_endpoint.ft_mutex);
+                    if (m_comm_id != ANY_COMM_SHM && m_comm_id != ANY_COMM_PEER) {
+                        comm->ft_comm_count = (comm->ft_comm_count > 0) ? (comm->ft_comm_count - 1) : 0;
+                        debug_info("[LFI] ft_comm_count " << comm->ft_comm_count);
+                        if (comm->ft_comm_count == 0) {
+                            m_endpoint.ft_comms.erase(comm);
+                        }
+                    } else {
+                        debug_info("[LFI] remove of ft_any_comm_requests " << this);
+                        m_endpoint.ft_any_comm_requests.erase(this);
                     }
-                } else {
-                    debug_info("[LFI] remove of ft_any_comm_requests " << this);
-                    m_comm.m_ep.ft_any_comm_requests.erase(this);
                 }
             }
         }
         if (!is_send && err == LFI_SUCCESS) {
             // Update time outside request lock
-            auto [lock, comm] = m_comm.m_ep.m_lfi.get_comm_and_mutex(source);
+            auto comm = m_endpoint.m_lfi.get_comm_internal(lock, source);
             if (comm) {
                 std::unique_lock ft_lock(comm->ft_mutex);
                 comm->last_request_time = lfi_comm::clock::now();
@@ -122,8 +125,8 @@ void lfi_request::complete(int err) {
     if (callback) {
         // Call the callback with the current error of the request
         debug_info("[LFI] register callback on complete for request " << this);
-        std::unique_lock callback_lock(m_comm.m_ep.callbacks_mutex);
-        m_comm.m_ep.callbacks.emplace_back(callback, error, callback_ctx);
+        std::unique_lock callback_lock(m_endpoint.callbacks_mutex);
+        m_endpoint.callbacks.emplace_back(callback, error, callback_ctx);
         // Unlock in case the callback free the request when the callback_lock is unlocked
         request_lock.unlock();
     } else {
@@ -134,7 +137,6 @@ void lfi_request::complete(int err) {
 
 void lfi_request::cancel() {
     LFI_PROFILE_FUNCTION();
-    lfi_endpoint *ep;
     int error = -LFI_CANCELED;
     {
         std::unique_lock request_lock(mutex);
@@ -142,13 +144,11 @@ void lfi_request::cancel() {
         // The inject is not cancelled
         if (is_inject || is_completed()) return;
 
-        ep = &m_comm.m_ep;
-
         fid_ep *p_ep = nullptr;
         if (is_send) {
-            p_ep = m_comm.m_ep.use_scalable_ep ? m_comm.m_ep.tx_ep : m_comm.m_ep.ep;
+            p_ep = m_endpoint.use_scalable_ep ? m_endpoint.tx_ep : m_endpoint.ep;
         } else {
-            p_ep = m_comm.m_ep.use_scalable_ep ? m_comm.m_ep.rx_ep : m_comm.m_ep.ep;
+            p_ep = m_endpoint.use_scalable_ep ? m_endpoint.rx_ep : m_endpoint.ep;
         }
         // Cancel request and notify
 
@@ -159,7 +159,8 @@ void lfi_request::cancel() {
 
         // Check if completed to no report error
         if (!is_completed() || error) {
-            if (m_comm.is_canceled || error == -LFI_BROKEN_COMM) {
+            auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(m_comm_id);
+            if ((comm && comm->is_canceled) || error == -LFI_BROKEN_COMM) {
                 error = -LFI_BROKEN_COMM;
             } else {
                 error = -LFI_CANCELED;
@@ -169,7 +170,7 @@ void lfi_request::cancel() {
 
     // This is after complete because complete unassign the context
     // Try one progress to read the canceled and not accumulate errors
-    ep->protected_progress(false);
+    m_endpoint.protected_progress(false);
 
     complete(error);
 

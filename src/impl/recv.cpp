@@ -122,13 +122,19 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     uint32_t run_loop = 0;
     defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async recv"); });
 #endif
+    std::unique_lock req_lock(request.mutex);
+    auto [lock, comm] = get_comm_and_mutex(request.m_comm_id);
+
+    // Check if comm is found
+    if (!comm) {
+        return -LFI_COMM_NOT_FOUND;
+    }
 
     // Check cancelled comm
-    if (request.m_comm.is_canceled) {
+    if (comm->is_canceled) {
         return -LFI_BROKEN_COMM;
     }
 
-    std::unique_lock req_lock(request.mutex);
     request.reset();
     uint64_t mask = 0;
     decltype(std::chrono::high_resolution_clock::now()) start;
@@ -136,54 +142,54 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         start = std::chrono::high_resolution_clock::now();
     }
 
-    uint64_t aux_rank_peer = request.m_comm.rank_peer;
+    uint64_t aux_rank_peer = request.m_comm_id;
     uint64_t aux_tag = tag;
     uint64_t tag_recv = (aux_rank_peer << MASK_RANK_BYTES) | aux_tag;
 
-    if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER) {
+    if (request.m_comm_id == ANY_COMM_SHM || request.m_comm_id == ANY_COMM_PEER) {
         mask = MASK_RANK;
         if (env::get_instance().LFI_fault_tolerance && tag != LFI_TAG_FT_PING && tag != LFI_TAG_FT_PONG) {
             req_lock.unlock();
             {
-                std::unique_lock lock(request.m_comm.m_ep.ft_mutex);
+                std::unique_lock lock(comm->m_endpoint.ft_mutex);
                 debug_info("Save request in any_comm_requests " << &request);
-                request.m_comm.m_ep.ft_any_comm_requests.emplace(&request);
+                comm->m_endpoint.ft_any_comm_requests.emplace(&request);
             }
             req_lock.lock();
         }
     }
 
-    if (env::get_instance().LFI_fault_tolerance && request.m_comm.rank_peer != ANY_COMM_SHM &&
-        request.m_comm.rank_peer != ANY_COMM_PEER) {
+    if (env::get_instance().LFI_fault_tolerance && request.m_comm_id != ANY_COMM_SHM &&
+        request.m_comm_id != ANY_COMM_PEER) {
         req_lock.unlock();
         {
-            std::scoped_lock lock(request.m_comm.m_ep.ft_mutex, request.m_comm.ft_mutex);
-            request.m_comm.m_ep.ft_comms.emplace(&request.m_comm);
-            request.m_comm.ft_comm_count++;
+            std::scoped_lock lock(comm->m_endpoint.ft_mutex, comm->ft_mutex);
+            comm->m_endpoint.ft_comms.emplace(comm);
+            comm->ft_comm_count++;
         }
         req_lock.lock();
     }
 
-    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
-                                   << request.m_comm.rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
-                                   << " recv_context " << request.wait_context);
+    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm_id << " rank_self_in_peer "
+                                   << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag) << " recv_context "
+                                   << request.wait_context);
 
-    fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
+    fid_ep *p_rx_ep = comm->m_endpoint.use_scalable_ep ? comm->m_endpoint.rx_ep : comm->m_endpoint.ep;
     request.wait_context = req_ctx_factory.create(request);
     request.is_send = false;
     do {
         if (type == recv_type::RECV) {
-            ret = fi_trecv(p_rx_ep, buffer, size, NULL, request.m_comm.fi_addr, tag_recv, mask, request.wait_context);
+            ret = fi_trecv(p_rx_ep, buffer, size, NULL, comm->fi_addr, tag_recv, mask, request.wait_context);
         } else if (type == recv_type::RECVV) {
-            ret = fi_trecvv(p_rx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, request.m_comm.fi_addr,
-                            tag_recv, mask, request.wait_context);
+            ret = fi_trecvv(p_rx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, comm->fi_addr, tag_recv, mask,
+                            request.wait_context);
         } else {
             std::runtime_error("Error unknown recv_type. This should not happend");
         }
 
         if (ret == -FI_EAGAIN) {
             req_lock.unlock();
-            request.m_comm.m_ep.protected_progress(false);
+            comm->m_endpoint.protected_progress(false);
             req_lock.lock();
 
             if (timeout_ms >= 0) {
@@ -195,7 +201,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
                 }
             }
 
-            if (request.m_comm.is_canceled) {
+            if (comm->is_canceled) {
                 return -LFI_BROKEN_COMM;
             }
         }
@@ -209,19 +215,18 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         return -LFI_LIBFABRIC_ERROR;
     }
 
-    debug_info("[LFI] Waiting on rank_peer " << request.m_comm.rank_peer);
+    debug_info("[LFI] Waiting on rank_peer " << request.m_comm_id);
 
     request.size = size;
     request.tag = tag;
-    request.source = request.m_comm.rank_peer;
+    request.source = request.m_comm_id;
 
     if (env::get_instance().LFI_fault_tolerance) {
-        auto &comm = request.m_comm;
         debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << comm.rank_peer);
         req_lock.unlock();
         {
-            std::unique_lock ft_lock(comm.ft_mutex);
-            comm.ft_requests.insert(&request);
+            std::unique_lock ft_lock(comm->ft_mutex);
+            comm->ft_requests.insert(&request);
         }
         req_lock.lock();
     }
@@ -245,26 +250,26 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     lfi_request request(*comm);
 
     // Check cancelled comm
-    if (request.m_comm.is_canceled) {
+    if (comm->is_canceled) {
         msg.error = -LFI_BROKEN_COMM;
         return msg;
     }
 
     uint64_t mask = 0;
 
-    uint64_t aux_rank_peer = request.m_comm.rank_peer;
+    uint64_t aux_rank_peer = request.m_comm_id;
     uint64_t aux_tag = tag;
     uint64_t tag_recv = (aux_rank_peer << MASK_RANK_BYTES) | aux_tag;
 
-    if (request.m_comm.rank_peer == ANY_COMM_SHM || request.m_comm.rank_peer == ANY_COMM_PEER) {
+    if (request.m_comm_id == ANY_COMM_SHM || request.m_comm_id == ANY_COMM_PEER) {
         mask = MASK_RANK;
     }
 
-    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm.rank_peer << " rank_self_in_peer "
-                                   << request.m_comm.rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
-                                   << " recv_context " << request.wait_context);
+    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm_id << " rank_self_in_peer "
+                                   << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag) << " recv_context "
+                                   << request.wait_context);
 
-    fid_ep *p_rx_ep = request.m_comm.m_ep.use_scalable_ep ? request.m_comm.m_ep.rx_ep : request.m_comm.m_ep.ep;
+    fid_ep *p_rx_ep = comm->m_endpoint.use_scalable_ep ? comm->m_endpoint.rx_ep : comm->m_endpoint.ep;
     request.reset();
     request.is_send = false;
     request.wait_context = req_ctx_factory.create(request);
@@ -276,7 +281,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         .msg_iov = &iov,
         .desc = nullptr,
         .iov_count = 1,
-        .addr = request.m_comm.fi_addr,
+        .addr = comm->fi_addr,
         .tag = tag_recv,
         .ignore = mask,
         .context = request.wait_context,
@@ -287,9 +292,9 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_PEEK | FI_CLAIM);
 
         if (ret == -FI_EAGAIN) {
-            request.m_comm.m_ep.protected_progress(false);
+            comm->m_endpoint.protected_progress(false);
 
-            if (request.m_comm.is_canceled) {
+            if (comm->is_canceled) {
                 msg.error = -LFI_BROKEN_COMM;
                 return msg;
             }
@@ -318,9 +323,9 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
             ret = fi_trecvmsg(p_rx_ep, &msg_to_peek, FI_CLAIM);
 
             if (ret == -FI_EAGAIN) {
-                request.m_comm.m_ep.protected_progress(false);
+                comm->m_endpoint.protected_progress(false);
 
-                if (request.m_comm.is_canceled) {
+                if (comm->is_canceled) {
                     msg.error = -LFI_BROKEN_COMM;
                     return msg;
                 }

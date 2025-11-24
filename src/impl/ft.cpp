@@ -149,7 +149,7 @@ int LFI::ft_setup_ping_pong() {
             print("Error get_comm ANY_COMM_SHM " << any_comm);
             return -1;
         }
-        auto &ft_ping = comm->m_ep.ft_ping_pongs.emplace_back(std::make_unique<lfi_request>(*comm));
+        auto &ft_ping = comm->m_endpoint.ft_ping_pongs.emplace_back(std::make_unique<lfi_request>(*comm));
         ft_ping->callback = ping_callback;
         ft_ping->callback_ctx = ft_ping.get();
         int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping);
@@ -290,7 +290,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
         if (lfi_ep.ft_any_comm_requests.size() > 0) {
             ft_ep_lock.unlock();
             for (auto &&[comm_id, comm] : m_comms) {
-                if (comm && comm->m_ep == lfi_ep && comm->rank_peer != LFI_ANY_COMM_SHM &&
+                if (comm && comm->m_endpoint == lfi_ep && comm->rank_peer != LFI_ANY_COMM_SHM &&
                     comm->rank_peer != LFI_ANY_COMM_PEER) {
                     // debug_info("Check ft in comm " << comm->rank_peer << " from all comms");
                     innerloop(comm.get());
@@ -408,8 +408,8 @@ int LFI::ft_cancel_comm(lfi_comm &comm) {
         request->cancel();
     }
     {
-        std::unique_lock ft_lock(comm.m_ep.ft_mutex);
-        comm.m_ep.ft_comms.erase(&comm);
+        std::unique_lock ft_lock(comm.m_endpoint.ft_mutex);
+        comm.m_endpoint.ft_comms.erase(&comm);
     }
     comm.ft_requests.clear();
 

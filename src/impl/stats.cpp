@@ -52,7 +52,7 @@ void LFI::dump_stats() {
                 std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << " nullptr" << std::endl;
                 continue;
             }
-            std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << (comm->m_ep.is_shm ? " SHM" : " PEER")
+            std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << (comm->m_endpoint.is_shm ? " SHM" : " PEER")
                       << std::endl;
             if (env::get_instance().LFI_fault_tolerance) {
                 std::unique_lock ft_comm_lock(comm->ft_mutex);

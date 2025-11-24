@@ -47,7 +47,7 @@ struct lfi_comm {
 
     fi_addr_t fi_addr = FI_ADDR_UNSPEC;
 
-    lfi_endpoint &m_ep;
+    lfi_endpoint &m_endpoint;
 
     // For fault tolerance
     std::recursive_mutex ft_mutex;
@@ -57,7 +57,7 @@ struct lfi_comm {
     std::chrono::time_point<clock> ft_ping_time_point = {}, ft_pong_time_point = {};
     std::unique_ptr<lfi_request> ft_ping = nullptr, ft_pong = nullptr;
     std::chrono::time_point<clock> last_request_time = clock::now();
-    enum ft_status {
+    enum class ft_status {
         IDLE,
         SEND_PING,
         RECV_PONG,
@@ -67,13 +67,15 @@ struct lfi_comm {
     ft_status ft_current_status = ft_status::IDLE;
 
    public:
-    bool ft_error = false;
-
     bool is_canceled = false;
 
-    // 0 not ready, 1 ready internal, 2 ready
-    std::atomic_int8_t is_ready = 0;
+    enum class comm_status {
+        NOT_READY,
+        READY_INTERNAL,
+        READY,
+    };
+    std::atomic<comm_status> is_ready = comm_status::NOT_READY;
 
-    lfi_comm(lfi_endpoint &ep) : m_ep(ep) {}
+    lfi_comm(lfi_endpoint &ep) : m_endpoint(ep) {}
 };
 }  // namespace LFI

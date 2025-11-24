@@ -68,7 +68,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
     //     return -LFI_BROKEN_COMM;
     // }
 
-    lfi_endpoint &ep = request.m_comm.m_ep;
+    lfi_endpoint &ep = request.m_endpoint;
     decltype(std::chrono::high_resolution_clock::now()) start;
     bool is_timeout = false;
     if (timeout_ms >= 0) {
@@ -156,9 +156,9 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                 request.error = LFI_SUCCESS;
             }
         }
-        if (request.m_comm.m_ep == shm_ep) {
+        if (request.m_endpoint == shm_ep) {
             wait_shm = true;
-        } else if (request.m_comm.m_ep == peer_ep) {
+        } else if (request.m_endpoint == peer_ep) {
             wait_peer = true;
         }
     }
