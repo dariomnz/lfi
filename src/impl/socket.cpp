@@ -174,15 +174,15 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
         return -1;
     }
 
-    int buf = 123;
-    ret = send(socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)) {
-        return -1;
-    }
-    ret = recv(socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)) {
-        return -1;
-    }
+    // int buf = 123;
+    // ret = send(socket, &buf, sizeof(buf));
+    // if (ret != sizeof(buf)) {
+    //     return -1;
+    // }
+    // ret = recv(socket, &buf, sizeof(buf));
+    // if (ret != sizeof(buf)) {
+    //     return -1;
+    // }
 
     debug_info(">> End = " << socket);
     return socket;
@@ -290,15 +290,15 @@ int socket::accept(int socket, int timeout_ms) {
         return -1;
     }
 
-    int buf = 123;
-    ret = recv(new_socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)) {
-        return -1;
-    }
-    ret = send(new_socket, &buf, sizeof(buf));
-    if (ret != sizeof(buf)) {
-        return -1;
-    }
+    // int buf = 123;
+    // ret = recv(new_socket, &buf, sizeof(buf));
+    // if (ret != sizeof(buf)) {
+    //     return -1;
+    // }
+    // ret = send(new_socket, &buf, sizeof(buf));
+    // if (ret != sizeof(buf)) {
+    //     return -1;
+    // }
 
     debug_info(">> End = " << new_socket);
     return new_socket;

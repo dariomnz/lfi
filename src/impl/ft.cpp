@@ -121,7 +121,7 @@ void ping_callback([[maybe_unused]] int error, void *context) {
             print("Error get_comm of " << req->source);
             return;
         }
-        auto fi_pong = new lfi_request(*comm);
+        auto fi_pong = new lfi_request(comm->m_endpoint, comm->rank_peer);
         fi_pong->callback = pong_callback;
         fi_pong->callback_ctx = fi_pong;
         int ret = lfi.async_send(&dummy, 0, LFI_TAG_FT_PONG, *fi_pong);
@@ -149,7 +149,8 @@ int LFI::ft_setup_ping_pong() {
             print("Error get_comm ANY_COMM_SHM " << any_comm);
             return -1;
         }
-        auto &ft_ping = comm->m_endpoint.ft_ping_pongs.emplace_back(std::make_unique<lfi_request>(*comm));
+        auto &ft_ping = comm->m_endpoint.ft_ping_pongs.emplace_back(
+            std::make_unique<lfi_request>(comm->m_endpoint, comm->rank_peer));
         ft_ping->callback = ping_callback;
         ft_ping->callback_ctx = ft_ping.get();
         int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping);
@@ -211,7 +212,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
         if (comm->ft_current_status == lfi_comm::ft_status::SEND_PING) {
             debug_info("[LFI] comm " << comm->rank_peer << " SEND_PING");
             if (!comm->ft_ping) {
-                comm->ft_ping = std::make_unique<lfi_request>(*comm);
+                comm->ft_ping = std::make_unique<lfi_request>(comm->m_endpoint, comm->rank_peer);
             } else {
                 comm->ft_ping->reset();
             }
@@ -239,7 +240,7 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
         if (comm->ft_current_status == lfi_comm::ft_status::RECV_PONG) {
             debug_info("[LFI] comm " << comm->rank_peer << " RECV_PONG");
             if (!comm->ft_pong) {
-                comm->ft_pong = std::make_unique<lfi_request>(*comm);
+                comm->ft_pong = std::make_unique<lfi_request>(comm->m_endpoint, comm->rank_peer);
             } else {
                 comm->ft_pong->reset();
             }

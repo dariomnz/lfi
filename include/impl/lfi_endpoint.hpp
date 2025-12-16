@@ -91,6 +91,13 @@ struct lfi_endpoint {
 
     int protected_progress(bool call_callbacks);
     int progress(bool call_callbacks);
+
+    fid_ep* rx_endpoint() {
+        return use_scalable_ep ? rx_ep : ep;
+    }
+    fid_ep* tx_endpoint() {
+        return use_scalable_ep ? tx_ep : ep;
+    }
 };
 
 }  // namespace LFI

@@ -83,14 +83,14 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
     {
         std::unique_lock request_lock(request.mutex);
         debug_info("[LFI] " << request);
-        while (request.wait_context && !is_timeout) {
+        while (request.wait_context.load() && !is_timeout) {
             if (!env::get_instance().LFI_efficient_progress || !ep.in_progress.exchange(true)) {
-                while (request.wait_context && !is_timeout) {
-                    request_lock.unlock();
+                request_lock.unlock();
+                while (request.wait_context.load() && !is_timeout) {
                     ep.progress(true);
-                    request_lock.lock();
                     is_timeout = wait_check_timeout(timeout_ms, start);
                 }
+                request_lock.lock();
                 ep.in_progress.store(false);
             } else {
                 if (timeout_ms >= 0) {
@@ -113,7 +113,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
     wake_up_requests(ep);
 
     // Return timeout only if is not completed and timeout
-    if (is_timeout && request.wait_context) {
+    if (is_timeout && request.wait_context.load()) {
         request.error = -LFI_TIMEOUT;
         debug_info("[LFI] End wait with timeout " << request);
         return -LFI_TIMEOUT;
@@ -136,8 +136,8 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
     wait_struct shared_wait = {.wait_count = how_many};
     decltype(std::chrono::high_resolution_clock::now()) start;
     bool is_timeout = false;
-    bool wait_shm = false;
-    bool wait_peer = false;
+    bool need_progress_in_shm = false;
+    bool need_progress_in_peer = false;
     if (timeout_ms >= 0) {
         start = std::chrono::high_resolution_clock::now();
     }
@@ -147,7 +147,7 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
         std::scoped_lock req_and_shared_wait_lock(request.mutex, shared_wait.wait_mutex);
         request.shared_wait_struct = &shared_wait;
         debug_info(request);
-        debug_info("Request comm " << request.m_comm.rank_peer);
+        debug_info("Request comm " << request.m_comm_id);
         if (request.is_completed()) {
             debug_info("Request already completed");
             shared_wait.wait_count--;
@@ -157,64 +157,79 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
             }
         }
         if (request.m_endpoint == shm_ep) {
-            wait_shm = true;
+            need_progress_in_shm = true;
         } else if (request.m_endpoint == peer_ep) {
-            wait_peer = true;
+            need_progress_in_peer = true;
         }
     }
 
-    int temp_wait_count;
-    {
-        std::unique_lock wait_lock(shared_wait.wait_mutex);
-        temp_wait_count = shared_wait.wait_count;
-    }
-    if (temp_wait_count > 0) {
-        if (wait_shm) {
+    if (shared_wait.wait_count.load() > 0) {
+        if (need_progress_in_shm) {
             std::unique_lock lock(shm_ep.waiting_requests_mutex);
             shm_ep.waiting_requests.emplace(&shared_wait);
         }
-        if (wait_peer) {
+        if (need_progress_in_peer) {
             std::unique_lock lock(peer_ep.waiting_requests_mutex);
             peer_ep.waiting_requests.emplace(&shared_wait);
         }
 
         {
-            std::unique_lock wait_lock(shared_wait.wait_mutex);
-            bool made_progress = false;
-            while (shared_wait.wait_count > 0 && !is_timeout) {
+            bool made_progress_shm = false;
+            bool made_progress_peer = false;
+            while (shared_wait.wait_count.load() > 0 && !is_timeout) {
                 // debug_info("shared_wait.wait_count "<<shared_wait.wait_count);
-                made_progress = false;
-                wait_lock.unlock();
-                if (wait_shm) {
-                    made_progress |= shm_ep.protected_progress(true) > 0;
+                if (need_progress_in_shm) {
+                    if (!made_progress_shm) {
+                        if (!shm_ep.in_progress.exchange(true)) {
+                            made_progress_shm = true;
+                        }
+                    }
+                    if (made_progress_shm) {
+                        shm_ep.progress(true);
+                    }
                 }
-                if (wait_peer) {
-                    made_progress |= peer_ep.protected_progress(true) > 0;
+                if (need_progress_in_peer) {
+                    if (!made_progress_peer) {
+                        if (!peer_ep.in_progress.exchange(true)) {
+                            made_progress_peer = true;
+                        }
+                    }
+                    if (made_progress_peer) {
+                        peer_ep.progress(true);
+                    }
                 }
-                wait_lock.lock();
-                if (!made_progress && shared_wait.wait_count > 0) {
-                    if (timeout_ms >= 0) {
-                        int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                 std::chrono::high_resolution_clock::now() - start)
-                                                 .count();
-                        shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
-                    } else {
-                        shared_wait.wait_cv.wait(wait_lock);
+                if (!made_progress_shm && !made_progress_peer) {
+                    std::unique_lock wait_lock(shared_wait.wait_mutex);
+                    if (shared_wait.wait_count.load() > 0) {
+                        if (timeout_ms >= 0) {
+                            int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                     std::chrono::high_resolution_clock::now() - start)
+                                                     .count();
+                            shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
+                        } else {
+                            shared_wait.wait_cv.wait(wait_lock);
+                        }
                     }
                 }
                 is_timeout = wait_check_timeout(timeout_ms, start);
             }
+            if (made_progress_shm) {
+                shm_ep.in_progress.store(false);
+            }
+            if (made_progress_peer) {
+                peer_ep.in_progress.store(false);
+            }
         }
 
         // Clean wait
-        if (wait_shm) {
+        if (need_progress_in_shm) {
             {
                 std::unique_lock lock(shm_ep.waiting_requests_mutex);
                 shm_ep.waiting_requests.erase(&shared_wait);
             }
             wake_up_requests(shm_ep);
         }
-        if (wait_peer) {
+        if (need_progress_in_peer) {
             {
                 std::unique_lock lock(peer_ep.waiting_requests_mutex);
                 peer_ep.waiting_requests.erase(&shared_wait);
@@ -224,7 +239,8 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
     }
 
     int out_index = -1;
-    static uint32_t linear_counter = 0;
+    // Linear counter because the func need to change the return request each time
+    static std::atomic<uint32_t> linear_counter = 0;
     int first_rand = linear_counter++ % n_requests;
     int index = 0;
     for (int i = 0; i < n_requests; i++) {

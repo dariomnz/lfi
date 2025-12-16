@@ -34,8 +34,9 @@ namespace LFI {
 
 std::ostream &operator<<(std::ostream &os, lfi_request &req) {
     os << "Request " << (req.is_send ? "send" : "recv");
-    if (req.wait_context) {
-        os << " ctx " << std::hex << req.wait_context;
+    auto aux_wait_context = req.wait_context.load();
+    if (aux_wait_context) {
+        os << " ctx " << std::hex << aux_wait_context;
     }
     os << std::dec << " comm " << lfi_comm_to_string(req.m_comm_id) << " {size:" << req.size
        << ", tag:" << lfi_tag_to_string(req.tag) << ", source:" << lfi_comm_to_string(req.source) << "}";
@@ -56,14 +57,15 @@ std::ostream &operator<<(std::ostream &os, lfi_request &req) {
 
 void lfi_request::reset() {
     LFI_PROFILE_FUNCTION();
-    if (wait_context) {
-        wait_context->unassign();
+    auto aux_wait_context = wait_context.load();
+    if (aux_wait_context) {
+        aux_wait_context->unassign();
     }
-    wait_context = nullptr;
     error = 0;
     size = 0;
     tag = 0;
     source = UNINITIALIZED_COMM;
+    wait_context.store(nullptr);
 }
 
 void lfi_request::complete(int err) {
@@ -109,16 +111,17 @@ void lfi_request::complete(int err) {
         return;
     }
     error = err;
-    if (wait_context) {
-        wait_context->unassign();
+    auto aux_wait_context=wait_context.load();
+    if (aux_wait_context) {
+        aux_wait_context->unassign();
     }
-    wait_context = nullptr;
+    wait_context.store(nullptr);
     cv.notify_all();
     if (shared_wait_struct != nullptr) {
         std::unique_lock shared_wait_lock(shared_wait_struct->wait_mutex);
         debug_info("[LFI] have shared_wait_struct");
-        shared_wait_struct->wait_count--;
-        if (shared_wait_struct->wait_count <= 0) {
+        auto wait_count = shared_wait_struct->wait_count.fetch_sub(1);
+        if (wait_count <= 0) {
             shared_wait_struct->wait_cv.notify_all();
         }
     }
@@ -146,9 +149,10 @@ void lfi_request::cancel() {
 
         fid_ep *p_ep = nullptr;
         if (is_send) {
-            p_ep = m_endpoint.use_scalable_ep ? m_endpoint.tx_ep : m_endpoint.ep;
+            p_ep = m_endpoint.tx_endpoint();
         } else {
-            p_ep = m_endpoint.use_scalable_ep ? m_endpoint.rx_ep : m_endpoint.ep;
+            p_ep = m_endpoint.rx_endpoint();
+            ;
         }
         // Cancel request and notify
 

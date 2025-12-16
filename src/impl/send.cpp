@@ -44,7 +44,9 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
     }
-    lfi_request request(*comm);
+    lfi_request request(comm->m_endpoint, comm->rank_peer);
+
+    lock.unlock();
 
     switch (type) {
         case send_type::SEND:
@@ -118,8 +120,8 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     }
 
     debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm_id << " rank_self_in_peer "
-                                   << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag)
-                                   << " send_context " << request.wait_context);
+                                   << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag) << " send_context "
+                                   << request.wait_context);
 
     request.is_send = true;
     request.size = size;
@@ -128,11 +130,12 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
     if (env::get_instance().LFI_use_inject && type == send_type::SEND &&
         size <= comm->m_endpoint.info->tx_attr->inject_size) {
-        fid_ep *p_tx_ep = comm->m_endpoint.use_scalable_ep ? comm->m_endpoint.tx_ep : comm->m_endpoint.ep;
-        if (request.wait_context) {
-            request.wait_context->unassign();
+        fid_ep *p_tx_ep = comm->m_endpoint.tx_endpoint();
+        auto aux_wait_context = request.wait_context.load();
+        if (aux_wait_context) {
+            aux_wait_context->unassign();
         }
-        request.wait_context = nullptr;
+        request.wait_context.store(nullptr);
         request.is_inject = true;
         do {
             ret = fi_tinject(p_tx_ep, buffer, size, comm->fi_addr, tag_send);
@@ -163,15 +166,15 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
         // To not wait in this request
         debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << request.m_comm_id);
     } else {
-        fid_ep *p_tx_ep = comm->m_endpoint.use_scalable_ep ? comm->m_endpoint.tx_ep : comm->m_endpoint.ep;
-        request.wait_context = req_ctx_factory.create(request);
+        fid_ep *p_tx_ep = comm->m_endpoint.tx_endpoint();
+        request.wait_context.store(req_ctx_factory.create(request));
         request.is_inject = false;
         do {
             if (type == send_type::SEND) {
-                ret = fi_tsend(p_tx_ep, buffer, size, NULL, comm->fi_addr, tag_send, request.wait_context);
+                ret = fi_tsend(p_tx_ep, buffer, size, NULL, comm->fi_addr, tag_send, request.wait_context.load());
             } else if (type == send_type::SENDV) {
-                ret = fi_tsendv(p_tx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, comm->fi_addr,
-                                tag_send, request.wait_context);
+                ret = fi_tsendv(p_tx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, comm->fi_addr, tag_send,
+                                request.wait_context.load());
             } else {
                 std::runtime_error("Error unknown send_type. This should not happend");
             }
@@ -201,7 +204,7 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
         debug_info("[LFI] msg " << request);
         if (env::get_instance().LFI_fault_tolerance && ret == 0) {
-            debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << comm.rank_peer);
+            debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << request.m_comm_id);
             req_lock.unlock();
             {
                 std::unique_lock ft_lock(comm->ft_mutex);

@@ -34,7 +34,7 @@ namespace LFI {
 struct wait_struct {
     std::mutex wait_mutex = {};
     std::condition_variable wait_cv = {};
-    int wait_count = 0;
+    std::atomic<int> wait_count = 0;
 };
 
 struct lfi_msg {
@@ -60,7 +60,7 @@ struct lfi_request {
     std::condition_variable cv = {};
     int error = 0;
     // bool wait_context = true;
-    lfi_request_context *wait_context = nullptr;
+    std::atomic<lfi_request_context *> wait_context = nullptr;
 
     bool is_send = false;
     bool is_inject = false;
@@ -72,7 +72,7 @@ struct lfi_request {
     wait_struct *shared_wait_struct = nullptr;
     lfi_request_callback callback = nullptr;
     void *callback_ctx = nullptr;
-    lfi_request(lfi_comm &comm) : m_endpoint(comm.m_endpoint), m_comm_id(comm.rank_peer) {}
+    lfi_request(lfi_endpoint &endpoint, uint32_t comm_id) : m_endpoint(endpoint), m_comm_id(comm_id) {}
 
     // Delete default constructor
     lfi_request() = delete;
@@ -89,7 +89,7 @@ struct lfi_request {
 
     bool is_iniciated() { return source != UNINITIALIZED_COMM; }
 
-    bool is_completed() { return !wait_context; }
+    bool is_completed() { return !wait_context.load(); }
 
     // Warning: the callback can free the request before the complete return
     void complete(int error);

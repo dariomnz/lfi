@@ -115,9 +115,8 @@ lfi_comm* LFI::get_comm_internal(std::shared_lock<std::shared_mutex>& comms_lock
         return nullptr;
     }
 
-    // Not necesary to wait when is ready internal
-    if (comm_it->second != nullptr && comm_it->second->is_ready == lfi_comm::comm_status::READY_INTERNAL) {
-        m_fut_wait_cv.notify_all();
+    // Not necesary to wait when is ready
+    if (comm_it->second != nullptr && comm_it->second->is_ready != lfi_comm::comm_status::NOT_READY) {
         debug_info("[LFI] End comm " << id << " is ready");
         return comm_it->second.get();
     }

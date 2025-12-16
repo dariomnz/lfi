@@ -69,6 +69,8 @@ int LFI::init_server(int socket, int32_t comm_id) {
     bool is_shm = host_id == peer_id;
     lfi_comm* comm = init_comm(is_shm, comm_id);
 
+    debug_info("[LFI] comm rank_peer " << comm->rank_peer);
+
     // Exchange ranks
     ret = socket::recv(socket, &comm->rank_self_in_peer, sizeof(comm->rank_self_in_peer));
     if (ret != sizeof(comm->rank_self_in_peer)) {
@@ -80,6 +82,8 @@ int LFI::init_server(int socket, int32_t comm_id) {
         print_error("socket::send comm.rank_peer socket " << socket);
         return -1;
     }
+
+    debug_info("[LFI] comm rank_peer " << comm->rank_peer << " rank_self_in_peer " << comm->rank_self_in_peer);
 
     // Exchange addr
     std::vector<uint8_t> host_addr;
@@ -188,6 +192,8 @@ int LFI::init_client(int socket, int32_t comm_id) {
     bool is_shm = host_id == peer_id;
     lfi_comm* comm = init_comm(is_shm, comm_id);
 
+    debug_info("[LFI] comm rank_peer " << comm->rank_peer);
+
     // Exchange ranks
     ret = socket::send(socket, &comm->rank_peer, sizeof(comm->rank_peer));
     if (ret != sizeof(comm->rank_peer)) {
@@ -199,6 +205,8 @@ int LFI::init_client(int socket, int32_t comm_id) {
         print_error("socket::recv comm->rank_self_in_peer socket " << socket);
         return -1;
     }
+
+    debug_info("[LFI] comm rank_peer " << comm->rank_peer << " rank_self_in_peer " << comm->rank_self_in_peer);
 
     // Exchange addr
     std::vector<uint8_t> host_addr;

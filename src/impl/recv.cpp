@@ -41,7 +41,8 @@ lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
     }
-    lfi_request request(*comm);
+    lfi_request request(comm->m_endpoint, comm->rank_peer);
+    lock.unlock();
 
     switch (type) {
         case recv_type::RECV:
@@ -174,15 +175,15 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
                                    << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag) << " recv_context "
                                    << request.wait_context);
 
-    fid_ep *p_rx_ep = comm->m_endpoint.use_scalable_ep ? comm->m_endpoint.rx_ep : comm->m_endpoint.ep;
-    request.wait_context = req_ctx_factory.create(request);
+    fid_ep *p_rx_ep = comm->m_endpoint.rx_endpoint();
+    request.wait_context.store(req_ctx_factory.create(request));
     request.is_send = false;
     do {
         if (type == recv_type::RECV) {
-            ret = fi_trecv(p_rx_ep, buffer, size, NULL, comm->fi_addr, tag_recv, mask, request.wait_context);
+            ret = fi_trecv(p_rx_ep, buffer, size, NULL, comm->fi_addr, tag_recv, mask, request.wait_context.load());
         } else if (type == recv_type::RECVV) {
             ret = fi_trecvv(p_rx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, comm->fi_addr, tag_recv, mask,
-                            request.wait_context);
+                            request.wait_context.load());
         } else {
             std::runtime_error("Error unknown recv_type. This should not happend");
         }
@@ -222,7 +223,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     request.source = request.m_comm_id;
 
     if (env::get_instance().LFI_fault_tolerance) {
-        debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << comm.rank_peer);
+        debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << request.m_comm_id);
         req_lock.unlock();
         {
             std::unique_lock ft_lock(comm->ft_mutex);
@@ -247,7 +248,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         msg.error = -LFI_COMM_NOT_FOUND;
         return msg;
     }
-    lfi_request request(*comm);
+    lfi_request request(comm->m_endpoint, comm->rank_peer);
 
     // Check cancelled comm
     if (comm->is_canceled) {
@@ -269,10 +270,10 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
                                    << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag) << " recv_context "
                                    << request.wait_context);
 
-    fid_ep *p_rx_ep = comm->m_endpoint.use_scalable_ep ? comm->m_endpoint.rx_ep : comm->m_endpoint.ep;
+    fid_ep *p_rx_ep = comm->m_endpoint.rx_endpoint();
     request.reset();
     request.is_send = false;
-    request.wait_context = req_ctx_factory.create(request);
+    request.wait_context.store(req_ctx_factory.create(request));
     iovec iov = {
         .iov_base = buffer,
         .iov_len = size,
@@ -284,7 +285,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         .addr = comm->fi_addr,
         .tag = tag_recv,
         .ignore = mask,
-        .context = request.wait_context,
+        .context = request.wait_context.load(),
         .data = 0,
     };
     // First we PEEK with CLAIM to only generate one match
@@ -308,7 +309,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     }
 
     debug_info("[LFI] Waiting for " << request);
-
+    lock.unlock();
     ret = wait(request);
     if (ret != 0) {
         printf("error waiting recv peek (%d) %s\n", ret, fi_strerror(ret));
@@ -317,6 +318,11 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
     }
     // If the PEEK request is successfully we need to claim the content
     if (request.error == 0) {
+        auto [lock2, comm] = get_comm_and_mutex(comm_id);
+        if (!comm) {
+            msg.error = -LFI_COMM_NOT_FOUND;
+            return msg;
+        }
         debug_info("[LFI] successfully PEEK, now CLAIM data");
         request.reset();
         do {
@@ -339,6 +345,7 @@ lfi_msg LFI::recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag
         }
 
         debug_info("[LFI] Waiting for " << request);
+        lock2.unlock();
         ret = wait(request);
         if (ret != 0) {
             printf("error waiting recv claim (%d) %s\n", ret, fi_strerror(ret));
