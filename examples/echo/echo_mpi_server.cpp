@@ -28,7 +28,7 @@
 
 #include <thread>
 
-#include "bw_common.hpp"
+#include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "impl/socket.hpp"
@@ -64,9 +64,13 @@ void echo_server(MPI_Comm comm) {
         tpool.enqueue([msg_size, rank = status.MPI_SOURCE, &comm]() {
             std::vector<uint8_t> data;
             data.resize(std::abs(msg_size));
+
+            busy_loop(std::chrono::microseconds(1));
+
             if (msg_size < 0) {
                 debug_info("MPI_Recv(" << rank << ", data.data(), " << std::abs(msg_size) << ")");
-                auto recv_msg = MPI_Recv(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm, MPI_STATUS_IGNORE);
+                auto recv_msg =
+                    MPI_Recv(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm, MPI_STATUS_IGNORE);
                 if (recv_msg != MPI_SUCCESS) {
                     char msg[1024];
                     int msg_len = 1024;

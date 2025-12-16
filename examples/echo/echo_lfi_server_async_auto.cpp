@@ -29,7 +29,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "bw_common.hpp"
+#include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "lfi.h"
@@ -84,7 +84,7 @@ void echo_server() {
         return;
     }
 
-    ThreadPool tpool(4);
+    ThreadPool tpool;
     while (true) {
         debug_info("Start recv any ack");
 
@@ -145,6 +145,9 @@ void echo_server() {
             ctx->req = req;
             ctx->data.resize(std::abs(msg_size));
             lfi_request_set_callback(req, auto_free_request, ctx);
+
+            busy_loop(std::chrono::microseconds(1));
+
             if (msg_size < 0) {
                 debug_info("lfi_recv(" << id << ", data.data(), " << std::abs(msg_size) << ")");
                 auto recv_msg = lfi_recv_async(req, ctx->data.data(), std::abs(msg_size));

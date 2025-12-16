@@ -25,7 +25,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "bw_common.hpp"
+#include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "impl/socket.hpp"
@@ -153,8 +153,13 @@ int main(int argc, char *argv[]) {
     data.resize(tests[tests.size() - 1].test_size);
 
     for (auto &test : tests) {
-        run_test(client_comm, servers.size(), test);
-        print_test(test);
+        const size_t REPEAT_TEST = 10;
+        for (size_t i = 0; i < REPEAT_TEST; i++) {
+            test.size = 0;
+            test.nanosec = 0;
+            run_test(client_comm, servers.size(), test);
+            print_test(test);
+        }
     }
 
     MPI_Comm_disconnect(&client_comm);

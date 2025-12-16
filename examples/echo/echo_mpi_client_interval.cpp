@@ -18,7 +18,6 @@
  *  along with LFI.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-// #define DEBUG
 
 #include <arpa/inet.h>
 #include <stdio.h>
@@ -26,66 +25,82 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <condition_variable>
+#include <csignal>
+
 #include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "impl/socket.hpp"
 #include "mpi.h"
 
-#define TAG_MSG 100
 using namespace bw_examples;
 
-static std::vector<uint8_t> data;
+#define TAG_MSG 100
 
-int run_test(MPI_Comm &client_comm, int servers, bw_test &test) {
+static std::atomic<uint64_t> test_size_global = 512 * 1024;
+
+static std::mutex test_mutex;
+static int64_t test_count_interval = 0;
+static int64_t test_size_interval = 0;
+
+static bool signal_stop = false;
+void signalHandler([[maybe_unused]] int signum) { signal_stop = true; }
+
+static MPI_Comm client_comm;
+static int servers_size;
+
+int run_test() {
+    std::condition_variable cv;
+    std::vector<uint8_t> data(test_size_global.load());
     int ret = 0;
-    ssize_t test_size = test.test_size;
-    std::vector<MPI_Request> v_reqs;
-    v_reqs.reserve(test.test_count * servers * 3);
-
-    debug_info("Start run_test size " << test.test_size);
-    MPI_Barrier(MPI_COMM_WORLD);
-    timer t;
-    for (size_t i = 0; i < test.test_count; i++) {
-        for (int j = 0; j < servers; j++) {
-            int msg_size = -test_size;
+    debug_info("Start run_test size " << test_size);
+    [[maybe_unused]] int64_t i = 0;
+    while (!signal_stop) {
+        std::unique_lock lock(test_mutex);
+        for (int j = 0; j < servers_size; j++) {
+            auto test_size = test_size_global.load();
+            if (data.size() < test_size) data.resize(test_size);
+            int msg_size = test_size;
             debug_info("msg_size " << msg_size);
-            auto &req1 = v_reqs.emplace_back();
-            ret = MPI_Isend(&msg_size, 1, MPI_INT, j, TAG_MSG, client_comm, &req1);
+            ret = MPI_Send(&msg_size, 1, MPI_INT, j, TAG_MSG, client_comm);
             if (ret != MPI_SUCCESS) {
                 printf("Error MPI_Send\n");
                 return -1;
             }
-            debug_info("count " << i << " MPI_Isend(data.data(), " << test_size << ")");
-            auto &req2 = v_reqs.emplace_back();
-            ret = MPI_Isend(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, &req2);
+
+            debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
+            ret = MPI_Recv(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, MPI_STATUS_IGNORE);
             if (ret != MPI_SUCCESS) {
-                printf("Error MPI_Send\n");
+                printf("Error MPI_Recv\n");
                 return -1;
             }
-            test.size += test_size;
-            // int ack = 0;
-            // debug_info("ack MPI_Recv(ack, " << sizeof(ack) << ")");
-            // auto &req3 = v_reqs.emplace_back();
-            // ret = MPI_Irecv(&ack, 1, MPI_INT, j, 0, client_comm, &req3);
-            // if (ret != MPI_SUCCESS) {
-            //     printf("Error MPI_Recv\n");
-            //     return -1;
-            // }
+            test_count_interval++;
+            test_size_interval += test_size;
         }
-        ret = MPI_Waitall(v_reqs.size(), v_reqs.data(), MPI_STATUSES_IGNORE);
-        if (ret != MPI_SUCCESS) {
-            printf("Error MPI_Waitall\n");
-            return -1;
-        }
-        v_reqs.clear();
+        cv.wait_for(lock, std::chrono::nanoseconds(0));
+        i++;
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    test.nanosec += t.resetElapsedNano();
+    debug_info("End run_test size " << test_size);
+    return 0;
+}
 
-    debug_info("End run_test size " << test.test_size);
-
+int thread_read_stdin() {
+    std::string line;
+    while (!signal_stop) {
+        if (!std::getline(std::cin, line)) {
+            // EOF o error
+            signal_stop = true;
+            break;
+        }
+        std::cout << "Leído: " << line << "\n";
+        if (line == "up") {
+            test_size_global = test_size_global.load() * 2;
+        } else if (line == "down") {
+            test_size_global = test_size_global.load() / 2;
+        }
+    }
     return 0;
 }
 
@@ -101,18 +116,20 @@ int main(int argc, char *argv[]) {
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
+    if (std::signal(SIGINT, signalHandler) == SIG_ERR) {
+        perror("signal");
+        exit(EXIT_FAILURE);
+        return 1;
+    }
+
     auto servers = split(argv[1], ";");
 
     ret = MPI_Init(&argc, &argv);
     if (ret < 0) exit(EXIT_FAILURE);
 
-    print_header();
-
     int rank;
     ret = MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     if (ret < 0) exit(EXIT_FAILURE);
-
-    MPI_Comm client_comm;
 
     std::string port_name;
     port_name.resize(MPI_MAX_PORT_NAME);
@@ -159,15 +176,47 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         print("Connection time to " << servers.size() << " servers: " << (t.resetElapsedNano() * 0.000'001) << " ms");
     }
-
+    servers_size = servers.size();
     MPI_Barrier(MPI_COMM_WORLD);
 
-    auto &tests = get_test_vector();
-    data.resize(tests[tests.size() - 1].test_size);
+    std::thread thread(run_test);
+    std::thread(thread_read_stdin).detach();
 
-    for (auto &test : tests) {
-        run_test(client_comm, servers.size(), test);
-        print_test(test);
+    if (rank == 0) {
+        std::cout << "Usage: write 'up' to double the msg size and 'down' to half it." << std::endl;
+    }
+
+    print_header();
+
+    auto start = std::chrono::high_resolution_clock::now();
+    while (!signal_stop) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        bw_test test;
+        {
+            std::unique_lock lock(test_mutex);
+            test.size = test_size_interval;
+            test_size_interval = 0;
+            auto now = std::chrono::high_resolution_clock::now();
+            test.nanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count();
+            test.test_count = test_count_interval;
+            test_count_interval = 0;
+            test.test_size = test_size_global.load();
+            print_test(test);
+        }
+        start = std::chrono::high_resolution_clock::now();
+    }
+
+    thread.join();
+
+    if (rank == 0) {
+        int disconnect = 0;
+        for (int j = 0; j < servers_size; j++) {
+            ret = MPI_Send(&disconnect, 1, MPI_INT, j, TAG_MSG, client_comm);
+            if (ret != MPI_SUCCESS) {
+                printf("Error MPI_Send disconnect\n");
+                return -1;
+            }
+        }
     }
 
     MPI_Comm_disconnect(&client_comm);

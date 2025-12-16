@@ -19,6 +19,9 @@
  *
  */
 // #define DEBUG
+#include <condition_variable>
+#include <csignal>
+
 #include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "lfi.h"
@@ -26,21 +29,32 @@
 
 using namespace bw_examples;
 
-static std::vector<uint8_t> data;
+static std::vector<int> client_fds;
 
 #define TAG_MSG 100
 
-int run_test(std::vector<int> &ids, bw_test &test) {
+static std::atomic<uint64_t> test_size_global = 512 * 1024;
+
+static std::mutex test_mutex;
+static int64_t test_count_interval = 0;
+static int64_t test_size_interval = 0;
+
+static bool signal_stop = false;
+void signalHandler([[maybe_unused]] int signum) { signal_stop = true; }
+
+int run_test() {
+    std::condition_variable cv;
+    std::vector<uint8_t> data(test_size_global.load());
     ssize_t data_send = 0;
-    ssize_t test_size = test.test_size;
-    debug_info("Start run_test size " << test.test_size);
-    // std::this_thread::sleep_for(std::chrono::seconds(10));
-    test.size = 0;
-    MPI_Barrier(MPI_COMM_WORLD);
-    timer t;
-    for (size_t i = 0; i < test.test_count; i++) {
-        for (auto &id : ids) {
-            int msg_size = -test_size;
+    ssize_t data_recv = 0;
+    debug_info("Start run_test size " << test_size);
+    [[maybe_unused]] int64_t i = 0;
+    while (!signal_stop) {
+        std::unique_lock lock(test_mutex);
+        for (auto &id : client_fds) {
+            auto test_size = test_size_global.load();
+            if (data.size() < test_size) data.resize(test_size);
+            int msg_size = test_size;
             debug_info("msg_size " << msg_size);
             data_send = lfi_tsend(id, &msg_size, sizeof(msg_size), TAG_MSG);
             if (data_send != sizeof(msg_size)) {
@@ -48,35 +62,43 @@ int run_test(std::vector<int> &ids, bw_test &test) {
                 return -1;
             }
 
-            // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            debug_info("count " << i << " lfi_send(" << id << ", data.data(), " << test_size << ")");
-            data_send = lfi_send(id, data.data(), test_size);
-            if (data_send != test_size) {
-                print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
+            debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
+            data_recv = lfi_recv(id, data.data(), test_size);
+            if (data_recv != static_cast<ssize_t>(test_size)) {
+                print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
                 return -1;
             }
-            test.size += test_size;
-            // int ack = 0;
-            // debug_info("count " << i << " lfi_recv(" << id << ", ack, " << sizeof(ack) << ")");
-            // data_recv = lfi_recv(id, &ack, sizeof(ack));
-            // if (data_recv != sizeof(ack)) {
-            //     print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
-            //     return -1;
-            // }
+            test_count_interval++;
+            test_size_interval += data_recv;
         }
+        cv.wait_for(lock, std::chrono::nanoseconds(0));
+        i++;
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    test.nanosec = t.resetElapsedNano();
+    debug_info("End run_test size " << test_size);
+    return 0;
+}
 
-    debug_info("End run_test size " << test.test_size);
-
+int thread_read_stdin() {
+    std::string line;
+    while (!signal_stop) {
+        if (!std::getline(std::cin, line)) {
+            // EOF o error
+            signal_stop = true;
+            break;
+        }
+        std::cout << "Leído: " << line << "\n";
+        if (line == "up") {
+            test_size_global = test_size_global.load() * 2;
+        } else if (line == "down") {
+            test_size_global = test_size_global.load() / 2;
+        }
+    }
     return 0;
 }
 
 int main(int argc, char *argv[]) {
     int ret;
-    std::vector<int> client_fds;
 
     if (argc < 2) {
         printf("Usage: %s <server_ips sep ';'>\n", argv[0]);
@@ -85,6 +107,12 @@ int main(int argc, char *argv[]) {
 
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
+
+    if (std::signal(SIGINT, signalHandler) == SIG_ERR) {
+        perror("signal");
+        exit(EXIT_FAILURE);
+        return 1;
+    }
 
     auto servers = split(argv[1], ";");
 
@@ -114,21 +142,34 @@ int main(int argc, char *argv[]) {
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    auto &tests = get_test_vector();
-    data.resize(tests[tests.size() - 1].test_size);
+    std::thread thread(run_test);
+    std::thread(thread_read_stdin).detach();
+
+    if (rank == 0) {
+        std::cout << "Usage: write 'up' to double the msg size and 'down' to half it." << std::endl;
+    }
+
     print_header();
 
-    const int RERUN_TEST = 1;
-    for (auto &test : tests) {
-        for (int i = 0; i < RERUN_TEST; i++) {
-            ret = run_test(client_fds, test);
-            if (ret < 0) {
-                MPI_Abort(MPI_COMM_WORLD, -1);
-                break;
-            }
+    auto start = std::chrono::high_resolution_clock::now();
+    while (!signal_stop) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        bw_test test;
+        {
+            std::unique_lock lock(test_mutex);
+            test.size = test_size_interval;
+            test_size_interval = 0;
+            auto now = std::chrono::high_resolution_clock::now();
+            test.nanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count();
+            test.test_count = test_count_interval;
+            test_count_interval = 0;
+            test.test_size = test_size_global.load();
             print_test(test);
         }
+        start = std::chrono::high_resolution_clock::now();
     }
+
+    thread.join();
 
     for (auto &id : client_fds) {
         int disconnect = 0;

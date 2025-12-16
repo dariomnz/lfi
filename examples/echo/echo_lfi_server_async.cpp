@@ -29,7 +29,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "bw_common.hpp"
+#include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "lfi.h"

@@ -19,7 +19,7 @@
  *
  */
 // #define DEBUG
-#include "bw_common.hpp"
+#include "echo_common.hpp"
 #include "impl/debug.hpp"
 #include "lfi.h"
 #include "mpi.h"
@@ -118,12 +118,17 @@ int main(int argc, char *argv[]) {
     print_header();
 
     for (auto &test : tests) {
-        ret = run_test(client_fds, test);
-        if (ret < 0) {
-            MPI_Abort(MPI_COMM_WORLD, -1);
-            break;
+        const size_t REPEAT_TEST = 10;
+        for (size_t i = 0; i < REPEAT_TEST; i++) {
+            test.size = 0;
+            test.nanosec = 0;
+            ret = run_test(client_fds, test);
+            if (ret < 0) {
+                MPI_Abort(MPI_COMM_WORLD, -1);
+                break;
+            }
+            print_test(test);
         }
-        print_test(test);
     }
 
     for (auto &id : client_fds) {

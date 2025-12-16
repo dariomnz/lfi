@@ -90,13 +90,14 @@ namespace bw_examples
         if (rank == 0)
         {
             std::cout << std::left
-                      << std::setw( 8) << "Msg size" << " | "
+                      << std::setw( 6) << "Msg" << " | "
                       << std::setw( 5) << "Count" << " | "
                       << std::setw( 7) << "Size" << " | "
                       << std::setw( 8) << "Time (s)" << " | "
-                      << std::setw(12) << "Latency (ms)" << " | "
-                      << std::setw(16) << "Bandwidth (MB/s)" << " | "
-                      << std::setw(16) << "Msg rate (msg/s)"
+                      << std::setw( 8) << "Lat (ms)" << " | "
+                      << std::setw(10) << "Bw (MiB/s)" << " | "
+                      << std::setw( 9) << "Bw (Mbps)" << " | "
+                      << std::setw(11) << "Msg (msg/s)"
                       << std::endl;
         }
     }
@@ -159,13 +160,14 @@ namespace bw_examples
         if (rank == 0)
         {
             std::cout << std::left
-                      << std::setw( 8) << bytes_to_str(test.test_size) << " | "
+                      << std::setw( 6) << bytes_to_str(test.test_size) << " | "
                       << std::setw( 5) << test.test_count << " | "
                       << std::setw( 7) << bytes_to_str(r_size) << " | "
                       << std::setw( 8) << std::fixed << std::setprecision(5) << sec << " | "
-                      << std::setw(12) << std::fixed << std::setprecision(5) << (double)test.nanosec / 1'000'000.0 / (double)test.test_count << " | "
-                      << std::setw(16) << bw << " | "
-                      << std::setw(16) << std::fixed << std::setprecision(0) << (double)test.test_count / ((double)test.nanosec / 1'000'000'000.0)
+                      << std::setw( 8) << std::fixed << std::setprecision(5) << (double)test.nanosec / 1'000'000.0 / (double)test.test_count << " | "
+                      << std::setw(10) << std::fixed << std::setprecision(2) << bw << " | "
+                      << std::setw( 9) << std::fixed << std::setprecision(0) << (((bw * 1024 * 1024) * 8) / 1'000'000) << " | "
+                      << std::setw(11) << std::fixed << std::setprecision(0) << (double)test.test_count / ((double)test.nanosec / 1'000'000'000.0)
                       << std::endl;
         }
     }
