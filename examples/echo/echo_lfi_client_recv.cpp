@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
 
     client_fds.resize(servers.size());
     for (size_t i = 0; i < servers.size(); i++) {
-        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT)) < 0) {
+        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT_LFI)) < 0) {
             printf("lfi client creation error \n");
             MPI_Abort(MPI_COMM_WORLD, -1);
             return -1;
@@ -118,7 +118,7 @@ int main(int argc, char *argv[]) {
     print_header();
 
     for (auto &test : tests) {
-        const size_t REPEAT_TEST = 10;
+        const size_t REPEAT_TEST = 3;
         for (size_t i = 0; i < REPEAT_TEST; i++) {
             test.size = 0;
             test.nanosec = 0;

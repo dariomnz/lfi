@@ -61,7 +61,7 @@ void echo_server(MPI_Comm comm) {
             return;
         }
 
-        tpool.enqueue([msg_size, rank = status.MPI_SOURCE, &comm]() {
+        auto msg_lambda = [msg_size, rank = status.MPI_SOURCE, &comm]() {
             std::vector<uint8_t> data;
             data.resize(std::abs(msg_size));
 
@@ -78,27 +78,7 @@ void echo_server(MPI_Comm comm) {
                     print("Error MPI_Recv = " << recv_msg << " " << msg);
                     return -1;
                 }
-                // int ack = 0;
-                // debug_info("MPI_Send(" << rank << ", &ack, " << sizeof(ack) << ")");
-                // auto send_ack = MPI_Send(&ack, 1, MPI_INT, rank, 0, comm);
-                // if (send_ack != MPI_SUCCESS) {
-                //     char msg[1024];
-                //     int msg_len = 1024;
-                //     MPI_Error_string(send_ack, msg, &msg_len);
-                //     print("Error MPI_Send = " << send_ack << " " << msg);
-                //     return -1;
-                // }
             } else {
-                // int ack = 0;
-                // debug_info("MPI_Recv(" << rank << ", &ack, " << sizeof(ack) << ")");
-                // auto recv_ack = MPI_Recv(&ack, 1, MPI_INT, rank, 0, comm, MPI_STATUS_IGNORE);
-                // if (recv_ack != MPI_SUCCESS) {
-                //     char msg[1024];
-                //     int msg_len = 1024;
-                //     MPI_Error_string(recv_ack, msg, &msg_len);
-                //     print("Error MPI_Recv = " << recv_ack << " " << msg);
-                //     return -1;
-                // }
                 debug_info("MPI_Send(" << rank << ", data.data(), " << std::abs(msg_size) << ")");
                 auto send_msg = MPI_Send(data.data(), std::abs(msg_size), MPI_UINT8_T, rank, 0, comm);
                 if (send_msg != MPI_SUCCESS) {
@@ -110,7 +90,9 @@ void echo_server(MPI_Comm comm) {
                 }
             }
             return 0;
-        });
+        };
+
+        msg_lambda();
     }
 }
 

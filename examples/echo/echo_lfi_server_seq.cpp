@@ -20,13 +20,11 @@
  */
 // #define DEBUG
 
-#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <memory>
 #include <thread>
-#include <unordered_set>
 #include <vector>
 
 #include "echo_common.hpp"
@@ -47,23 +45,6 @@ static std::atomic<int> clients = 0;
 std::unique_ptr<lfi_request, void (*)(lfi_request *)> trigger_request(lfi_request_create(LFI_ANY_COMM_SHM),
                                                                       lfi_request_free);
 
-struct req_context {
-    lfi_request* req;
-    std::vector<uint8_t> data;
-};
-
-void auto_free_request(int error, void *context) {
-    req_context *ctx = (req_context *)context;
-    auto req = ctx->req;
-    if (error) {
-        print("Error in request to comm " << lfi_request_source(req) << " " << error << " " << lfi_strerror(error));
-    }
-
-    lfi_request_free(req);
-
-    delete ctx;
-}
-
 void echo_server() {
     int msg_size_shm = 0;
     int msg_size_peer = 0;
@@ -83,8 +64,6 @@ void echo_server() {
         print("Error in lfi_trecv_async");
         return;
     }
-
-    // ThreadPool tpool;
     while (true) {
         debug_info("Start recv any ack");
 
@@ -138,29 +117,27 @@ void echo_server() {
             continue;
         }
 
-        auto msg_op = [id = source, msg_size]() {
-            req_context* ctx = new req_context();
-            
-            lfi_request *req = lfi_request_create(id);
-            ctx->req = req;
-            ctx->data.resize(std::abs(msg_size));
-            lfi_request_set_callback(req, auto_free_request, ctx);
+        auto msg_lambda = [msg_size, id = source]() {
+            std::vector<uint8_t> data;
+            data.resize(std::abs(msg_size));
 
             busy_loop(std::chrono::microseconds(1));
 
             if (msg_size < 0) {
                 debug_info("lfi_recv(" << id << ", data.data(), " << std::abs(msg_size) << ")");
-                auto recv_msg = lfi_recv_async(req, ctx->data.data(), std::abs(msg_size));
+                auto recv_msg = lfi_recv(id, data.data(), std::abs(msg_size));
                 if (recv_msg < 0) {
-                    print("Error lfi_recv(" << id << ") = " << recv_msg << " " << lfi_strerror(recv_msg));
+                    print("Error lfi_recv(" << id << ", size=" << std::abs(msg_size) << ") = " << recv_msg << " "
+                                            << lfi_strerror(recv_msg));
                     lfi_client_close(id);
                     return -1;
                 }
             } else {
                 debug_info("lfi_send(" << id << ", data.data(), " << std::abs(msg_size) << ")");
-                auto send_msg = lfi_send_async(req, ctx->data.data(), std::abs(msg_size));
+                auto send_msg = lfi_send(id, data.data(), std::abs(msg_size));
                 if (send_msg < 0) {
-                    print("Error lfi_send(" << id << ") = " << send_msg << " " << lfi_strerror(send_msg));
+                    print("Error lfi_send(" << id << ", size=" << std::abs(msg_size) << ") = " << send_msg << " "
+                                            << lfi_strerror(send_msg));
                     lfi_client_close(id);
                     return -1;
                 }
@@ -168,17 +145,13 @@ void echo_server() {
             return 0;
         };
 
-        msg_op();
-        // tpool.enqueue(msg_op);
-        // std::thread(msg_op).detach();
+        msg_lambda();
     }
 }
 
 int server_fd;
-bool request_close = false;
 void signalHandler(int signum) {
     std::cout << "\nSignal (" << signum << ") received." << std::endl;
-    request_close = true;
     lfi_server_close(server_fd);
 }
 
@@ -206,7 +179,7 @@ int main() {
     print("Server start accepting " << LFI::ns::get_host_name() << " :");
     while (true) {
         if ((new_socket = lfi_server_accept(server_fd)) < 0) {
-            if (!request_close) perror("accept");
+            perror("accept");
             break;
         }
         print("Server accept client " << new_socket);

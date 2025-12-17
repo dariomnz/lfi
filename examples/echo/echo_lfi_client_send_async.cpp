@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
 
     client_fds.resize(servers.size());
     for (size_t i = 0; i < servers.size(); i++) {
-        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT)) < 0) {
+        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT_LFI)) < 0) {
             printf("lfi client creation error \n");
             MPI_Abort(MPI_COMM_WORLD, -1);
             return -1;

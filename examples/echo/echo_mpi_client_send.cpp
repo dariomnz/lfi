@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
         }
         serv_addr = {};
         serv_addr.sin_family = AF_INET;
-        serv_addr.sin_port = htons(PORT);
+        serv_addr.sin_port = htons(PORT_MPI);
 
         if (inet_pton(AF_INET, LFI::ns::get_host_ip(servers[0]).c_str(), &serv_addr.sin_addr) <= 0) {
             printf("Invalid address/ Address not supported \n");

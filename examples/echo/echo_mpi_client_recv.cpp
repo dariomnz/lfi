@@ -110,7 +110,7 @@ int main(int argc, char *argv[]) {
         }
         serv_addr = {};
         serv_addr.sin_family = AF_INET;
-        serv_addr.sin_port = htons(PORT);
+        serv_addr.sin_port = htons(PORT_MPI);
 
         if (inet_pton(AF_INET, LFI::ns::get_host_ip(servers[0]).c_str(), &serv_addr.sin_addr) <= 0) {
             printf("Invalid address/ Address not supported \n");
@@ -153,7 +153,7 @@ int main(int argc, char *argv[]) {
     data.resize(tests[tests.size() - 1].test_size);
 
     for (auto &test : tests) {
-        const size_t REPEAT_TEST = 10;
+        const size_t REPEAT_TEST = 3;
         for (size_t i = 0; i < REPEAT_TEST; i++) {
             test.size = 0;
             test.nanosec = 0;

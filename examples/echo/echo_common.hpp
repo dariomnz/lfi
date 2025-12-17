@@ -33,7 +33,8 @@
 #include "mpi.h"
 
 namespace bw_examples {
-constexpr const int PORT = 8080;
+constexpr const int PORT_LFI = 8080;
+constexpr const int PORT_MPI = 8081;
 
 constexpr const uint64_t KB = 1024;
 constexpr const uint64_t MB = KB * 1024;
@@ -56,7 +57,7 @@ struct bw_test {
 
         for (size_t i = 0; i < tests.size(); i++) {
             tests[i].test_size = 1ull << i;
-            tests[i].test_count = 100;
+            tests[i].test_count = 1000;
             tests[i].test_tag = 1000 + i;
         }
         const int TO_REMOVE_FIRST = 15;

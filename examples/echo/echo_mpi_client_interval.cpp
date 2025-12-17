@@ -140,7 +140,7 @@ int main(int argc, char *argv[]) {
         }
         serv_addr = {};
         serv_addr.sin_family = AF_INET;
-        serv_addr.sin_port = htons(PORT);
+        serv_addr.sin_port = htons(PORT_MPI);
 
         if (inet_pton(AF_INET, LFI::ns::get_host_ip(servers[0]).c_str(), &serv_addr.sin_addr) <= 0) {
             printf("Invalid address/ Address not supported \n");
@@ -180,9 +180,9 @@ int main(int argc, char *argv[]) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     std::thread thread(run_test);
-    std::thread(thread_read_stdin).detach();
-
+    
     if (rank == 0) {
+        std::thread(thread_read_stdin).detach();
         std::cout << "Usage: write 'up' to double the msg size and 'down' to half it." << std::endl;
     }
 
@@ -200,6 +200,9 @@ int main(int argc, char *argv[]) {
             test.nanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count();
             test.test_count = test_count_interval;
             test_count_interval = 0;
+            uint64_t test_size = test_size_global.load();
+            MPI_Bcast(&test_size, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+            test_size_global = test_size;
             test.test_size = test_size_global.load();
             print_test(test);
         }

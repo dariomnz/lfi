@@ -294,7 +294,7 @@ int main() {
     }
 
     // Creating socket file descriptor
-    int port = PORT;
+    int port = PORT_LFI;
     if ((server_fd = lfi_server_create(NULL, &port)) < 0) {
         perror("lfi server failed");
         exit(EXIT_FAILURE);
