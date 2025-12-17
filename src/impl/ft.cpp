@@ -88,7 +88,7 @@ int LFI::ft_thread_ping_pong() {
 
         int progresed_shm = 0;
         int progresed_peer = 0;
-        if (!lfi.shm_ep.in_progress.load()) {
+        if (env::get_instance().LFI_use_shm && !lfi.shm_ep.in_progress.load()) {
             // debug_info("[LFI] running ft ping pong thread shm");
             progresed_shm = lfi.shm_ep.progress(true);
         }

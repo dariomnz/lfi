@@ -29,7 +29,7 @@ namespace LFI {
 
 lfi_comm* LFI::init_comm(bool is_shm, int32_t comm_id) {
     LFI_PROFILE_FUNCTION();
-    if (is_shm) {
+    if (is_shm && env::get_instance().LFI_use_shm) {
         return init_comm(shm_ep, comm_id);
     } else {
         return init_comm(peer_ep, comm_id);
