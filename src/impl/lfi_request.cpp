@@ -152,14 +152,16 @@ void lfi_request::cancel() {
             p_ep = m_endpoint.tx_endpoint();
         } else {
             p_ep = m_endpoint.rx_endpoint();
-            ;
         }
         // Cancel request and notify
 
         // Ignore return value
         // ref: https://github.com/ofiwg/libfabric/issues/7795
-        [[maybe_unused]] auto ret = fi_cancel(&p_ep->fid, this);
-        debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
+        auto aux_context = wait_context.load();
+        if (aux_context) {
+            [[maybe_unused]] auto ret = fi_cancel(&p_ep->fid, aux_context);
+            debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
+        }
 
         // Check if completed to no report error
         if (!is_completed() || error) {
