@@ -47,7 +47,7 @@ int run_test() {
     std::vector<uint8_t> data(test_size_global.load());
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
-    debug_info("Start run_test size " << test_size);
+    debug_info("Start run_test size " << test_size_global.load());
     [[maybe_unused]] int64_t i = 0;
     while (!signal_stop) {
         std::unique_lock lock(test_mutex);
@@ -75,7 +75,7 @@ int run_test() {
         i++;
     }
 
-    debug_info("End run_test size " << test_size);
+    debug_info("End run_test size " << test_size_global.load());
     return 0;
 }
 

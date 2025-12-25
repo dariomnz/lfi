@@ -54,7 +54,7 @@ int run_test() {
     std::condition_variable cv;
     std::vector<uint8_t> data(test_size_global.load());
     int ret = 0;
-    debug_info("Start run_test size " << test_size);
+    debug_info("Start run_test size " << test_size_global.load());
     [[maybe_unused]] int64_t i = 0;
     while (!signal_stop) {
         std::unique_lock lock(test_mutex);
@@ -69,7 +69,7 @@ int run_test() {
                 return -1;
             }
 
-            debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
+            debug_info("count " << i << " MPI_Recv(" << data.data() << ", " << test_size << ")");
             ret = MPI_Recv(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, MPI_STATUS_IGNORE);
             if (ret != MPI_SUCCESS) {
                 printf("Error MPI_Recv\n");
@@ -82,7 +82,7 @@ int run_test() {
         i++;
     }
 
-    debug_info("End run_test size " << test_size);
+    debug_info("End run_test size " << test_size_global.load());
     return 0;
 }
 

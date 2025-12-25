@@ -31,6 +31,22 @@
 #include "lfi.h"
 #include "lfi_async.h"
 
+std::ostream &operator<<(std::ostream &os, lfi_group group) {
+    os << "lfi_group ";
+    os << "rank " << group.rank;
+    os << " size " << group.size;
+
+    os << " ranks[";
+    for (size_t i = 0; i < group.size; i++) {
+        os << group.ranks[i];
+        if (i != group.size - 1) {
+            os << ", ";
+        }
+    }
+    os << "]";
+    return os;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -128,6 +144,7 @@ int lfi_group_create(const char *hostnames[], size_t n_hosts, lfi_group *out_gro
     }
 
     debug_info("lfi_group_create Succcess self_index " << out_group->rank);
+    debug_info(*out_group);
     lfi_barrier(out_group);
 
     return LFI_SUCCESS;
@@ -186,10 +203,12 @@ int lfi_barrier(lfi_group *group) {
         for (size_t i = 0; i < group->size; i++) {
             if (static_cast<int>(i) != root) {
                 auto recv_req = requests.emplace_back(lfi_request_create(group->ranks[i]));
+                debug_info("lfi_trecv_async " << group->ranks[i] << " LFI_TAG_BARRIER");
                 ret = lfi_trecv_async(recv_req, &dummy, 0, LFI_TAG_BARRIER);
                 if (ret < 0) {
                     goto error;
                 }
+                debug_info("lfi_tsend_async " << group->ranks[i] << " LFI_TAG_BARRIER");
                 auto send_req = requests.emplace_back(lfi_request_create(group->ranks[i]));
                 ret = lfi_tsend_async(send_req, &dummy, 0, LFI_TAG_BARRIER);
                 if (ret < 0) {
@@ -200,10 +219,12 @@ int lfi_barrier(lfi_group *group) {
     } else {
         requests.reserve(2);
         auto recv_req = requests.emplace_back(lfi_request_create(group->ranks[root]));
+        debug_info("lfi_trecv_async root " << group->ranks[root] << " LFI_TAG_BARRIER");
         ret = lfi_trecv_async(recv_req, &dummy, 0, LFI_TAG_BARRIER);
         if (ret < 0) {
             goto error;
         }
+        debug_info("lfi_tsend_async root " << group->ranks[root] << " LFI_TAG_BARRIER");
         auto send_req = requests.emplace_back(lfi_request_create(group->ranks[root]));
         ret = lfi_tsend_async(send_req, &dummy, 0, LFI_TAG_BARRIER);
         if (ret < 0) {

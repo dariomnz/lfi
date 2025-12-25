@@ -119,8 +119,9 @@ void lfi_request::complete(int err) {
     cv.notify_all();
     if (shared_wait_struct != nullptr) {
         std::unique_lock shared_wait_lock(shared_wait_struct->wait_mutex);
-        debug_info("[LFI] have shared_wait_struct");
         auto wait_count = shared_wait_struct->wait_count.fetch_sub(1);
+        wait_count--;
+        debug_info("[LFI] have shared_wait_struct "<<wait_count);
         if (wait_count <= 0) {
             shared_wait_struct->wait_cv.notify_all();
         }
