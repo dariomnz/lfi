@@ -79,11 +79,16 @@ int main(int argc, char *argv[]) {
     // for (i = 0; i < count; i++) print("%s\n", tokens[i]);
 
     lfi_group group;
+    struct timeval start_group, end_group;
+    gettimeofday(&start_group, NULL);
     int ret = lfi_group_create((const char **)tokens, count, &group);
     if (ret < 0) {
         print("Error lfi_group_create: %s\n", lfi_strerror(ret));
         exit(EXIT_FAILURE);
     }
+    gettimeofday(&end_group, NULL);
+    double time_taken = (double)(end_group.tv_sec - start_group.tv_sec) + (double)(end_group.tv_usec - start_group.tv_usec) / 1e6;
+    printf("Time taken in lfi_group_create of %d size: %.6f segundos\n", count, time_taken);
 
     int rank, size;
     lfi_group_rank(&group, &rank);

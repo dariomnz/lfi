@@ -99,33 +99,33 @@ int main(int argc, char *argv[]) {
     double end = lfi_time(&group);
     print("After barrier in %d in %f\n", rank, (end - start));
 
-    int value_min = rank;
-    print("Before lfi_allreduce LFI_OP_MIN %d in %d\n", value_min, rank);
+    int64_t value_min = rank;
+    print("Before lfi_allreduce LFI_OP_MIN %ld in %d\n", value_min, rank);
     double start_min = lfi_time(&group);
-    lfi_allreduce(&group, &value_min, LFI_OP_TYPE_INT, LFI_OP_MIN);
+    lfi_allreduce(&group, &value_min, LFI_OP_TYPE_INT64_T, LFI_OP_MIN);
     double end_min = lfi_time(&group);
-    print("After lfi_allreduce LFI_OP_MIN %d in %d in %f\n", value_min, rank, (end_min - start_min));
+    print("After lfi_allreduce LFI_OP_MIN %ld in %d in %f\n", value_min, rank, (end_min - start_min));
 
-    int value_max = rank;
-    print("Before lfi_allreduce LFI_OP_MAX %d in %d\n", value_max, rank);
+    int64_t value_max = rank;
+    print("Before lfi_allreduce LFI_OP_MAX %ld in %d\n", value_max, rank);
     double start_max = lfi_time(&group);
-    lfi_allreduce(&group, &value_max, LFI_OP_TYPE_INT, LFI_OP_MAX);
+    lfi_allreduce(&group, &value_max, LFI_OP_TYPE_INT64_T, LFI_OP_MAX);
     double end_max = lfi_time(&group);
-    print("After lfi_allreduce LFI_OP_MAX %d in %d in %f\n", value_max, rank, (end_max - start_max));
+    print("After lfi_allreduce LFI_OP_MAX %ld in %d in %f\n", value_max, rank, (end_max - start_max));
 
-    int value_sum = rank;
-    print("Before lfi_allreduce LFI_OP_SUM %d in %d\n", value_sum, rank);
+    int64_t value_sum = rank;
+    print("Before lfi_allreduce LFI_OP_SUM %ld in %d\n", value_sum, rank);
     double start_sum = lfi_time(&group);
-    lfi_allreduce(&group, &value_sum, LFI_OP_TYPE_INT, LFI_OP_SUM);
+    lfi_allreduce(&group, &value_sum, LFI_OP_TYPE_INT64_T, LFI_OP_SUM);
     double end_sum = lfi_time(&group);
-    print("After lfi_allreduce LFI_OP_SUM %d in %d in %f\n", value_sum, rank, (end_sum - start_sum));
+    print("After lfi_allreduce LFI_OP_SUM %ld in %d in %f\n", value_sum, rank, (end_sum - start_sum));
 
-    int value_prod = rank;
-    print("Before lfi_allreduce LFI_OP_PROD %d in %d\n", value_prod, rank);
+    int64_t value_prod = rank;
+    print("Before lfi_allreduce LFI_OP_PROD %ld in %d\n", value_prod, rank);
     double start_prod = lfi_time(&group);
-    lfi_allreduce(&group, &value_prod, LFI_OP_TYPE_INT, LFI_OP_PROD);
+    lfi_allreduce(&group, &value_prod, LFI_OP_TYPE_INT64_T, LFI_OP_PROD);
     double end_prod = lfi_time(&group);
-    print("After lfi_allreduce LFI_OP_PROD %d in %d in %f\n", value_prod, rank, (end_prod - start_prod));
+    print("After lfi_allreduce LFI_OP_PROD %ld in %d in %f\n", value_prod, rank, (end_prod - start_prod));
 
     ret = lfi_group_close(&group);
     if (ret < 0) {

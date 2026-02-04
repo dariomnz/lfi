@@ -150,6 +150,10 @@ enum lfi_op_enum {
 
 enum lfi_op_type_enum {
     LFI_OP_TYPE_INT,
+    LFI_OP_TYPE_UINT32_T,
+    LFI_OP_TYPE_INT32_T,
+    LFI_OP_TYPE_UINT64_T,
+    LFI_OP_TYPE_INT64_T,
 };
 
 /**

@@ -91,6 +91,7 @@ static inline std::string getTime() {
     return oss.str();
 }
 
+#undef print_error
 #define print_error(out_format)                                                                                \
     {                                                                                                          \
         std::ostringstream __out;                                                                              \
@@ -132,6 +133,7 @@ static inline std::string getTime() {
 #define debug_info(out_format)
 #endif
 
+#undef print
 #define print(out_format)                             \
     {                                                 \
         std::ostringstream __out;                     \

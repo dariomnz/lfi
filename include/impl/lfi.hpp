@@ -100,12 +100,13 @@ static constexpr const char *lfi_strerror(int error) {
 #define LFI_TAG_FT_PONG             (0xFFFFFFFF - 2)
 #define LFI_TAG_RECV_LD_PRELOAD     (0xFFFFFFFF - 3)
 #define LFI_TAG_BUFFERED_LD_PRELOAD 100000
-#define LFI_TAG_BARRIER             (0xFFFFFFFF - 4)
-#define LFI_TAG_BROADCAST           (0xFFFFFFFF - 5)
-#define LFI_TAG_ALLREDUCE           (0xFFFFFFFF - 6)
-#define LFI_TAG_DUMMY               (0xFFFFFFFF - 7)
-#define LFI_TAG_INITIAL_SEND_SRV    (0xFFFFFFFF - 8)
-#define LFI_TAG_INITIAL_SEND_CLI    (0xFFFFFFFF - 9)
+#define LFI_TAG_GROUP               (0xFFFFFFFF - 4)
+#define LFI_TAG_BARRIER             (0xFFFFFFFF - 5)
+#define LFI_TAG_BROADCAST           (0xFFFFFFFF - 6)
+#define LFI_TAG_ALLREDUCE           (0xFFFFFFFF - 7)
+#define LFI_TAG_DUMMY               (0xFFFFFFFF - 8)
+#define LFI_TAG_INITIAL_SEND_SRV    (0xFFFFFFFF - 9)
+#define LFI_TAG_INITIAL_SEND_CLI    (0xFFFFFFFF - 10)
 
 // Constants
 constexpr static const uint64_t MASK_RANK = 0xFFFF'FFFF'0000'0000;
@@ -123,6 +124,8 @@ static inline std::string lfi_tag_to_string(int64_t tag) {
             return "RECV_LD_PRELOAD";
         case LFI_TAG_BUFFERED_LD_PRELOAD:
             return "BUFFERED_LD_PRELOAD";
+        case LFI_TAG_GROUP:
+            return "GROUP";
         case LFI_TAG_BARRIER:
             return "BARRIER";
         case LFI_TAG_BROADCAST:

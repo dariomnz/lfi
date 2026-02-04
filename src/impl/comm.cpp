@@ -168,8 +168,8 @@ int LFI::close_comm(uint32_t id) {
             std::unordered_set<lfi_request*> temp_requests(comm->ft_requests);
             for (auto& request : temp_requests) {
                 if (request == nullptr) continue;
-                if (id != ANY_COMM_SHM && id != ANY_COMM_PEER) {
-                    print("[LFI] [WARNING] Clossing comm with pending request: " << *request);
+                if (id != ANY_COMM_SHM && id != ANY_COMM_PEER && request->tag != LFI_TAG_FT_PING && request->tag != LFI_TAG_FT_PONG) {
+                    print("[LFI] [WARNING] Closing comm with pending request: " << *request);
                 }
                 request->cancel();
             }
