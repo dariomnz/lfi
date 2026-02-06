@@ -218,6 +218,44 @@ ssize_t lfi_wait_any(lfi_request *requests[], size_t size);
 ssize_t lfi_wait_all(lfi_request *requests[], size_t size);
 
 /**
+ * @brief Checks if an asynchronous request has completed.
+ *
+ * Unlike lfi_wait, this function returns immediately. It allows the caller
+ * to poll the status of a specific request without blocking execution.
+ *
+ * @param request Pointer to the 'lfi_request' object.
+ * @return -LFI_TIMEOUT if the request is not completed, LFI_SUCCESS if completed,
+ * or a negative error code on failure.
+ */
+ssize_t lfi_test(lfi_request *request);
+
+/**
+ * @brief Checks if any of the given asynchronous requests have completed.
+ *
+ * This function scans the array of requests and returns the status of the
+ * first one it finds completed. It does not wait for any request to finish.
+ *
+ * @param requests Array of 'lfi_request' pointers.
+ * @param size The number of requests in the array.
+ * @return The index of a completed request, -LFI_TIMEOUT if none are completed,
+ * or a negative error code on failure.
+ */
+ssize_t lfi_test_any(lfi_request *requests[], size_t size);
+
+/**
+ * @brief Checks if all of the given asynchronous requests have completed.
+ *
+ * This function verifies the status of every request in the array.
+ * It only reports success if the entire batch is finished.
+ *
+ * @param requests Array of 'lfi_request' pointers.
+ * @param size The number of requests in the array.
+ * @return -LFI_TIMEOUT if all requests are not completed, LFI_SUCCESS if all requests are completed,
+ * or a negative error code on failure.
+ */
+ssize_t lfi_test_all(lfi_request *requests[], size_t size);
+
+/**
  * @brief Cancels an asynchronous request.
  *
  * This function attempts to cancel the given request.

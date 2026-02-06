@@ -22,6 +22,7 @@
 #include <cstring>
 
 #include "impl/debug.hpp"
+#include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 
@@ -115,15 +116,10 @@ void LFI::dump_stats() {
         }
 
         {
-            std::unique_lock lock(endpoint.waiting_requests_mutex);
-            std::cerr << indent(1) << "waiting_requests size: " << endpoint.waiting_requests.size() << std::endl;
-            for (auto &&ptr : endpoint.waiting_requests) {
-                if (auto req = std::get_if<lfi_request *>(&ptr)) {
-                    std::unique_lock lock_req((*req)->mutex);
-                    std::cerr << indent(2) << *(*req) << std::endl;
-                } else if (std::get_if<wait_struct *>(&ptr)) {
-                    std::cerr << indent(2) << "wait_struct" << std::endl;
-                }
+            std::unique_lock lock(endpoint.waiters_mutex);
+            std::cerr << indent(1) << "num_waiters: " << endpoint.waiters_list.size() << std::endl;
+            for (auto &&waiter : endpoint.waiters_list) {
+                std::cerr << indent(2) << "Waiter " << waiter << std::endl;
             }
         }
     };

@@ -21,8 +21,6 @@
 
 #include "impl/lfi_request.hpp"
 
-#include <rdma/fi_errno.h>
-
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
@@ -111,7 +109,7 @@ void lfi_request::complete(int err) {
         return;
     }
     error = err;
-    auto aux_wait_context=wait_context.load();
+    auto aux_wait_context = wait_context.load();
     if (aux_wait_context) {
         aux_wait_context->unassign();
     }
@@ -121,7 +119,7 @@ void lfi_request::complete(int err) {
         std::unique_lock shared_wait_lock(shared_wait_struct->wait_mutex);
         auto wait_count = shared_wait_struct->wait_count.fetch_sub(1);
         wait_count--;
-        debug_info("[LFI] have shared_wait_struct "<<wait_count);
+        debug_info("[LFI] have shared_wait_struct " << wait_count);
         if (wait_count <= 0) {
             shared_wait_struct->wait_cv.notify_all();
         }
@@ -142,6 +140,18 @@ void lfi_request::complete(int err) {
 void lfi_request::cancel() {
     LFI_PROFILE_FUNCTION();
     int error = -LFI_CANCELED;
+
+    if (!is_inject) {
+        std::unique_lock lock(m_endpoint.pending_ops_mutex);
+        auto context_to_find = wait_context.load();
+        if (context_to_find) {
+            m_endpoint.priority_ops.erase_if(
+                [context_to_find](const lfi_endpoint::PendingOp &op) { return op.context == context_to_find; });
+            m_endpoint.pending_ops.erase_if(
+                [context_to_find](const lfi_endpoint::PendingOp &op) { return op.context == context_to_find; });
+        }
+    }
+
     {
         std::unique_lock request_lock(mutex);
         debug_info("[LFI] Start " << *this);
@@ -166,7 +176,10 @@ void lfi_request::cancel() {
 
         // Check if completed to no report error
         if (!is_completed() || error) {
-            auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(m_comm_id);
+            auto comm_id = m_comm_id;
+            request_lock.unlock();
+            auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(comm_id);
+            request_lock.lock();
             if ((comm && comm->is_canceled) || error == -LFI_BROKEN_COMM) {
                 error = -LFI_BROKEN_COMM;
             } else {

@@ -20,6 +20,7 @@
  */
 
 #include "impl/debug.hpp"
+#include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 
@@ -92,7 +93,6 @@ std::pair<std::shared_lock<std::shared_mutex>, lfi_comm*> LFI::get_comm_and_mute
 
     lfi_comm* comm = get_comm_internal(comms_lock, id);
 
-    debug_info("[LFI] End " << id);
     return {std::move(comms_lock), comm};
 }
 
@@ -102,13 +102,12 @@ lfi_comm* LFI::get_comm(uint32_t id) {
     std::shared_lock comms_lock(m_comms_mutex);
     lfi_comm* comm = get_comm_internal(comms_lock, id);
 
-    debug_info("[LFI] End " << id);
     return comm;
 }
 
 lfi_comm* LFI::get_comm_internal(std::shared_lock<std::shared_mutex>& comms_lock, uint32_t id) {
     LFI_PROFILE_FUNCTION();
-    debug_info("[LFI] Start " << id);
+    // debug_info("[LFI] Start " << id);
     auto comm_it = m_comms.find(id);
     if (comm_it == m_comms.end()) {
         debug_info("[LFI] End " << id << " not found in comm so it is nor reserved");
@@ -168,7 +167,8 @@ int LFI::close_comm(uint32_t id) {
             std::unordered_set<lfi_request*> temp_requests(comm->ft_requests);
             for (auto& request : temp_requests) {
                 if (request == nullptr) continue;
-                if (id != ANY_COMM_SHM && id != ANY_COMM_PEER && request->tag != LFI_TAG_FT_PING && request->tag != LFI_TAG_FT_PONG) {
+                if (id != ANY_COMM_SHM && id != ANY_COMM_PEER && request->tag != LFI_TAG_FT_PING &&
+                    request->tag != LFI_TAG_FT_PONG) {
                     print("[LFI] [WARNING] Closing comm with pending request: " << *request);
                 }
                 request->cancel();

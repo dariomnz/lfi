@@ -24,14 +24,14 @@
 #include <rdma/fi_endpoint.h>
 
 #include <atomic>
-#include <functional>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
-#include <variant>
 #include <vector>
 
 #include "lfi_async.h"
+#include "vector_queue.hpp"
 
 namespace LFI {
 
@@ -67,12 +67,11 @@ struct lfi_endpoint {
     std::unordered_set<lfi_comm *> ft_comms = {};
     std::vector<std::unique_ptr<lfi_request>> ft_ping_pongs;
 
-    std::mutex waiting_requests_mutex = {};
-    std::unordered_set<std::variant<lfi_request *, wait_struct *>> waiting_requests = {};
+    std::mutex waiters_mutex = {};
+    std::unordered_set<std::condition_variable *> waiters_list = {};
 
     std::mutex callbacks_mutex = {};
     std::vector<std::tuple<lfi_request_callback, int, void *>> callbacks = {};
-
 
     bool initialized() { return enable_ep; }
 
@@ -92,12 +91,29 @@ struct lfi_endpoint {
     int protected_progress(bool call_callbacks);
     int progress(bool call_callbacks);
 
-    fid_ep* rx_endpoint() {
-        return use_scalable_ep ? rx_ep : ep;
-    }
-    fid_ep* tx_endpoint() {
-        return use_scalable_ep ? tx_ep : ep;
-    }
+    struct PendingOp {
+        enum class Type : uint8_t { SEND, SENDV, RECV, RECVV, INJECT };
+        Type type;
+        fid_ep *ep;
+        union {
+            const void *cbuf;
+            void *buf;
+        } buf;
+        size_t len;
+        fi_addr_t addr;
+        uint64_t tag;
+        uint64_t ignore;
+        void *context;
+    };
+
+    std::mutex pending_ops_mutex;
+    VectorQueue<PendingOp> priority_ops;
+    VectorQueue<PendingOp> pending_ops;
+
+    void post_pending_ops();
+
+    fid_ep *rx_endpoint() { return use_scalable_ep ? rx_ep : ep; }
+    fid_ep *tx_endpoint() { return use_scalable_ep ? tx_ep : ep; }
 };
 
 }  // namespace LFI

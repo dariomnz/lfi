@@ -19,10 +19,7 @@
  *
  */
 
-// #define DEBUG
-#include <chrono>
-#include <mutex>
-
+#include "helpers.hpp"
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
@@ -88,13 +85,19 @@ int LFI::ft_thread_ping_pong() {
 
         int progresed_shm = 0;
         int progresed_peer = 0;
-        if (env::get_instance().LFI_use_shm && !lfi.shm_ep.in_progress.load()) {
-            // debug_info("[LFI] running ft ping pong thread shm");
-            progresed_shm = lfi.shm_ep.progress(true);
+        if (env::get_instance().LFI_use_shm) {
+            ProgressGuard shm_progress(lfi.shm_ep);
+            if (shm_progress.is_leader()) {
+                // debug_info("[LFI] running ft ping pong thread shm");
+                progresed_shm = lfi.shm_ep.progress(true);
+            }
         }
-        if (!lfi.peer_ep.in_progress.load()) {
-            // debug_info("[LFI] running ft ping pong thread peer");
-            progresed_peer = lfi.peer_ep.progress(true);
+        {
+            ProgressGuard peer_progress(lfi.peer_ep);
+            if (peer_progress.is_leader()) {
+                // debug_info("[LFI] running ft ping pong thread peer");
+                progresed_peer = lfi.peer_ep.progress(true);
+            }
         }
         // If there are some progress rerun without sleep
         if (progresed_shm > 0 || progresed_peer > 0) continue;
@@ -124,7 +127,7 @@ void ping_callback([[maybe_unused]] int error, void *context) {
         auto fi_pong = new lfi_request(comm->m_endpoint, comm->rank_peer);
         fi_pong->callback = pong_callback;
         fi_pong->callback_ctx = fi_pong;
-        int ret = lfi.async_send(&dummy, 0, LFI_TAG_FT_PONG, *fi_pong);
+        int ret = lfi.async_send(&dummy, 0, LFI_TAG_FT_PONG, *fi_pong, true);
         if (ret < 0) {
             print("Error in async_send " << ret << " " << lfi_strerror(ret));
             return;
@@ -132,7 +135,7 @@ void ping_callback([[maybe_unused]] int error, void *context) {
     }
 
     // Repost recv PING
-    int ret = lfi.async_recv(&dummy, 0, LFI_TAG_FT_PING, *req);
+    int ret = lfi.async_recv(&dummy, 0, LFI_TAG_FT_PING, *req, true);
     if (ret < 0) {
         print("Error in async_recv " << ret << " " << lfi_strerror(ret));
         return;
@@ -153,7 +156,7 @@ int LFI::ft_setup_ping_pong() {
             std::make_unique<lfi_request>(comm->m_endpoint, comm->rank_peer));
         ft_ping->callback = ping_callback;
         ft_ping->callback_ctx = ft_ping.get();
-        int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping);
+        int ret = async_recv(&dummy, 0, LFI_TAG_FT_PING, *ft_ping, true);
         if (ret < 0) {
             print("Error in async_recv");
             return ret;
@@ -216,16 +219,9 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
             } else {
                 comm->ft_ping->reset();
             }
-            int32_t ping_ellapsed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(now - comm->ft_ping_time_point).count();
-            debug_info("[LFI] comm " << comm->rank_peer << " async_send PING try " << ping_ellapsed);
-            auto ret_ping = async_send(&dummy, 0, LFI_TAG_FT_PING, *comm->ft_ping, 0);
-
-            if (ret_ping == -LFI_TIMEOUT && ping_ellapsed < ft_ms) {
-                debug_info("[LFI] async_send PING " << comm->rank_peer << " timeout");
-                return;
-            }
-            if ((ret_ping < 0 && ret_ping != -LFI_TIMEOUT) || (ret_ping == -LFI_TIMEOUT && ping_ellapsed >= ft_ms)) {
+            debug_info("[LFI] comm " << comm->rank_peer << " async_send PING try");
+            auto ret_ping = async_send(&dummy, 0, LFI_TAG_FT_PING, *comm->ft_ping, true);
+            if (ret_ping < 0) {
                 canceled_coms.emplace_back(comm->rank_peer);
                 debug_info("[LFI] comm " << comm->rank_peer << " SEND_PING -> ERROR " << lfi_strerror(ret_ping));
                 comm->ft_current_status = lfi_comm::ft_status::ERROR;
@@ -244,15 +240,9 @@ int LFI::ft_one_loop(lfi_endpoint &lfi_ep) {
             } else {
                 comm->ft_pong->reset();
             }
-            int32_t pong_ellapsed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(now - comm->ft_pong_time_point).count();
-            debug_info("[LFI] comm " << comm->rank_peer << " async_recv PONG try " << pong_ellapsed);
-            auto ret_pong = async_recv(&dummy, 0, LFI_TAG_FT_PONG, *comm->ft_pong, 0);
-            if (ret_pong == -LFI_TIMEOUT && pong_ellapsed < ft_ms) {
-                debug_info("[LFI] async_recv PONG " << comm->rank_peer << " timeout");
-                return;
-            }
-            if ((ret_pong < 0 && ret_pong != -LFI_TIMEOUT) || (ret_pong == -LFI_TIMEOUT && pong_ellapsed >= ft_ms)) {
+            debug_info("[LFI] comm " << comm->rank_peer << " async_recv PONG try");
+            auto ret_pong = async_recv(&dummy, 0, LFI_TAG_FT_PONG, *comm->ft_pong, true);
+            if (ret_pong < 0) {
                 canceled_coms.emplace_back(comm->rank_peer);
                 debug_info("[LFI] comm " << comm->rank_peer << " RECV_PONG -> ERROR " << lfi_strerror(ret_pong));
                 comm->ft_current_status = lfi_comm::ft_status::ERROR;

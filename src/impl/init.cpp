@@ -19,9 +19,8 @@
  *
  */
 
-#include <cstring>
-
 #include "impl/debug.hpp"
+#include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 
@@ -110,6 +109,7 @@ int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
     lfi_ep.hints->mode = FI_CONTEXT2;
 
     lfi_ep.hints->domain_attr->threading = FI_THREAD_SAFE;
+    lfi_ep.hints->domain_attr->progress = FI_PROGRESS_MANUAL;
 
     if (!prov.empty()) lfi_ep.hints->fabric_attr->prov_name = strdup(prov.c_str());
 

@@ -21,10 +21,10 @@
 
 #include "impl/lfi_endpoint.hpp"
 
+#include "helpers.hpp"
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
-#include "impl/profiler.hpp"
 #include "sstream"
 
 namespace LFI {
@@ -118,8 +118,79 @@ inline std::string fi_cq_err_entry_to_string(const fi_cq_err_entry &entry, fid_c
     return out.str();
 }
 
+void lfi_endpoint::post_pending_ops() {
+    {
+        std::unique_lock<std::mutex> lock(pending_ops_mutex);
+
+        auto process_queue = [&](VectorQueue<PendingOp> &queue) {
+            while (!queue.empty()) {
+                auto &op = queue.front();
+                int op_ret = 0;
+                switch (op.type) {
+                    case PendingOp::Type::SEND:
+                        op_ret = fi_tsend(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag, op.context);
+                        break;
+                    case PendingOp::Type::SENDV:
+                        op_ret = fi_tsendv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
+                                           op.tag, op.context);
+                        break;
+                    case PendingOp::Type::RECV:
+                        op_ret = fi_trecv(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag, op.ignore, op.context);
+                        break;
+                    case PendingOp::Type::RECVV:
+                        op_ret = fi_trecvv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
+                                           op.tag, op.ignore, op.context);
+                        break;
+                    case PendingOp::Type::INJECT:
+                        op_ret = fi_tinject(op.ep, op.buf.cbuf, op.len, op.addr, op.tag);
+                        break;
+                }
+
+                if (op_ret == -FI_EAGAIN) {
+                    // debug_info("[LFI] Pending op FI_EAGAIN");
+                    // Not enough resources to post the operation, the queue is not empty
+                    return false;
+                } else {
+                    if (op_ret != 0) {
+                        debug_info("[LFI] Error in pending op: " << fi_strerror(op_ret));
+                        if (op.context) {
+                            lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
+                            if (ctx) {
+                                lfi_request *req = ctx->get_request();
+                                if (req) {
+                                    req->complete(-LFI_LIBFABRIC_ERROR);
+                                }
+                            }
+                        }
+                    } else if (op.type == PendingOp::Type::INJECT) {
+                        // Inject does not generate CQ entry, complete it here
+                        if (op.context) {
+                            lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
+                            if (ctx) {
+                                lfi_request *req = ctx->get_request();
+                                if (req) {
+                                    req->complete(LFI_SUCCESS);
+                                }
+                                m_lfi.req_ctx_factory.destroy(ctx);
+                            }
+                        }
+                    }
+
+                    debug_info("[LFI] Pending op posted, remaining " << queue.size());
+                    queue.pop();
+                }
+            }
+            // Finish processing queue
+            return true;
+        };
+
+        if (process_queue(priority_ops)) {
+            process_queue(pending_ops);
+        }
+    }
+}
+
 int lfi_endpoint::progress(bool call_callbacks) {
-    // LFI_PROFILE_FUNCTION();
     int ret = 0;
     const int MAX_COMP_COUNT = 8;
     struct fi_cq_tagged_entry comp[MAX_COMP_COUNT] = {};
@@ -206,6 +277,8 @@ int lfi_endpoint::progress(bool call_callbacks) {
         }
     } while (ret == MAX_COMP_COUNT || ret == -FI_EAVAIL);
 
+    post_pending_ops();
+
     if (env::get_instance().LFI_fault_tolerance) {
         static auto last_ft_execution_time = std::chrono::high_resolution_clock::now();
         static std::mutex exclusive_mutex{};
@@ -229,10 +302,10 @@ int lfi_endpoint::progress(bool call_callbacks) {
 int lfi_endpoint::protected_progress(bool call_callbacks) {
     // LFI_PROFILE_FUNCTION();
     int made_progress = -1;
-    if (!env::get_instance().LFI_efficient_progress || !in_progress.exchange(true)) {
+    ProgressGuard guard(*this);
+    if (guard.is_leader()) {
         // debug_info("Run progress from protected_progress");
         made_progress = progress(call_callbacks);
-        in_progress.store(false);
     }
 
     return made_progress;

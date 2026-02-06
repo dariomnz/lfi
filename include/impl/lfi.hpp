@@ -32,17 +32,11 @@
 #include <future>
 #include <mutex>
 #include <shared_mutex>
-#include <optional>
-#include <sstream>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
-#include <variant>
 #include <vector>
 
-#include "impl/env.hpp"
 #include "lfi.h"
-#include "lfi_async.h"
 #include "lfi_comm.hpp"
 #include "lfi_endpoint.hpp"
 #include "lfi_error.h"
@@ -214,10 +208,8 @@ class LFI {
         RECVV,
     };
     lfi_msg recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag);
-    int any_recv(lfi_request &req_shm, void *buffer_shm, lfi_request &req_peer, void *buffer_peer, size_t size,
-                 uint32_t tag, lfi_msg &msg);
     int async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
-                            int32_t timeout_ms = -1);
+                            bool priority = false);
     // Redirects
     lfi_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
         return recv_internal(comm_id, buffer, size, recv_type::RECV, tag);
@@ -225,13 +217,12 @@ class LFI {
     lfi_msg recvv(uint32_t comm_id, struct iovec *iov, size_t count, uint32_t tag) {
         return recv_internal(comm_id, reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag);
     }
-    int async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
-        return async_recv_internal(buffer, size, recv_type::RECV, tag, request, timeout_ms);
+    int async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, bool priority = false) {
+        return async_recv_internal(buffer, size, recv_type::RECV, tag, request, priority);
     }
-    int async_recvv(struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
-        return async_recv_internal(reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag, request, timeout_ms);
+    int async_recvv(struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, bool priority = false) {
+        return async_recv_internal(reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag, request, priority);
     }
-    lfi_msg recv_peek(uint32_t comm_id, void *buffer, size_t size, uint32_t tag);
 
     // send.cpp
    public:
@@ -241,7 +232,7 @@ class LFI {
     };
     lfi_msg send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag);
     int async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
-                            int32_t timeout_ms = -1);
+                            bool priority = false);
     // Redirects
     lfi_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag) {
         return send_internal(comm_id, buffer, size, send_type::SEND, tag);
@@ -249,22 +240,21 @@ class LFI {
     lfi_msg sendv(uint32_t comm_id, const struct iovec *iov, size_t count, uint32_t tag) {
         return send_internal(comm_id, reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag);
     }
-    int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, int32_t timeout_ms = -1) {
-        return async_send_internal(buffer, size, send_type::SEND, tag, request, timeout_ms);
+    int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, bool priority = false) {
+        return async_send_internal(buffer, size, send_type::SEND, tag, request, priority);
     }
-    int async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request,
-                    int32_t timeout_ms = -1) {
+    int async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, bool priority = false) {
         return async_send_internal(reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag, request,
-                                   timeout_ms);
+                                   priority);
     }
     // wait.cpp
-   private:
-    inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
-    void wake_up_requests(lfi_endpoint &ep);
-
    public:
+    inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
+
     int wait(lfi_request &request, int32_t timeout_ms = -1);
     int wait_num(lfi_request **request, int n_request, int how_many, int32_t timeout_ms = -1);
+    int test(lfi_request &request);
+    int test_num(lfi_request **request, int n_request, int how_many);
 
    public:
     void dump_stats();

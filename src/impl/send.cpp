@@ -72,16 +72,17 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 }
 
 int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
-                             int32_t timeout_ms) {
+                             bool priority) {
     LFI_PROFILE_FUNCTION();
-    int ret;
 #ifdef DEBUG
     uint32_t run_loop = 0;
     defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async send"); });
 #endif
     std::unique_lock req_lock(request.mutex);
-    auto [lock, comm] = get_comm_and_mutex(request.m_comm_id);
-
+    auto comm_id = request.m_comm_id;
+    req_lock.unlock();
+    auto [lock, comm] = get_comm_and_mutex(comm_id);
+    req_lock.lock();
     // Check if comm is found
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
@@ -99,10 +100,6 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
 
     request.reset();
 
-    decltype(std::chrono::high_resolution_clock::now()) start;
-    if (timeout_ms >= 0) {
-        start = std::chrono::high_resolution_clock::now();
-    }
     // tag format 24 bits rank_peer 24 bits rank_self_in_peer 16 bits tag
     uint64_t aux_rank_self_in_peer = comm->rank_self_in_peer;
     uint64_t aux_tag = tag;
@@ -127,99 +124,44 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     request.size = size;
     request.tag = tag;
     request.source = request.m_comm_id;
+    fid_ep *p_tx_ep = comm->m_endpoint.tx_endpoint();
+    lfi_endpoint::PendingOp::Type op_type;
 
     if (env::get_instance().LFI_use_inject && type == send_type::SEND &&
         size <= comm->m_endpoint.info->tx_attr->inject_size) {
-        fid_ep *p_tx_ep = comm->m_endpoint.tx_endpoint();
-        auto aux_wait_context = request.wait_context.load();
-        if (aux_wait_context) {
-            aux_wait_context->unassign();
-        }
-        request.wait_context.store(nullptr);
+        op_type = lfi_endpoint::PendingOp::Type::INJECT;
         request.is_inject = true;
-        do {
-            ret = fi_tinject(p_tx_ep, buffer, size, comm->fi_addr, tag_send);
-
-            if (ret == -FI_EAGAIN) {
-                req_lock.unlock();
-                comm->m_endpoint.protected_progress(false);
-                req_lock.lock();
-
-                if (timeout_ms >= 0) {
-                    int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             std::chrono::high_resolution_clock::now() - start)
-                                             .count();
-                    if (elapsed_ms >= timeout_ms) {
-                        return -LFI_TIMEOUT;
-                    }
-                }
-
-                if (comm->is_canceled) {
-                    return -LFI_BROKEN_COMM;
-                }
-            }
-#ifdef DEBUG
-            run_loop++;
-#endif
-        } while (ret == -FI_EAGAIN);
-
-        // To not wait in this request
-        debug_info("[LFI] fi_tinject of " << size << " for rank_peer " << request.m_comm_id);
     } else {
-        fid_ep *p_tx_ep = comm->m_endpoint.tx_endpoint();
-        request.wait_context.store(req_ctx_factory.create(request));
+        op_type =
+            (type == send_type::SEND) ? lfi_endpoint::PendingOp::Type::SEND : lfi_endpoint::PendingOp::Type::SENDV;
         request.is_inject = false;
-        do {
-            if (type == send_type::SEND) {
-                ret = fi_tsend(p_tx_ep, buffer, size, NULL, comm->fi_addr, tag_send, request.wait_context.load());
-            } else if (type == send_type::SENDV) {
-                ret = fi_tsendv(p_tx_ep, reinterpret_cast<const iovec *>(buffer), NULL, size, comm->fi_addr, tag_send,
-                                request.wait_context.load());
-            } else {
-                std::runtime_error("Error unknown send_type. This should not happend");
-            }
+    }
 
-            if (ret == -FI_EAGAIN) {
-                req_lock.unlock();
-                comm->m_endpoint.protected_progress(false);
-                req_lock.lock();
+    if (!request.wait_context.load()) {
+        request.wait_context.store(req_ctx_factory.create(request));
+    }
 
-                if (timeout_ms >= 0) {
-                    int32_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             std::chrono::high_resolution_clock::now() - start)
-                                             .count();
-                    if (elapsed_ms >= timeout_ms) {
-                        return -LFI_TIMEOUT;
-                    }
-                }
+    {
+        std::unique_lock lock(comm->m_endpoint.pending_ops_mutex);
+        debug_info("[LFI] Save send to " << (priority ? "priority_ops " : "pending_ops ") << request);
+        auto &queue = priority ? comm->m_endpoint.priority_ops : comm->m_endpoint.pending_ops;
+        queue.push({op_type, p_tx_ep, {buffer}, size, comm->fi_addr, tag_send, 0, request.wait_context.load()});
+    }
 
-                if (comm->is_canceled) {
-                    return -LFI_BROKEN_COMM;
-                }
-            }
-#ifdef DEBUG
-            run_loop++;
-#endif
-        } while (ret == -FI_EAGAIN);
-
-        debug_info("[LFI] msg " << request);
-        if (env::get_instance().LFI_fault_tolerance && ret == 0) {
-            debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << request.m_comm_id);
-            req_lock.unlock();
-            {
-                std::unique_lock ft_lock(comm->ft_mutex);
-                comm->ft_requests.insert(&request);
-            }
-            req_lock.lock();
+    debug_info("[LFI] msg " << request);
+    if (env::get_instance().LFI_fault_tolerance) {
+        debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << request.m_comm_id);
+        req_lock.unlock();
+        {
+            std::unique_lock ft_lock(comm->ft_mutex);
+            comm->ft_requests.insert(&request);
         }
-
-        debug_info("[LFI] Waiting on rank_peer " << request.m_comm_id);
+        req_lock.lock();
     }
+    debug_info("[LFI] Waiting on rank_peer " << request.m_comm_id);
 
-    if (ret != 0) {
-        printf("error posting send buffer %p (%d) %s\n", buffer, ret, fi_strerror(ret));
-        return -LFI_LIBFABRIC_ERROR;
-    }
+    req_lock.unlock();
+    comm->m_endpoint.protected_progress(true);
 
     debug_info("[LFI] End = " << size);
     return LFI_SUCCESS;
