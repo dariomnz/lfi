@@ -61,6 +61,7 @@ class env {
         parse_env("LFI_LD_PRELOAD_BUFFERED", LFI_ld_preload_buffered);
         parse_env("LFI_DEBUG_DUMP_INTERVAL", LFI_debug_dump_interval);
         parse_env("LFI_USE_SHM", LFI_use_shm);
+        parse_env("LFI_DEBUG", LFI_debug);
     }
     // Delete copy constructor
     env(const env &) = delete;
@@ -82,6 +83,7 @@ class env {
     size_t LFI_ld_preload_buffered = 64 * 1024;
     int LFI_debug_dump_interval = 0;
     bool LFI_use_shm = true;
+    bool LFI_debug = false;
 
    public:
     static env &get_instance() {

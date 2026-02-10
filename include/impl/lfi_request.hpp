@@ -30,6 +30,11 @@
 
 namespace LFI {
 
+struct format_lfi_tag {
+    uint64_t tag;
+    friend std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag);
+};
+
 struct wait_struct {
     std::mutex wait_mutex = {};
     std::condition_variable wait_cv = {};

@@ -24,130 +24,142 @@
 #include "helpers.hpp"
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
+#include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "sstream"
 
 namespace LFI {
 
-inline std::string fi_flags_to_string(uint64_t flags) {
-    std::stringstream out;
-    if (flags == 0) out << "    NONE" << std::endl;
-    if (flags & FI_MSG) out << "    FI_MSG" << std::endl;
-    if (flags & FI_RMA) out << "    FI_RMA" << std::endl;
-    if (flags & FI_TAGGED) out << "    FI_TAGGED" << std::endl;
-    if (flags & FI_ATOMIC) out << "    FI_ATOMIC" << std::endl;
-    if (flags & FI_MULTICAST) out << "    FI_MULTICAST" << std::endl;
-    if (flags & FI_COLLECTIVE) out << "    FI_COLLECTIVE" << std::endl;
+struct format_fi_flags {
+    uint64_t flags;
 
-    if (flags & FI_READ) out << "    FI_READ" << std::endl;
-    if (flags & FI_WRITE) out << "    FI_WRITE" << std::endl;
-    if (flags & FI_RECV) out << "    FI_RECV" << std::endl;
-    if (flags & FI_SEND) out << "    FI_SEND" << std::endl;
-    if (flags & FI_REMOTE_READ) out << "    FI_REMOTE_READ" << std::endl;
-    if (flags & FI_REMOTE_WRITE) out << "    FI_REMOTE_WRITE" << std::endl;
+    friend std::ostream &operator<<(std::ostream &os, const format_fi_flags &format) {
+        if (format.flags == 0) os << "    NONE" << std::endl;
+        if (format.flags & FI_MSG) os << "    FI_MSG" << std::endl;
+        if (format.flags & FI_RMA) os << "    FI_RMA" << std::endl;
+        if (format.flags & FI_TAGGED) os << "    FI_TAGGED" << std::endl;
+        if (format.flags & FI_ATOMIC) os << "    FI_ATOMIC" << std::endl;
+        if (format.flags & FI_MULTICAST) os << "    FI_MULTICAST" << std::endl;
+        if (format.flags & FI_COLLECTIVE) os << "    FI_COLLECTIVE" << std::endl;
 
-    if (flags & FI_MULTI_RECV) out << "    FI_MULTI_RECV" << std::endl;
-    if (flags & FI_REMOTE_CQ_DATA) out << "    FI_REMOTE_CQ_DATA" << std::endl;
-    if (flags & FI_MORE) out << "    FI_MORE" << std::endl;
-    if (flags & FI_PEEK) out << "    FI_PEEK" << std::endl;
-    if (flags & FI_TRIGGER) out << "    FI_TRIGGER" << std::endl;
-    if (flags & FI_FENCE) out << "    FI_FENCE" << std::endl;
-    // if (flags & FI_PRIORITY) out << "    FI_PRIORITY" << std::endl;
+        if (format.flags & FI_READ) os << "    FI_READ" << std::endl;
+        if (format.flags & FI_WRITE) os << "    FI_WRITE" << std::endl;
+        if (format.flags & FI_RECV) os << "    FI_RECV" << std::endl;
+        if (format.flags & FI_SEND) os << "    FI_SEND" << std::endl;
+        if (format.flags & FI_REMOTE_READ) os << "    FI_REMOTE_READ" << std::endl;
+        if (format.flags & FI_REMOTE_WRITE) os << "    FI_REMOTE_WRITE" << std::endl;
 
-    if (flags & FI_COMPLETION) out << "    FI_COMPLETION" << std::endl;
-    if (flags & FI_INJECT) out << "    FI_INJECT" << std::endl;
-    if (flags & FI_INJECT_COMPLETE) out << "    FI_INJECT_COMPLETE" << std::endl;
-    if (flags & FI_TRANSMIT_COMPLETE) out << "    FI_TRANSMIT_COMPLETE" << std::endl;
-    if (flags & FI_DELIVERY_COMPLETE) out << "    FI_DELIVERY_COMPLETE" << std::endl;
-    if (flags & FI_AFFINITY) out << "    FI_AFFINITY" << std::endl;
-    if (flags & FI_COMMIT_COMPLETE) out << "    FI_COMMIT_COMPLETE" << std::endl;
-    if (flags & FI_MATCH_COMPLETE) out << "    FI_MATCH_COMPLETE" << std::endl;
+        if (format.flags & FI_MULTI_RECV) os << "    FI_MULTI_RECV" << std::endl;
+        if (format.flags & FI_REMOTE_CQ_DATA) os << "    FI_REMOTE_CQ_DATA" << std::endl;
+        if (format.flags & FI_MORE) os << "    FI_MORE" << std::endl;
+        if (format.flags & FI_PEEK) os << "    FI_PEEK" << std::endl;
+        if (format.flags & FI_TRIGGER) os << "    FI_TRIGGER" << std::endl;
+        if (format.flags & FI_FENCE) os << "    FI_FENCE" << std::endl;
+        // if (flags & FI_PRIORITY) os << "    FI_PRIORITY" << std::endl;
 
-    if (flags & FI_HMEM) out << "    FI_HMEM" << std::endl;
-    if (flags & FI_VARIABLE_MSG) out << "    FI_VARIABLE_MSG" << std::endl;
-    if (flags & FI_RMA_PMEM) out << "    FI_RMA_PMEM" << std::endl;
-    if (flags & FI_SOURCE_ERR) out << "    FI_SOURCE_ERR" << std::endl;
-    if (flags & FI_LOCAL_COMM) out << "    FI_LOCAL_COMM" << std::endl;
-    if (flags & FI_REMOTE_COMM) out << "    FI_REMOTE_COMM" << std::endl;
-    if (flags & FI_SHARED_AV) out << "    FI_SHARED_AV" << std::endl;
-    if (flags & FI_PROV_ATTR_ONLY) out << "    FI_PROV_ATTR_ONLY" << std::endl;
-    if (flags & FI_NUMERICHOST) out << "    FI_NUMERICHOST" << std::endl;
-    if (flags & FI_RMA_EVENT) out << "    FI_RMA_EVENT" << std::endl;
-    if (flags & FI_SOURCE) out << "    FI_SOURCE" << std::endl;
-    if (flags & FI_NAMED_RX_CTX) out << "    FI_NAMED_RX_CTX" << std::endl;
-    if (flags & FI_DIRECTED_RECV) out << "    FI_DIRECTED_RECV" << std::endl;
-    return out.str();
-}
+        if (format.flags & FI_COMPLETION) os << "    FI_COMPLETION" << std::endl;
+        if (format.flags & FI_INJECT) os << "    FI_INJECT" << std::endl;
+        if (format.flags & FI_INJECT_COMPLETE) os << "    FI_INJECT_COMPLETE" << std::endl;
+        if (format.flags & FI_TRANSMIT_COMPLETE) os << "    FI_TRANSMIT_COMPLETE" << std::endl;
+        if (format.flags & FI_DELIVERY_COMPLETE) os << "    FI_DELIVERY_COMPLETE" << std::endl;
+        if (format.flags & FI_AFFINITY) os << "    FI_AFFINITY" << std::endl;
+        if (format.flags & FI_COMMIT_COMPLETE) os << "    FI_COMMIT_COMPLETE" << std::endl;
+        if (format.flags & FI_MATCH_COMPLETE) os << "    FI_MATCH_COMPLETE" << std::endl;
 
-inline std::string fi_cq_tagged_entry_to_string(const fi_cq_tagged_entry &entry) {
-    std::stringstream out;
-    out << "fi_cq_tagged_entry:" << std::endl;
-    out << "  op_context: " << entry.op_context << std::endl;
-    out << "  Flags set:" << std::endl;
-    out << fi_flags_to_string(entry.flags);
-    out << "  len: " << entry.len << std::endl;
-    out << "  buf: " << entry.buf << std::endl;
-    out << "  data: " << entry.data << std::endl;
-    out << "  tag: " << entry.tag << std::endl;
-    if (entry.flags & FI_RECV) {
-        // out << "    real_tag: " << (entry.tag & MASK_TAG) << std::endl;
-        out << "    real_tag: " << lfi_tag_to_string(entry.tag & MASK_TAG) << std::endl;
-        out << "    rank: " << ((entry.tag & MASK_RANK) >> MASK_RANK_BYTES) << std::endl;
+        if (format.flags & FI_HMEM) os << "    FI_HMEM" << std::endl;
+        if (format.flags & FI_VARIABLE_MSG) os << "    FI_VARIABLE_MSG" << std::endl;
+        if (format.flags & FI_RMA_PMEM) os << "    FI_RMA_PMEM" << std::endl;
+        if (format.flags & FI_SOURCE_ERR) os << "    FI_SOURCE_ERR" << std::endl;
+        if (format.flags & FI_LOCAL_COMM) os << "    FI_LOCAL_COMM" << std::endl;
+        if (format.flags & FI_REMOTE_COMM) os << "    FI_REMOTE_COMM" << std::endl;
+        if (format.flags & FI_SHARED_AV) os << "    FI_SHARED_AV" << std::endl;
+        if (format.flags & FI_PROV_ATTR_ONLY) os << "    FI_PROV_ATTR_ONLY" << std::endl;
+        if (format.flags & FI_NUMERICHOST) os << "    FI_NUMERICHOST" << std::endl;
+        if (format.flags & FI_RMA_EVENT) os << "    FI_RMA_EVENT" << std::endl;
+        if (format.flags & FI_SOURCE) os << "    FI_SOURCE" << std::endl;
+        if (format.flags & FI_NAMED_RX_CTX) os << "    FI_NAMED_RX_CTX" << std::endl;
+        if (format.flags & FI_DIRECTED_RECV) os << "    FI_DIRECTED_RECV" << std::endl;
+        return os;
     }
-    return out.str();
+};
+
+std::ostream &operator<<(std::ostream &os, const fi_cq_tagged_entry &entry) {
+    os << "fi_cq_tagged_entry:" << std::endl;
+    os << "  op_context: " << entry.op_context << std::endl;
+    os << "  Flags set:" << std::endl;
+    os << format_fi_flags{entry.flags};
+    os << "  len: " << entry.len << std::endl;
+    os << "  buf: " << entry.buf << std::endl;
+    os << "  data: " << entry.data << std::endl;
+    os << "  tag: " << entry.tag << std::endl;
+    if (entry.flags & FI_RECV) {
+        os << "    real_tag: " << format_lfi_tag{entry.tag & MASK_TAG} << std::endl;
+        os << "    rank: " << ((entry.tag & MASK_RANK) >> MASK_RANK_BYTES) << std::endl;
+    }
+    return os;
 }
 
-inline std::string fi_cq_err_entry_to_string(const fi_cq_err_entry &entry, fid_cq *cq) {
-    std::stringstream out;
-    out << "fi_cq_err_entry:" << std::endl;
-    out << "  op_context: " << entry.op_context << std::endl;
-    out << "  Flags set:" << std::endl;
-    out << fi_flags_to_string(entry.flags);
-    out << "  len: " << entry.len << std::endl;
-    out << "  buf: " << entry.buf << std::endl;
-    out << "  data: " << entry.data << std::endl;
-    out << "  tag: " << entry.tag << std::endl;
-    out << "    real_tag: " << (entry.tag & MASK_TAG) << std::endl;
-    out << "    rank: " << ((entry.tag & MASK_RANK) >> MASK_RANK_BYTES) << std::endl;
-    out << "  olen: " << entry.olen << std::endl;
-    out << "  err: " << entry.err << " " << fi_strerror(entry.err) << std::endl;
-    out << "  prov_errno: " << entry.prov_errno << " " << fi_cq_strerror(cq, entry.prov_errno, entry.err_data, NULL, 0)
-        << std::endl;
-    out << "  err_data: " << entry.err_data << std::endl;
-    out << "  err_data_size: " << entry.err_data_size << std::endl;
-    return out.str();
-}
+struct format_fi_cq_err_entry {
+    const fi_cq_err_entry &entry;
+    fid_cq *cq;
+
+    explicit format_fi_cq_err_entry(const fi_cq_err_entry &entry, fid_cq *cq) : entry(entry), cq(cq) {}
+
+    friend std::ostream &operator<<(std::ostream &os, const format_fi_cq_err_entry &format) {
+        os << "fi_cq_err_entry:" << std::endl;
+        os << "  op_context: " << format.entry.op_context << std::endl;
+        os << "  Flags set:" << std::endl;
+        os << format_fi_flags{format.entry.flags};
+        os << "  len: " << format.entry.len << std::endl;
+        os << "  buf: " << format.entry.buf << std::endl;
+        os << "  data: " << format.entry.data << std::endl;
+        os << "  tag: " << format.entry.tag << std::endl;
+        os << "    real_tag: " << format_lfi_tag{format.entry.tag & MASK_TAG} << std::endl;
+        os << "    rank: " << ((format.entry.tag & MASK_RANK) >> MASK_RANK_BYTES) << std::endl;
+        os << "  olen: " << format.entry.olen << std::endl;
+        os << "  err: " << format.entry.err << " " << fi_strerror(format.entry.err) << std::endl;
+        os << "  prov_errno: " << format.entry.prov_errno << " "
+           << fi_cq_strerror(format.cq, format.entry.prov_errno, format.entry.err_data, NULL, 0) << std::endl;
+        os << "  err_data: " << format.entry.err_data << std::endl;
+        os << "  err_data_size: " << format.entry.err_data_size << std::endl;
+        return os;
+    }
+};
 
 void lfi_endpoint::post_pending_ops() {
     {
         std::unique_lock<std::mutex> lock(pending_ops_mutex);
-
-        auto process_queue = [&](VectorQueue<PendingOp> &queue) {
+        auto process_queue = [&](VectorQueue<lfi_pending_op> &queue) {
             while (!queue.empty()) {
                 auto &op = queue.front();
                 int op_ret = 0;
                 switch (op.type) {
-                    case PendingOp::Type::SEND:
+                    case lfi_pending_op::Type::NONE:
+                        op_ret = 0;
+                        debug_error("[LFI] Pending op NONE");
+                        break;
+                    case lfi_pending_op::Type::SEND:
                         op_ret = fi_tsend(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag, op.context);
                         break;
-                    case PendingOp::Type::SENDV:
+                    case lfi_pending_op::Type::SENDV:
                         op_ret = fi_tsendv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
                                            op.tag, op.context);
                         break;
-                    case PendingOp::Type::RECV:
+                    case lfi_pending_op::Type::RECV:
                         op_ret = fi_trecv(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag, op.ignore, op.context);
                         break;
-                    case PendingOp::Type::RECVV:
+                    case lfi_pending_op::Type::RECVV:
                         op_ret = fi_trecvv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
                                            op.tag, op.ignore, op.context);
                         break;
-                    case PendingOp::Type::INJECT:
+                    case lfi_pending_op::Type::INJECT:
                         op_ret = fi_tinject(op.ep, op.buf.cbuf, op.len, op.addr, op.tag);
                         break;
                 }
 
                 if (op_ret == -FI_EAGAIN) {
-                    // debug_info("[LFI] Pending op FI_EAGAIN");
+                    debug_info("[LFI] Pending op FI_EAGAIN, remaining ops: " << queue.size());
+                    debug_info("[LFI] op: " << op);
                     // Not enough resources to post the operation, the queue is not empty
                     return false;
                 } else {
@@ -162,7 +174,7 @@ void lfi_endpoint::post_pending_ops() {
                                 }
                             }
                         }
-                    } else if (op.type == PendingOp::Type::INJECT) {
+                    } else if (op.type == lfi_pending_op::Type::INJECT) {
                         // Inject does not generate CQ entry, complete it here
                         if (op.context) {
                             lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
@@ -211,7 +223,7 @@ int lfi_endpoint::progress(bool call_callbacks) {
             debug_info("[Error] fi_cq_read " << ret << " " << fi_strerror(ret));
             fi_cq_err_entry err;
             fi_cq_readerr(this->cq, &err, 0);
-            debug_info(fi_cq_err_entry_to_string(err, this->cq));
+            debug_info(format_fi_cq_err_entry(err, this->cq));
 
             lfi_request_context *ctx = static_cast<lfi_request_context *>(err.op_context);
 
@@ -232,7 +244,7 @@ int lfi_endpoint::progress(bool call_callbacks) {
                     error = -LFI_ETRUN_RECV;
                 } else {
                     print(fi_strerror(err.err));
-                    print(fi_cq_err_entry_to_string(err, this->cq));
+                    print(format_fi_cq_err_entry(err, this->cq));
                     error = -LFI_LIBFABRIC_ERROR;
                 }
                 request->complete(error);
@@ -242,7 +254,7 @@ int lfi_endpoint::progress(bool call_callbacks) {
             // Handle the cq entries
             for (int i = 0; i < ret; i++) {
                 lfi_request_context *ctx = static_cast<lfi_request_context *>(comp[i].op_context);
-                debug_info(fi_cq_tagged_entry_to_string(comp[i]));
+                debug_info(comp[i]);
                 lfi_request *request = ctx->get_request();
                 if (!request) {
                     // debug_info(fi_cq_tagged_entry_to_string(comp[i]));
@@ -264,35 +276,19 @@ int lfi_endpoint::progress(bool call_callbacks) {
                 m_lfi.req_ctx_factory.destroy(ctx);
             }
         }
-        if (call_callbacks) {
-            std::vector<std::tuple<lfi_request_callback, int, void *>> swap_callbacks;
-            {
-                std::unique_lock callback_lock(callbacks_mutex);
-                callbacks.swap(swap_callbacks);
-            }
-            for (auto &&[callback, error, ctx] : swap_callbacks) {
-                debug_info("[LFI] calling callbacks");
-                callback(error, ctx);
-            }
-        }
     } while (ret == MAX_COMP_COUNT || ret == -FI_EAVAIL);
 
     post_pending_ops();
 
-    if (env::get_instance().LFI_fault_tolerance) {
-        static auto last_ft_execution_time = std::chrono::high_resolution_clock::now();
-        static std::mutex exclusive_mutex{};
-        std::unique_lock lock(exclusive_mutex, std::defer_lock);
-        if (lock.try_lock()) {
-            auto current_time = std::chrono::high_resolution_clock::now();
-            auto elapsed_time =
-                std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_ft_execution_time);
-
-            if (elapsed_time > std::chrono::milliseconds(10)) {
-                // debug_info("[LFI] runing ft");
-                m_lfi.ft_one_loop(*this);
-                last_ft_execution_time = current_time;
-            }
+    if (call_callbacks) {
+        std::vector<std::tuple<lfi_request_callback, int, void *>> swap_callbacks;
+        {
+            std::unique_lock callback_lock(callbacks_mutex);
+            callbacks.swap(swap_callbacks);
+        }
+        for (auto &&[callback, error, ctx] : swap_callbacks) {
+            debug_info("[LFI] calling callbacks");
+            callback(error, ctx);
         }
     }
 

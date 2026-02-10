@@ -30,60 +30,43 @@
 #include <atomic>
 #include <condition_variable>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include "lfi.h"
+#include "impl/ft_manager.hpp"
 #include "lfi_comm.hpp"
 #include "lfi_endpoint.hpp"
 #include "lfi_error.h"
 #include "lfi_request.hpp"
 #include "lfi_request_context.hpp"
 
-#define DECLARE_LFI_ERROR(name, msg) static constexpr const char *name##_str = msg;
-
-#define CASE_STR_ERROR(name) \
-    case name:               \
-        return name##_str;
+#define CASE_STR_ERROR(name, msg) \
+    case name:                    \
+        return msg;
 
 namespace LFI {
 // Error codes
-DECLARE_LFI_ERROR(LFI_SUCCESS, "Success");
-DECLARE_LFI_ERROR(LFI_ERROR, "General error");
-DECLARE_LFI_ERROR(LFI_TIMEOUT, "Timeout");
-DECLARE_LFI_ERROR(LFI_CANCELED, "Canceled");
-DECLARE_LFI_ERROR(LFI_BROKEN_COMM, "Broken comunicator");
-DECLARE_LFI_ERROR(LFI_COMM_NOT_FOUND, "Comunicator not found");
-DECLARE_LFI_ERROR(LFI_PEEK_NO_MSG, "No msg encounter");
-DECLARE_LFI_ERROR(LFI_NOT_COMPLETED, "Request not completed");
-DECLARE_LFI_ERROR(LFI_NULL_REQUEST, "Request is NULL");
-DECLARE_LFI_ERROR(LFI_SEND_ANY_COMM, "Use of ANY_COMM in send");
-DECLARE_LFI_ERROR(LFI_ETRUN_RECV, "The published receive buffer is smaller than the received one.");
-DECLARE_LFI_ERROR(LFI_LIBFABRIC_ERROR, "Internal libfabric error");
-DECLARE_LFI_ERROR(LFI_GROUP_NO_INIT, "The group is not initialized");
-DECLARE_LFI_ERROR(LFI_GROUP_NO_SELF, "The hostname of the current process is missing");
-DECLARE_LFI_ERROR(LFI_GROUP_INVAL, "Invalid argument");
 
 static constexpr const char *lfi_strerror(int error) {
     switch (std::abs(error)) {
-        CASE_STR_ERROR(LFI_SUCCESS);
-        CASE_STR_ERROR(LFI_ERROR);
-        CASE_STR_ERROR(LFI_TIMEOUT);
-        CASE_STR_ERROR(LFI_CANCELED);
-        CASE_STR_ERROR(LFI_BROKEN_COMM);
-        CASE_STR_ERROR(LFI_COMM_NOT_FOUND);
-        CASE_STR_ERROR(LFI_PEEK_NO_MSG);
-        CASE_STR_ERROR(LFI_NOT_COMPLETED);
-        CASE_STR_ERROR(LFI_NULL_REQUEST);
-        CASE_STR_ERROR(LFI_SEND_ANY_COMM);
-        CASE_STR_ERROR(LFI_ETRUN_RECV);
-        CASE_STR_ERROR(LFI_LIBFABRIC_ERROR);
-        CASE_STR_ERROR(LFI_GROUP_NO_INIT);
-        CASE_STR_ERROR(LFI_GROUP_NO_SELF);
-        CASE_STR_ERROR(LFI_GROUP_INVAL);
+        CASE_STR_ERROR(LFI_SUCCESS, "Success");
+        CASE_STR_ERROR(LFI_ERROR, "General error");
+        CASE_STR_ERROR(LFI_TIMEOUT, "Timeout");
+        CASE_STR_ERROR(LFI_CANCELED, "Canceled");
+        CASE_STR_ERROR(LFI_BROKEN_COMM, "Broken comunicator");
+        CASE_STR_ERROR(LFI_COMM_NOT_FOUND, "Comunicator not found");
+        CASE_STR_ERROR(LFI_PEEK_NO_MSG, "No msg encounter");
+        CASE_STR_ERROR(LFI_NOT_COMPLETED, "Request not completed");
+        CASE_STR_ERROR(LFI_NULL_REQUEST, "Request is NULL");
+        CASE_STR_ERROR(LFI_SEND_ANY_COMM, "Use of ANY_COMM in send");
+        CASE_STR_ERROR(LFI_ETRUN_RECV, "The published receive buffer is smaller than the received one.");
+        CASE_STR_ERROR(LFI_LIBFABRIC_ERROR, "Internal libfabric error");
+        CASE_STR_ERROR(LFI_GROUP_NO_INIT, "The group is not initialized");
+        CASE_STR_ERROR(LFI_GROUP_NO_SELF, "The hostname of the current process is missing");
+        CASE_STR_ERROR(LFI_GROUP_INVAL, "Invalid argument");
         default:
             return "Unknown";
     }
@@ -107,48 +90,6 @@ constexpr static const uint64_t MASK_RANK = 0xFFFF'FFFF'0000'0000;
 constexpr static const uint64_t MASK_RANK_BYTES = 32;
 constexpr static const uint64_t MASK_TAG = 0x0000'0000'FFFF'FFFF;
 constexpr static const uint64_t MASK_TAG_BYTES = 32;
-
-static inline std::string lfi_tag_to_string(int64_t tag) {
-    switch (tag) {
-        case LFI_TAG_FT_PING:
-            return "FT_PING";
-        case LFI_TAG_FT_PONG:
-            return "FT_PONG";
-        case LFI_TAG_RECV_LD_PRELOAD:
-            return "RECV_LD_PRELOAD";
-        case LFI_TAG_BUFFERED_LD_PRELOAD:
-            return "BUFFERED_LD_PRELOAD";
-        case LFI_TAG_GROUP:
-            return "GROUP";
-        case LFI_TAG_BARRIER:
-            return "BARRIER";
-        case LFI_TAG_BROADCAST:
-            return "BROADCAST";
-        case LFI_TAG_ALLREDUCE:
-            return "ALLREDUCE";
-        case LFI_TAG_DUMMY:
-            return "DUMMY";
-        case LFI_TAG_INITIAL_SEND_SRV:
-            return "INITIAL_SEND_SRV";
-        case LFI_TAG_INITIAL_SEND_CLI:
-            return "INITIAL_SEND_CLI";
-        default:
-            return std::to_string(tag);
-    }
-}
-
-static inline std::string lfi_comm_to_string(int64_t source) {
-    switch (source) {
-        case LFI_ANY_COMM_SHM:
-            return "ANY_SHM";
-        case LFI_ANY_COMM_PEER:
-            return "ANY_PEER";
-        case UNINITIALIZED_COMM:
-            return "UNINITIALIZED_COMM";
-        default:
-            return std::to_string(source);
-    }
-}
 
 class LFI {
     // address.cpp
@@ -174,21 +115,6 @@ class LFI {
    public:
     int init_server(int socket, int32_t comm_id);
     int init_client(int socket, int32_t comm_id);
-
-    // ft.cpp
-   public:
-    int ft_thread_start();
-    int ft_thread_destroy();
-    static int ft_thread_loop();
-    static int ft_thread_ping_pong();
-    int ft_one_loop(lfi_endpoint &lfi_ep);
-    int ft_cancel_comm(lfi_comm &lfi_comm);
-    int ft_setup_ping_pong();
-    // Fault tolerance
-    std::thread ft_thread_pp;
-    std::mutex ft_mutex;
-    std::condition_variable ft_cv;
-    bool ft_is_running = false;
 
     // init.cpp
    public:
@@ -262,6 +188,8 @@ class LFI {
    public:
     lfi_endpoint shm_ep{*this, true};
     lfi_endpoint peer_ep{*this, false};
+
+    lfi_ft_manager m_ft_manager;
 
     std::shared_mutex m_comms_mutex;
     std::mutex m_fut_comms_mutex;

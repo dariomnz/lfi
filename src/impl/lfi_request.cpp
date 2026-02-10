@@ -23,6 +23,7 @@
 
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
+#include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 #include "lfi_comm.hpp"
@@ -30,14 +31,35 @@
 
 namespace LFI {
 
+std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag) {
+#define CASE_TAG(tag)   \
+    case LFI_TAG_##tag: \
+        return os << #tag;
+    switch (tag.tag) {
+        CASE_TAG(FT_PING);
+        CASE_TAG(FT_PONG);
+        CASE_TAG(RECV_LD_PRELOAD);
+        CASE_TAG(BUFFERED_LD_PRELOAD);
+        CASE_TAG(GROUP);
+        CASE_TAG(BARRIER);
+        CASE_TAG(BROADCAST);
+        CASE_TAG(ALLREDUCE);
+        CASE_TAG(DUMMY);
+        CASE_TAG(INITIAL_SEND_SRV);
+        CASE_TAG(INITIAL_SEND_CLI);
+        default:
+            return os << tag.tag;
+    }
+}
+
 std::ostream &operator<<(std::ostream &os, lfi_request &req) {
     os << "Request " << (req.is_send ? "send" : "recv");
     auto aux_wait_context = req.wait_context.load();
     if (aux_wait_context) {
         os << " ctx " << std::hex << aux_wait_context;
     }
-    os << std::dec << " comm " << lfi_comm_to_string(req.m_comm_id) << " {size:" << req.size
-       << ", tag:" << lfi_tag_to_string(req.tag) << ", source:" << lfi_comm_to_string(req.source) << "}";
+    os << std::dec << " comm " << format_lfi_comm{req.m_comm_id} << " {size:" << req.size
+       << ", tag:" << format_lfi_tag{req.tag} << ", source:" << format_lfi_comm{req.source} << "}";
     if (req.is_inject) {
         os << " inject";
     }
@@ -70,35 +92,7 @@ void lfi_request::complete(int err) {
     LFI_PROFILE_FUNCTION();
 
     if (env::get_instance().LFI_fault_tolerance) {
-        auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(m_comm_id);
-        if (comm) {
-            {
-                std::unique_lock ft_lock(comm->ft_mutex);
-                debug_info("[LFI] erase ft_requests " << this << " in comm " << m_comm_id);
-                comm->ft_requests.erase(this);
-                {
-                    std::unique_lock lock(m_endpoint.ft_mutex);
-                    if (m_comm_id != ANY_COMM_SHM && m_comm_id != ANY_COMM_PEER) {
-                        comm->ft_comm_count = (comm->ft_comm_count > 0) ? (comm->ft_comm_count - 1) : 0;
-                        debug_info("[LFI] ft_comm_count " << comm->ft_comm_count);
-                        if (comm->ft_comm_count == 0) {
-                            m_endpoint.ft_comms.erase(comm);
-                        }
-                    } else {
-                        debug_info("[LFI] remove of ft_any_comm_requests " << this);
-                        m_endpoint.ft_any_comm_requests.erase(this);
-                    }
-                }
-            }
-        }
-        if (!is_send && err == LFI_SUCCESS) {
-            // Update time outside request lock
-            auto comm = m_endpoint.m_lfi.get_comm_internal(lock, source);
-            if (comm) {
-                std::unique_lock ft_lock(comm->ft_mutex);
-                comm->last_request_time = lfi_comm::clock::now();
-            }
-        }
+        m_endpoint.m_lfi.m_ft_manager.on_request_complete(this, err);
     }
 
     std::unique_lock request_lock(mutex);
@@ -146,9 +140,9 @@ void lfi_request::cancel() {
         auto context_to_find = wait_context.load();
         if (context_to_find) {
             m_endpoint.priority_ops.erase_if(
-                [context_to_find](const lfi_endpoint::PendingOp &op) { return op.context == context_to_find; });
+                [context_to_find](const lfi_pending_op &op) { return op.context == context_to_find; });
             m_endpoint.pending_ops.erase_if(
-                [context_to_find](const lfi_endpoint::PendingOp &op) { return op.context == context_to_find; });
+                [context_to_find](const lfi_pending_op &op) { return op.context == context_to_find; });
         }
     }
 

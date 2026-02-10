@@ -33,6 +33,8 @@
 #include <sstream>
 #include <thread>
 
+#include "env.hpp"
+
 namespace LFI {
 constexpr const char *file_name(const char *path) {
     const char *file = path;
@@ -91,6 +93,11 @@ static inline std::string getTime() {
     return oss.str();
 }
 
+static inline std::mutex &get_print_mutex() {
+    static std::mutex print_mutex;
+    return print_mutex;
+}
+
 #undef print_error
 #define print_error(out_format)                                                                                \
     {                                                                                                          \
@@ -104,7 +111,8 @@ static inline std::string getTime() {
 
 #ifdef DEBUG
 #define debug_error(out_format)                                                                                \
-    {                                                                                                          \
+    if (::LFI::env::get_instance().LFI_debug) {                                                                \
+        std::unique_lock<std::mutex> lock(::LFI::get_print_mutex());                                           \
         std::ostringstream __out;                                                                              \
         __out << std::dec << ::LFI::getTime() << " [ERROR] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
               << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl;  \
@@ -112,7 +120,8 @@ static inline std::string getTime() {
         fflush(stderr);                                                                                        \
     }
 #define debug_warning(out_format)                                                                                \
-    {                                                                                                            \
+    if (::LFI::env::get_instance().LFI_debug) {                                                                  \
+        std::unique_lock<std::mutex> lock(::LFI::get_print_mutex());                                             \
         std::ostringstream __out;                                                                                \
         __out << std::dec << ::LFI::getTime() << " [WARNING] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ \
               << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl;    \
@@ -120,7 +129,8 @@ static inline std::string getTime() {
         fflush(stderr);                                                                                          \
     }
 #define debug_info(out_format)                                                                                         \
-    {                                                                                                                  \
+    if (::LFI::env::get_instance().LFI_debug) {                                                                        \
+        std::unique_lock<std::mutex> lock(::LFI::get_print_mutex());                                                   \
         std::ostringstream __out;                                                                                      \
         __out << std::dec << ::LFI::getTime() << " [INFO] [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" \
               << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl;                   \
@@ -134,12 +144,13 @@ static inline std::string getTime() {
 #endif
 
 #undef print
-#define print(out_format)                             \
-    {                                                 \
-        std::ostringstream __out;                     \
-        __out << std::dec << out_format << std::endl; \
-        fprintf(stdout, "%s", __out.str().c_str());   \
-        fflush(stdout);                               \
+#define print(out_format)                                            \
+    {                                                                \
+        std::unique_lock<std::mutex> lock(::LFI::get_print_mutex()); \
+        std::ostringstream __out;                                    \
+        __out << std::dec << out_format << std::endl;                \
+        fprintf(stdout, "%s", __out.str().c_str());                  \
+        fflush(stdout);                                              \
     }
 
 class DeferAction {

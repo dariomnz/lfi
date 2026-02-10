@@ -41,6 +41,12 @@ constexpr static const uint32_t UNINITIALIZED_COMM = 0xFFFFFFFF;
 constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
 constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
 
+struct format_lfi_comm {
+    int64_t comm;
+
+    friend std::ostream &operator<<(std::ostream &os, const format_lfi_comm &comm);
+};
+
 struct lfi_comm {
     uint32_t rank_peer;
     uint32_t rank_self_in_peer;
@@ -53,15 +59,12 @@ struct lfi_comm {
     std::recursive_mutex ft_mutex;
     std::unordered_set<lfi_request *> ft_requests;
     using clock = std::chrono::high_resolution_clock;
-    uint32_t ft_comm_count = 0;
-    std::chrono::time_point<clock> ft_ping_time_point = {}, ft_pong_time_point = {};
+    std::chrono::time_point<clock> ft_ping_pong_time_point = {};
     std::unique_ptr<lfi_request> ft_ping = nullptr, ft_pong = nullptr;
     std::chrono::time_point<clock> last_request_time = clock::now();
     enum class ft_status {
         IDLE,
-        SEND_PING,
-        RECV_PONG,
-        WAIT_PING_PONG,
+        PINGING,
         ERROR,
     };
     ft_status ft_current_status = ft_status::IDLE;
@@ -77,5 +80,10 @@ struct lfi_comm {
     std::atomic<comm_status> is_ready = comm_status::NOT_READY;
 
     lfi_comm(lfi_endpoint &ep) : m_endpoint(ep) {}
+};
+
+struct format_ft_status {
+    lfi_comm::ft_status status;
+    friend std::ostream &operator<<(std::ostream &os, const format_ft_status &comm);
 };
 }  // namespace LFI

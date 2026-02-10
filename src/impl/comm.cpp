@@ -21,10 +21,36 @@
 
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
+#include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
+#include "lfi_comm.hpp"
 
 namespace LFI {
+
+std::ostream& operator<<(std::ostream& os, const format_lfi_comm& comm) {
+    switch (comm.comm) {
+        case LFI_ANY_COMM_SHM:
+            return os << "ANY_SHM";
+        case LFI_ANY_COMM_PEER:
+            return os << "ANY_PEER";
+        case UNINITIALIZED_COMM:
+            return os << "UNINITIALIZED_COMM";
+        default:
+            return os << comm.comm;
+    }
+}
+
+std::ostream& operator<<(std::ostream& os, const format_ft_status& st) {
+    switch (st.status) {
+        case lfi_comm::ft_status::IDLE:
+            return os << "IDLE";
+        case lfi_comm::ft_status::PINGING:
+            return os << "PINGING";
+        case lfi_comm::ft_status::ERROR:
+            return os << "ERROR";
+    }
+}
 
 // uint32_t LFI::reserve_comm() { return m_rank_counter.fetch_add(1); }
 
@@ -160,26 +186,10 @@ int LFI::close_comm(uint32_t id) {
         if (!comm) {
             return -LFI_COMM_NOT_FOUND;
         }
-        {
-            std::unique_lock lock(comm->ft_mutex);
-            debug_info("[LFI] cancel all request in comm with error " << comm->rank_peer);
-            // In a temp set because cancel call complete that erase the request from ft_requests
-            std::unordered_set<lfi_request*> temp_requests(comm->ft_requests);
-            for (auto& request : temp_requests) {
-                if (request == nullptr) continue;
-                if (id != ANY_COMM_SHM && id != ANY_COMM_PEER && request->tag != LFI_TAG_FT_PING &&
-                    request->tag != LFI_TAG_FT_PONG) {
-                    print("[LFI] [WARNING] Closing comm with pending request: " << *request);
-                }
-                request->cancel();
-            }
-            comm->ft_requests.clear();
-        }
-
         remove_addr(*comm);
-        {
-            std::unique_lock lock(comm->m_endpoint.ft_mutex);
-            comm->m_endpoint.ft_comms.erase(comm);
+
+        if (env::get_instance().LFI_fault_tolerance) {
+            m_ft_manager.cancel_comm(*comm);
         }
     }
     {

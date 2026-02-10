@@ -19,14 +19,16 @@
  *
  */
 
+#include "helpers.hpp"
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
+#include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 
 namespace LFI {
 
-LFI::LFI() {
+LFI::LFI() : m_ft_manager(*this) {
     LFI_PROFILE_FUNCTION();
     int ret = 0;
     debug_info("[LFI] Start");
@@ -67,15 +69,15 @@ LFI::LFI() {
         LFI::create_any_comm(peer_ep, ANY_COMM_SHM);
     }
 
-    ret = ft_thread_start();
+    m_ft_manager.start();
 
-    debug_info("[LFI] End = " << ret);
+    debug_info("[LFI] End");
 }
 
 LFI::~LFI() {
     LFI_PROFILE_FUNCTION();
     debug_info("[LFI] Start");
-    ft_thread_destroy();
+    m_ft_manager.stop();
 
     if (shm_ep.initialized()) {
         destroy(shm_ep);

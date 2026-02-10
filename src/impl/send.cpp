@@ -21,6 +21,7 @@
 
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
+#include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 
@@ -74,10 +75,6 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
                              bool priority) {
     LFI_PROFILE_FUNCTION();
-#ifdef DEBUG
-    uint32_t run_loop = 0;
-    defer([&run_loop] { debug_info("[LFI] run_loop " << run_loop << " times in async send"); });
-#endif
     std::unique_lock req_lock(request.mutex);
     auto comm_id = request.m_comm_id;
     req_lock.unlock();
@@ -105,35 +102,23 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     uint64_t aux_tag = tag;
     uint64_t tag_send = (aux_rank_self_in_peer << MASK_RANK_BYTES) | aux_tag;
 
-    if (env::get_instance().LFI_fault_tolerance && request.m_comm_id != ANY_COMM_SHM &&
-        request.m_comm_id != ANY_COMM_PEER) {
-        req_lock.unlock();
-        {
-            std::scoped_lock lock(comm->m_endpoint.ft_mutex, comm->ft_mutex);
-            comm->m_endpoint.ft_comms.emplace(comm);
-            comm->ft_comm_count++;
-        }
-        req_lock.lock();
-    }
-
-    debug_info("[LFI] Start size " << size << " rank_peer " << request.m_comm_id << " rank_self_in_peer "
-                                   << comm->rank_self_in_peer << " tag " << lfi_tag_to_string(tag) << " send_context "
-                                   << request.wait_context);
+    debug_info("[LFI] Start size " << size << " rank_peer " << format_lfi_comm{request.m_comm_id}
+                                   << " rank_self_in_peer " << comm->rank_self_in_peer << " tag " << format_lfi_tag{tag}
+                                   << " send_context " << request.wait_context);
 
     request.is_send = true;
     request.size = size;
     request.tag = tag;
     request.source = request.m_comm_id;
     fid_ep *p_tx_ep = comm->m_endpoint.tx_endpoint();
-    lfi_endpoint::PendingOp::Type op_type;
+    lfi_pending_op::Type op_type;
 
     if (env::get_instance().LFI_use_inject && type == send_type::SEND &&
         size <= comm->m_endpoint.info->tx_attr->inject_size) {
-        op_type = lfi_endpoint::PendingOp::Type::INJECT;
+        op_type = lfi_pending_op::Type::INJECT;
         request.is_inject = true;
     } else {
-        op_type =
-            (type == send_type::SEND) ? lfi_endpoint::PendingOp::Type::SEND : lfi_endpoint::PendingOp::Type::SENDV;
+        op_type = (type == send_type::SEND) ? lfi_pending_op::Type::SEND : lfi_pending_op::Type::SENDV;
         request.is_inject = false;
     }
 
@@ -142,26 +127,18 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     }
 
     {
-        std::unique_lock lock(comm->m_endpoint.pending_ops_mutex);
+        std::unique_lock lock_pending(comm->m_endpoint.pending_ops_mutex);
         debug_info("[LFI] Save send to " << (priority ? "priority_ops " : "pending_ops ") << request);
         auto &queue = priority ? comm->m_endpoint.priority_ops : comm->m_endpoint.pending_ops;
         queue.push({op_type, p_tx_ep, {buffer}, size, comm->fi_addr, tag_send, 0, request.wait_context.load()});
     }
 
     debug_info("[LFI] msg " << request);
-    if (env::get_instance().LFI_fault_tolerance) {
-        debug_info("[LFI] insert request " << std::hex << &request << std::dec << " in comm " << request.m_comm_id);
-        req_lock.unlock();
-        {
-            std::unique_lock ft_lock(comm->ft_mutex);
-            comm->ft_requests.insert(&request);
-        }
-        req_lock.lock();
-    }
-    debug_info("[LFI] Waiting on rank_peer " << request.m_comm_id);
 
     req_lock.unlock();
-    comm->m_endpoint.protected_progress(true);
+    m_ft_manager.register_request(&request, tag, comm);
+
+    // comm->m_endpoint.protected_progress(true);
 
     debug_info("[LFI] End = " << size);
     return LFI_SUCCESS;

@@ -22,6 +22,7 @@
 #pragma once
 
 #include "env.hpp"
+#include "ft_manager.hpp"
 #include "lfi.hpp"
 #include "lfi_endpoint.hpp"
 
@@ -37,13 +38,15 @@ class ProgressGuard {
    public:
     inline ProgressGuard(lfi_endpoint &ep, std::condition_variable *cv = nullptr, bool requested = true)
         : m_ep(ep), m_cv(cv), m_requested(requested) {
-        try_acquire();
+        if (m_requested) {
+            try_acquire();
+        }
         register_waiter();
     }
 
     inline ~ProgressGuard() {
-        release();
         unregister_waiter();
+        release();
     }
 
     inline void try_acquire() {
@@ -81,7 +84,7 @@ class ProgressGuard {
             (*m_ep.waiters_list.begin())->notify_one();
         } else {
             // Wake the ping pong thread if no one is waiting
-            m_ep.m_lfi.ft_cv.notify_one();
+            m_ep.m_lfi.m_ft_manager.notify_one();
         }
     }
 };

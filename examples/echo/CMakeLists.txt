@@ -10,6 +10,7 @@ else()
 endif()
 
 set(EXAMPLES_BW
+    echo_lfi_client_interval_send
     echo_lfi_client_interval
     echo_lfi_client_send
     echo_lfi_client_send_async
@@ -18,6 +19,7 @@ set(EXAMPLES_BW
     echo_lfi_server_async_auto
     echo_lfi_server_async
     echo_lfi_server_seq
+    echo_lfi_server_recv
     echo_lfi_server
     echo_mpi_client_interval
     echo_mpi_client_send

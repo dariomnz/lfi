@@ -25,6 +25,7 @@
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
+#include "lfi_comm.hpp"
 
 namespace LFI {
 
@@ -50,10 +51,10 @@ void LFI::dump_stats() {
         std::cerr << "Comms size " << m_comms.size() << std::endl;
         for (auto &&[key, comm] : m_comms) {
             if (!comm) {
-                std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << " nullptr" << std::endl;
+                std::cerr << indent(1) << "Comm " << format_lfi_comm{key} << " nullptr" << std::endl;
                 continue;
             }
-            std::cerr << indent(1) << "Comm " << lfi_comm_to_string(key) << (comm->m_endpoint.is_shm ? " SHM" : " PEER")
+            std::cerr << indent(1) << "Comm " << format_lfi_comm{key} << (comm->m_endpoint.is_shm ? " SHM" : " PEER")
                       << std::endl;
             if (env::get_instance().LFI_fault_tolerance) {
                 std::unique_lock ft_comm_lock(comm->ft_mutex);
@@ -64,25 +65,7 @@ void LFI::dump_stats() {
                     std::unique_lock lock_req(req->mutex);
                     std::cerr << indent(3) << *req << std::endl;
                 }
-                std::cerr << indent(2) << "ft_comm_count: " << comm->ft_comm_count << std::endl;
-                std::cerr << indent(2) << "ft_current_status: ";
-                switch (comm->ft_current_status) {
-                    case lfi_comm::ft_status::IDLE:
-                        std::cerr << "IDLE" << std::endl;
-                        break;
-                    case lfi_comm::ft_status::SEND_PING:
-                        std::cerr << "SEND_PING" << std::endl;
-                        break;
-                    case lfi_comm::ft_status::RECV_PONG:
-                        std::cerr << "RECV_PONG" << std::endl;
-                        break;
-                    case lfi_comm::ft_status::WAIT_PING_PONG:
-                        std::cerr << "WAIT_PING_PONG" << std::endl;
-                        break;
-                    case lfi_comm::ft_status::ERROR:
-                        std::cerr << "ERROR" << std::endl;
-                        break;
-                }
+                std::cerr << indent(2) << "ft_current_status: " << format_ft_status{comm->ft_current_status};
             }
         }
     }
@@ -104,7 +87,7 @@ void LFI::dump_stats() {
             std::cerr << indent(1) << "ft_pending_failed_comms size: " << endpoint.ft_pending_failed_comms.size()
                       << std::endl;
             for (auto &&comm : endpoint.ft_pending_failed_comms) {
-                std::cerr << indent(2) << "Comm " << lfi_comm_to_string(comm) << std::endl;
+                std::cerr << indent(2) << "Comm " << format_lfi_comm{comm} << std::endl;
             }
         }
         {

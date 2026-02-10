@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "lfi_async.h"
+#include "pending_ops.hpp"
 #include "vector_queue.hpp"
 
 namespace LFI {
@@ -91,24 +92,9 @@ struct lfi_endpoint {
     int protected_progress(bool call_callbacks);
     int progress(bool call_callbacks);
 
-    struct PendingOp {
-        enum class Type : uint8_t { SEND, SENDV, RECV, RECVV, INJECT };
-        Type type;
-        fid_ep *ep;
-        union {
-            const void *cbuf;
-            void *buf;
-        } buf;
-        size_t len;
-        fi_addr_t addr;
-        uint64_t tag;
-        uint64_t ignore;
-        void *context;
-    };
-
     std::mutex pending_ops_mutex;
-    VectorQueue<PendingOp> priority_ops;
-    VectorQueue<PendingOp> pending_ops;
+    VectorQueue<lfi_pending_op> priority_ops;
+    VectorQueue<lfi_pending_op> pending_ops;
 
     void post_pending_ops();
 

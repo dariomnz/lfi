@@ -33,7 +33,10 @@ using namespace bw_examples;
 
 static std::vector<int> client_fds;
 
-#define TAG_MSG 100
+#define MAX_MSG_SIZE 4 * 1024 * 1024  // 4 Mb
+#define TAG_MSG      100
+#define TAG_DATA     101
+#define TAG_ACK      102
 
 static std::atomic<uint64_t> test_size_global = 512 * 1024;
 
@@ -47,6 +50,7 @@ void signalHandler([[maybe_unused]] int signum) { signal_stop = true; }
 int run_test() {
     std::condition_variable cv;
     std::vector<uint8_t> data(test_size_global.load());
+    int dummy = 0;
     ssize_t data_send = 0;
     ssize_t data_recv = 0;
     debug_info("Start run_test size " << test_size_global.load());
@@ -56,22 +60,21 @@ int run_test() {
         for (auto &id : client_fds) {
             auto test_size = test_size_global.load();
             if (data.size() < test_size) data.resize(test_size);
-            int msg_size = test_size;
             debug_info("msg_size " << msg_size);
-            data_send = lfi_tsend(id, &msg_size, sizeof(msg_size), TAG_MSG);
-            if (data_send != sizeof(msg_size)) {
+            data_send = lfi_tsend(id, data.data(), test_size, TAG_DATA);
+            if (data_send != static_cast<ssize_t>(test_size)) {
                 print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
                 return -1;
             }
 
             debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
-            data_recv = lfi_recv(id, data.data(), test_size);
-            if (data_recv != static_cast<ssize_t>(test_size)) {
+            data_recv = lfi_trecv(id, &dummy, sizeof(dummy), TAG_ACK);
+            if (data_recv != sizeof(dummy)) {
                 print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
                 return -1;
             }
             test_count_interval++;
-            test_size_interval += data_recv;
+            test_size_interval += data_send;
         }
         cv.wait_for(lock, std::chrono::nanoseconds(0));
         i++;
@@ -92,6 +95,7 @@ int thread_read_stdin() {
         std::cout << "Leído: " << line << "\n";
         if (line == "up") {
             test_size_global = test_size_global.load() * 2;
+            if (test_size_global > MAX_MSG_SIZE) test_size_global = MAX_MSG_SIZE;
         } else if (line == "down") {
             test_size_global = test_size_global.load() / 2;
         }

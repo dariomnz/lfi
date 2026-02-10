@@ -65,6 +65,7 @@ class VectorQueue {
 
     void pop() {
         if (m_count > 0) {
+            std::memset(&m_buffer[m_head], 0, sizeof(T));
             m_head = (m_head + 1) == m_buffer.size() ? 0 : (m_head + 1);
             m_count--;
         }

@@ -98,6 +98,7 @@ int main(int argc, char *argv[])
                 ret = run_test(new_socket, test);
                 if (ret < 0) break;
             }
+            print("Server close client "<<new_socket);
             lfi_client_close(new_socket);
         }).detach();
         iter++;

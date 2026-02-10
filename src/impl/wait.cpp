@@ -119,15 +119,24 @@ int LFI::test_num(lfi_request **requests, int n_requests, int how_many) {
     int wait_count = how_many;
     auto loop_requests = [&] {
         for (int i = 0; i < n_requests; i++) {
+            const int remaining = n_requests - i;
+            // Check if impossible to reach wait count and we already found all endpoints to progress
+            if (wait_count > remaining && need_progress_in_shm && need_progress_in_peer) return;
+
             auto &request = *requests[i];
-            std::unique_lock req_and_shared_wait_lock(request.mutex);
-            debug_info(request);
-            debug_info("Request comm " << request.m_comm_id);
-            if (request.is_completed()) {
-                debug_info("Request already completed");
-                wait_count--;
-                continue;
+
+            // Only check if it is possible to reach wait_count
+            if (wait_count <= remaining) {
+                std::unique_lock lock(request.mutex);
+                debug_info(request);
+                if (request.is_completed()) {
+                    debug_info("Request already completed");
+                    wait_count--;
+                    if (wait_count <= 0) return;
+                    continue;
+                }
             }
+
             if (request.m_endpoint == shm_ep) {
                 need_progress_in_shm = true;
             } else if (request.m_endpoint == peer_ep) {
@@ -216,9 +225,11 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                     peer_ep.progress(true);
                 }
             } else {
-                std::unique_lock wait_lock(shared_wait.wait_mutex);
                 if (timeout_ms < 0) {
-                    shared_wait.wait_cv.wait(wait_lock);
+                    std::unique_lock wait_lock(shared_wait.wait_mutex);
+                    if (shared_wait.wait_count.load() > 0) {
+                        shared_wait.wait_cv.wait(wait_lock);
+                    }
                 } else {
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                           std::chrono::high_resolution_clock::now() - start)
@@ -226,7 +237,10 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                     if (elapsed_ms >= timeout_ms) {
                         is_timeout = true;
                     } else {
-                        shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
+                        std::unique_lock wait_lock(shared_wait.wait_mutex);
+                        if (shared_wait.wait_count.load() > 0) {
+                            shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
+                        }
                     }
                 }
             }
