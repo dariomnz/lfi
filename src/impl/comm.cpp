@@ -50,6 +50,7 @@ std::ostream& operator<<(std::ostream& os, const format_ft_status& st) {
         case lfi_comm::ft_status::ERROR:
             return os << "ERROR";
     }
+    return os << "Unknown";
 }
 
 // uint32_t LFI::reserve_comm() { return m_rank_counter.fetch_add(1); }

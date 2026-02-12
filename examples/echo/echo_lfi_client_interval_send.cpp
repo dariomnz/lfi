@@ -60,7 +60,7 @@ int run_test() {
         for (auto &id : client_fds) {
             auto test_size = test_size_global.load();
             if (data.size() < test_size) data.resize(test_size);
-            debug_info("msg_size " << msg_size);
+            debug_info("msg_size " << test_size);
             data_send = lfi_tsend(id, data.data(), test_size, TAG_DATA);
             if (data_send != static_cast<ssize_t>(test_size)) {
                 print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));

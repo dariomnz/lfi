@@ -83,7 +83,7 @@ class env {
     size_t LFI_ld_preload_buffered = 64 * 1024;
     int LFI_debug_dump_interval = 0;
     bool LFI_use_shm = true;
-    bool LFI_debug = false;
+    bool LFI_debug = true;
 
    public:
     static env &get_instance() {
