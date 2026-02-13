@@ -173,6 +173,32 @@ ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
     return ret;
 }
 
+ssize_t lfi_put_async(lfi_request *req, const void *data, size_t size, uint64_t remote_addr, uint64_t remote_key) {
+    LFI_PROFILE_FUNCTION();
+    debug_info("(" << req << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key << ")>> Begin");
+    if (req == nullptr) return -LFI_NULL_REQUEST;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
+    debug_info(*request);
+    const auto ret = lfi.async_put(data, size, remote_addr, remote_key, *request);
+    debug_info("(" << request << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key
+                   << ")=" << ret << " >> End");
+    return ret;
+}
+
+ssize_t lfi_get_async(lfi_request *req, void *data, size_t size, uint64_t remote_addr, uint64_t remote_key) {
+    LFI_PROFILE_FUNCTION();
+    debug_info("(" << req << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key << ")>> Begin");
+    if (req == nullptr) return -LFI_NULL_REQUEST;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
+    debug_info(*request);
+    const auto ret = lfi.async_get(data, size, remote_addr, remote_key, *request);
+    debug_info("(" << request << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key
+                   << ")=" << ret << " >> End");
+    return ret;
+}
+
 ssize_t lfi_wait(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");

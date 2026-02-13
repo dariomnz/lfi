@@ -68,11 +68,9 @@ lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
 int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
                              bool priority) {
     LFI_PROFILE_FUNCTION();
-    std::unique_lock req_lock(request.mutex);
     auto comm_id = request.m_comm_id;
-    req_lock.unlock();
     auto [lock, comm] = get_comm_and_mutex(comm_id);
-    req_lock.lock();
+    std::unique_lock req_lock(request.mutex);
 
     // Check if comm is found
     if (!comm) {
@@ -100,7 +98,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
     fid_ep *p_rx_ep = comm->m_endpoint.rx_endpoint();
     request.wait_context.store(req_ctx_factory.create(request));
-    request.is_send = false;
+    request.op_type = lfi_request::OpType::RECV;
 
     {
         std::unique_lock lock_pending(comm->m_endpoint.pending_ops_mutex);

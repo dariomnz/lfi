@@ -8,6 +8,8 @@ set(EXAMPLES_SIMPLE
     simple_lfi_server_pp
     simple_lfi_coll
     simple_lfi_allreduce
+    simple_lfi_server_rma
+    simple_lfi_client_rma
 )
 
 # add the executables c

@@ -173,6 +173,15 @@ class LFI {
         return async_send_internal(reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag, request,
                                    priority);
     }
+
+    // rma.cpp
+    int put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key);
+    int get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key);
+    int async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key, lfi_request &request,
+                  bool priority = false);
+    int async_get(void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key, lfi_request &request,
+                  bool priority = false);
+
     // wait.cpp
    public:
     inline bool wait_check_timeout(int32_t timeout_ms, decltype(std::chrono::high_resolution_clock::now()) start);
@@ -199,6 +208,22 @@ class LFI {
     std::atomic_uint32_t m_rank_counter = {0};
 
     lfi_request_context_factory req_ctx_factory;
+
+   public:
+    struct lfi_mr {
+        void *addr;
+        size_t size;
+        fid_mr *shm_mr = nullptr;
+        uint64_t shm_key;
+        fid_mr *peer_mr = nullptr;
+        uint64_t peer_key;
+    };
+    int mr_reg(void *addr, size_t size);
+    int mr_unreg(int key);
+
+   private:
+    std::mutex m_mr_mutex;
+    std::unordered_map<uint32_t, std::unique_ptr<lfi_mr>> m_mrs;
 
    public:
     static inline LFI &get_instance() {

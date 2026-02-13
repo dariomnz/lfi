@@ -184,6 +184,7 @@ void lfi_ft_manager::register_request(lfi_request *req, uint32_t tag, lfi_comm *
         comm->ft_requests.emplace(req);
         debug_info("[LFI] emplace request " << std::hex << req << std::dec << " in comm " << comm->rank_peer
                                             << " ft_requests size " << comm->ft_requests.size());
+        debug_info(*req);
     }
 }
 
@@ -203,7 +204,7 @@ void lfi_ft_manager::on_request_complete(lfi_request *req, int &err) {
             }
         }
     }
-    if (!req->is_send && err == LFI_SUCCESS) {
+    if (err == LFI_SUCCESS) {
         auto comm_ptr = m_lfi.get_comm_internal(lock, req->source);
         if (comm_ptr) {
             std::unique_lock ft_lock(comm_ptr->ft_mutex);
@@ -272,7 +273,8 @@ void lfi_ft_manager::process_comm(lfi_comm *comm, int32_t ft_ms, std::vector<uin
 void lfi_ft_manager::handle_any_comm_reports(lfi_endpoint &lfi_ep, std::vector<uint32_t> &canceled_coms) {
     {
         std::scoped_lock lock(lfi_ep.ft_mutex);
-        if (lfi_ep.ft_any_comm_requests.empty() && lfi_ep.ft_pending_failed_comms.empty() && canceled_coms.empty()) return;
+        if (lfi_ep.ft_any_comm_requests.empty() && lfi_ep.ft_pending_failed_comms.empty() && canceled_coms.empty())
+            return;
     }
 
     m_requests_to_cancel.reserve(10);

@@ -187,6 +187,44 @@ const char *lfi_strerror(int error) {
     return LFI::lfi_strerror(std::abs(error));
 }
 
+int lfi_mr_reg(void *addr, size_t size) {
+    LFI_PROFILE_FUNCTION();
+    debug_info("(" << addr << ", " << size << ") >> Begin");
+    const auto ret = LFI::LFI::get_instance().mr_reg(addr, size);
+    debug_info("(" << addr << ", " << size << ")=" << ret << " >> End");
+    return ret;
+}
+
+int lfi_mr_unreg(int key) {
+    LFI_PROFILE_FUNCTION();
+    debug_info("(" << key << ") >> Begin");
+    const auto ret = LFI::LFI::get_instance().mr_unreg(key);
+    debug_info("(" << key << ")=" << ret << " >> End");
+    return ret;
+}
+
+ssize_t lfi_put(int id, const void *data, size_t size, uint64_t remote_addr, uint64_t remote_key) {
+    LFI_PROFILE_FUNCTION();
+    ssize_t ret = -1;
+    debug_info("(" << id << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key << ")>> Begin");
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    ret = lfi.put(id, data, size, remote_addr, remote_key);
+    debug_info("(" << id << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key << ")=" << ret
+                   << " >> End");
+    return ret;
+}
+
+ssize_t lfi_get(int id, void *data, size_t size, uint64_t remote_addr, uint64_t remote_key) {
+    LFI_PROFILE_FUNCTION();
+    ssize_t ret = -1;
+    debug_info("(" << id << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key << ")>> Begin");
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    ret = lfi.get(id, data, size, remote_addr, remote_key);
+    debug_info("(" << id << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key << ")=" << ret
+                   << " >> End");
+    return ret;
+}
+
 void lfi_dump_stats() {
     LFI_PROFILE_FUNCTION();
     return LFI::LFI::get_instance().dump_stats();

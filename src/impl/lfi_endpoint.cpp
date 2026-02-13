@@ -21,12 +21,13 @@
 
 #include "impl/lfi_endpoint.hpp"
 
+#include <rdma/fi_rma.h>
+
 #include "helpers.hpp"
 #include "impl/debug.hpp"
-#include "impl/env.hpp"
 #include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
-#include "sstream"
+#include "lfi_request.hpp"
 
 namespace LFI {
 
@@ -139,21 +140,30 @@ void lfi_endpoint::post_pending_ops() {
                         debug_error("[LFI] Pending op NONE");
                         break;
                     case lfi_pending_op::Type::SEND:
-                        op_ret = fi_tsend(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag, op.context);
+                        op_ret = fi_tsend(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag_remote_addr, op.context);
                         break;
                     case lfi_pending_op::Type::SENDV:
                         op_ret = fi_tsendv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
-                                           op.tag, op.context);
+                                           op.tag_remote_addr, op.context);
                         break;
                     case lfi_pending_op::Type::RECV:
-                        op_ret = fi_trecv(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag, op.ignore, op.context);
+                        op_ret = fi_trecv(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag_remote_addr,
+                                          op.ignore_remote_key, op.context);
                         break;
                     case lfi_pending_op::Type::RECVV:
                         op_ret = fi_trecvv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
-                                           op.tag, op.ignore, op.context);
+                                           op.tag_remote_addr, op.ignore_remote_key, op.context);
                         break;
                     case lfi_pending_op::Type::INJECT:
-                        op_ret = fi_tinject(op.ep, op.buf.cbuf, op.len, op.addr, op.tag);
+                        op_ret = fi_tinject(op.ep, op.buf.cbuf, op.len, op.addr, op.tag_remote_addr);
+                        break;
+                    case lfi_pending_op::Type::PUT:
+                        op_ret = fi_write(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag_remote_addr,
+                                          op.ignore_remote_key, op.context);
+                        break;
+                    case lfi_pending_op::Type::GET:
+                        op_ret = fi_read(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag_remote_addr,
+                                         op.ignore_remote_key, op.context);
                         break;
                 }
 
@@ -188,7 +198,8 @@ void lfi_endpoint::post_pending_ops() {
                         }
                     }
 
-                    debug_info("[LFI] Pending op posted, remaining " << queue.size());
+                    debug_info("[LFI] Pending op posted, remaining " << queue.size() - 1);
+                    debug_info("[LFI] op: " << op);
                     queue.pop();
                 }
             }
@@ -265,7 +276,7 @@ int lfi_endpoint::progress(bool call_callbacks) {
                 {
                     std::unique_lock request_lock(request->mutex);
                     // If len is not 0 is a RECV
-                    if (!request->is_send) {
+                    if (request->op_type == lfi_request::OpType::RECV) {
                         request->size = comp[i].len;
                         request->tag = (comp[i].tag & MASK_TAG);
                         request->source = ((comp[i].tag & MASK_RANK) >> MASK_RANK_BYTES);

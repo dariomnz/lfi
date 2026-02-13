@@ -22,6 +22,7 @@
 #ifndef _LFI_H
 #define _LFI_H
 
+#include <stdint.h>
 #include <sys/types.h>
 
 #ifdef __cplusplus
@@ -29,7 +30,7 @@ extern "C" {
 #endif
 
 /**
- * @brief Returns a string describing the error code. 
+ * @brief Returns a string describing the error code.
  *
  * This function returns a human-readable string describing the given LFI error code.
  * Similar to libc strerror.
@@ -75,13 +76,13 @@ int lfi_server_accept(int id);
 int lfi_server_accept_t(int id, int timeout_ms);
 
 /**
-* @brief Closes a server.
-*
-* This function closes the server associated with the given ID.
-*
-* @param id The ID of the server to close.
-* @return 0 on success, or a negative error code on failure.
-*/
+ * @brief Closes a server.
+ *
+ * This function closes the server associated with the given ID.
+ *
+ * @param id The ID of the server to close.
+ * @return 0 on success, or a negative error code on failure.
+ */
 int lfi_server_close(int id);
 
 /**
@@ -108,13 +109,13 @@ int lfi_client_create(const char *serv_addr, int port);
 int lfi_client_create_t(const char *serv_addr, int port, int timeout_ms);
 
 /**
-* @brief Closes a client.
-*
-* This function closes the client associated with the given client ID.
-*
-* @param id The ID of the client to close.
-* @return 0 on success, or a negative error code on failure.
-*/
+ * @brief Closes a client.
+ *
+ * This function closes the client associated with the given client ID.
+ *
+ * @param id The ID of the client to close.
+ * @return 0 on success, or a negative error code on failure.
+ */
 int lfi_client_close(int id);
 
 /**
@@ -146,7 +147,7 @@ ssize_t lfi_tsend(int id, const void *data, size_t size, int tag);
 /**
  * @brief Constant representing the ID of any client over shared memory to recv data.
  */
-#define LFI_ANY_COMM_SHM  (0xFFFFFFFF - 1)
+#define LFI_ANY_COMM_SHM (0xFFFFFFFF - 1)
 
 /**
  * @brief Constant representing the ID of any client over a peer connection to recv data.
@@ -156,7 +157,7 @@ ssize_t lfi_tsend(int id, const void *data, size_t size, int tag);
 /**
  * @brief Receives data over the LFI connection.
  *
- * This function receives data over the client associated with the given ID, 
+ * This function receives data over the client associated with the given ID,
  * or from any actual client if the ANY_COMM constant is used.
  *
  * @note To use ANY_COMM, two calls to this function are required, each in its own thread:
@@ -174,9 +175,9 @@ ssize_t lfi_recv(int id, void *data, size_t size);
 /**
  * @brief Receives tagged data over the LFI connection.
  *
- * This function receives data with a specific tag over the client associated with the given ID, 
+ * This function receives data with a specific tag over the client associated with the given ID,
  * or from any actual client if the ANY_COMM constant is used.
- * 
+ *
  * @note To use ANY_COMM, two calls to this function are required, each in its own thread:
  *       - One with id = LFI_ANY_COMM_SHM to receive data from shared memory.
  *       - Another with id = LFI_ANY_COMM_PEER to receive data from the peer connection.
@@ -189,6 +190,47 @@ ssize_t lfi_recv(int id, void *data, size_t size);
  * @return The number of bytes received on success, or a negative error code on failure.
  */
 ssize_t lfi_trecv(int id, void *data, size_t size, int tag);
+
+/**
+ * @brief Registers a memory region for RMA operations.
+ *
+ * @param addr Pointer to the memory region to register.
+ * @param size The size of the memory region.
+ * @return key on success, or a negative error code on failure.
+ */
+int lfi_mr_reg(void *addr, size_t size);
+
+/**
+ * @brief Unregisters a memory region.
+ *
+ * @param key The RMA key returned by lfi_mr_reg.
+ * @return 0 on success, or a negative error code on failure.
+ */
+int lfi_mr_unreg(int key);
+
+/**
+ * @brief Performs a remote put operation.
+ *
+ * @param id The ID of the client.
+ * @param local_addr Pointer to the local buffer containing data to be sent.
+ * @param size The size of the data to put.
+ * @param remote_addr The address in the remote process's memory where data should be written.
+ * @param remote_key The RMA key for the remote memory region.
+ * @return The number of bytes put on success, or a negative error code on failure.
+ */
+ssize_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_addr, uint64_t remote_key);
+
+/**
+ * @brief Performs a remote get operation.
+ *
+ * @param id The ID of the client.
+ * @param local_addr Pointer to the local buffer where the received data will be stored.
+ * @param size The size of the data to get.
+ * @param remote_addr The address in the remote process's memory from where data should be read.
+ * @param remote_key The RMA key for the remote memory region.
+ * @return The number of bytes received on success, or a negative error code on failure.
+ */
+ssize_t lfi_get(int id, void *local_addr, size_t size, uint64_t remote_addr, uint64_t remote_key);
 
 #ifdef __cplusplus
 }

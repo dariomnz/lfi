@@ -101,7 +101,7 @@ int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
 
     lfi_ep.hints->ep_attr->type = FI_EP_RDM;
 
-    lfi_ep.hints->caps = FI_MSG | FI_TAGGED;
+    lfi_ep.hints->caps = FI_MSG | FI_TAGGED | FI_RMA | FI_WRITE | FI_READ | FI_REMOTE_WRITE | FI_REMOTE_READ;
 
     lfi_ep.hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE;
 
@@ -110,6 +110,7 @@ int LFI::set_hints(lfi_endpoint &lfi_ep, const std::string &prov) {
 
     lfi_ep.hints->mode = FI_CONTEXT2;
 
+    lfi_ep.hints->domain_attr->mr_mode = FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
     lfi_ep.hints->domain_attr->threading = FI_THREAD_SAFE;
     lfi_ep.hints->domain_attr->progress = FI_PROGRESS_MANUAL;
 
@@ -148,6 +149,7 @@ int LFI::init(lfi_endpoint &lfi_ep) {
         return ret;
     }
 
+    lfi_ep.info->domain_attr->mr_mode = FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
     ret = fi_domain(lfi_ep.fabric, lfi_ep.info, &lfi_ep.domain, NULL);
     debug_info("[LFI] fi_domain = " << ret);
     if (ret) {

@@ -42,7 +42,7 @@ constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
 constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
 
 struct format_lfi_comm {
-    int64_t comm;
+    uint64_t comm;
 
     friend std::ostream &operator<<(std::ostream &os, const format_lfi_comm &comm);
 };

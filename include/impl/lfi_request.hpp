@@ -35,6 +35,11 @@ struct format_lfi_tag {
     friend std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag);
 };
 
+struct format_fi_tag {
+    uint64_t tag;
+    friend std::ostream &operator<<(std::ostream &os, const format_fi_tag &tag);
+};
+
 struct wait_struct {
     std::mutex wait_mutex = {};
     std::condition_variable wait_cv = {};
@@ -59,15 +64,15 @@ struct lfi_msg {
 struct lfi_request_context;
 struct lfi_request {
     lfi_endpoint &m_endpoint;
-    uint32_t m_comm_id;
+    const uint32_t m_comm_id;
     std::mutex mutex = {};
     std::condition_variable cv = {};
     int error = 0;
     // bool wait_context = true;
     std::atomic<lfi_request_context *> wait_context = nullptr;
 
-    bool is_send = false;
-    bool is_inject = false;
+    enum class OpType : uint8_t { NONE, SEND, INJECT, PUT, GET, RECV };
+    OpType op_type = OpType::NONE;
 
     size_t size = 0;
     uint32_t tag = 0;

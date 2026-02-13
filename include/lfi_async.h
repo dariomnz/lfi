@@ -22,7 +22,7 @@
 #ifndef _LFI_ASYNC_H
 #define _LFI_ASYNC_H
 
-// #include <stdint.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -174,6 +174,31 @@ ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
  * @return 0 on success, or a negative error code on failure.
  */
 ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
+
+/**
+ * @brief Performs an asynchronous remote put operation.
+ *
+ * @param request Pointer to the 'lfi_request' object.
+ * @param local_addr Pointer to the local buffer containing data to be sent.
+ * @param size The size of the data to put.
+ * @param remote_addr The address in the remote process's memory where data should be written.
+ * @param remote_key The RMA key for the remote memory region.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_put_async(lfi_request *request, const void *local_addr, size_t size, uint64_t remote_addr,
+                      uint64_t remote_key);
+
+/**
+ * @brief Performs an asynchronous remote get operation.
+ *
+ * @param request Pointer to the 'lfi_request' object.
+ * @param local_addr Pointer to the local buffer where the received data will be stored.
+ * @param size The size of the data to get.
+ * @param remote_addr The address in the remote process's memory from where data should be read.
+ * @param remote_key The RMA key for the remote memory region.
+ * @return 0 on success, or a negative error code on failure.
+ */
+ssize_t lfi_get_async(lfi_request *request, void *local_addr, size_t size, uint64_t remote_addr, uint64_t remote_key);
 
 typedef struct lfi_status {
     uint64_t size;

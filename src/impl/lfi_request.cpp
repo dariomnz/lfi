@@ -52,17 +52,32 @@ std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag) {
     }
 }
 
+std::ostream &operator<<(std::ostream &os, const format_fi_tag &tag) {
+    os << "{tag: " << format_lfi_tag{tag.tag & MASK_TAG};
+    os << ", rank: " << format_lfi_comm{((tag.tag & MASK_RANK) >> MASK_RANK_BYTES)} << "}";
+    return os;
+}
+
 std::ostream &operator<<(std::ostream &os, lfi_request &req) {
-    os << "Request " << (req.is_send ? "send" : "recv");
+    os << "Request ";
+#define CASE_OP_TYPE(op)          \
+    case lfi_request::OpType::op: \
+        os << #op;                \
+        break;
+    switch (req.op_type) {
+        CASE_OP_TYPE(NONE);
+        CASE_OP_TYPE(SEND);
+        CASE_OP_TYPE(INJECT);
+        CASE_OP_TYPE(RECV);
+        CASE_OP_TYPE(PUT);
+        CASE_OP_TYPE(GET);
+    }
     auto aux_wait_context = req.wait_context.load();
     if (aux_wait_context) {
         os << " ctx " << std::hex << aux_wait_context;
     }
     os << std::dec << " comm " << format_lfi_comm{req.m_comm_id} << " {size:" << req.size
        << ", tag:" << format_lfi_tag{req.tag} << ", source:" << format_lfi_comm{req.source} << "}";
-    if (req.is_inject) {
-        os << " inject";
-    }
     if (req.is_completed()) {
         os << " completed";
     }
@@ -135,7 +150,7 @@ void lfi_request::cancel() {
     LFI_PROFILE_FUNCTION();
     int error = -LFI_CANCELED;
 
-    if (!is_inject) {
+    {
         std::unique_lock lock(m_endpoint.pending_ops_mutex);
         auto context_to_find = wait_context.load();
         if (context_to_find) {
@@ -150,34 +165,35 @@ void lfi_request::cancel() {
         std::unique_lock request_lock(mutex);
         debug_info("[LFI] Start " << *this);
         // The inject is not cancelled
-        if (is_inject || is_completed()) return;
-
-        fid_ep *p_ep = nullptr;
-        if (is_send) {
-            p_ep = m_endpoint.tx_endpoint();
-        } else {
-            p_ep = m_endpoint.rx_endpoint();
-        }
-        // Cancel request and notify
-
-        // Ignore return value
-        // ref: https://github.com/ofiwg/libfabric/issues/7795
-        auto aux_context = wait_context.load();
-        if (aux_context) {
-            [[maybe_unused]] auto ret = fi_cancel(&p_ep->fid, aux_context);
-            debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
-        }
-
-        // Check if completed to no report error
-        if (!is_completed() || error) {
-            auto comm_id = m_comm_id;
-            request_lock.unlock();
-            auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(comm_id);
-            request_lock.lock();
-            if ((comm && comm->is_canceled) || error == -LFI_BROKEN_COMM) {
-                error = -LFI_BROKEN_COMM;
+        if (is_completed()) return;
+        if (op_type != OpType::INJECT) {
+            fid_ep *p_ep = nullptr;
+            if (op_type == OpType::RECV) {
+                p_ep = m_endpoint.rx_endpoint();
             } else {
-                error = -LFI_CANCELED;
+                p_ep = m_endpoint.tx_endpoint();
+            }
+            // Cancel request and notify
+
+            // Ignore return value
+            // ref: https://github.com/ofiwg/libfabric/issues/7795
+            auto aux_context = wait_context.load();
+            if (aux_context) {
+                [[maybe_unused]] auto ret = fi_cancel(&p_ep->fid, aux_context);
+                debug_info("fi_cancel ret " << ret << " " << fi_strerror(ret));
+            }
+
+            // Check if completed to no report error
+            if (!is_completed() || error) {
+                auto comm_id = m_comm_id;
+                request_lock.unlock();
+                auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(comm_id);
+                request_lock.lock();
+                if ((comm && comm->is_canceled) || error == -LFI_BROKEN_COMM) {
+                    error = -LFI_BROKEN_COMM;
+                } else {
+                    error = -LFI_CANCELED;
+                }
             }
         }
     }

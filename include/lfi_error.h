@@ -41,6 +41,7 @@ extern "C" {
 #define LFI_GROUP_NO_INIT   12  // The group is not initialized
 #define LFI_GROUP_NO_SELF   13  // The hostname of the current process is missing
 #define LFI_GROUP_INVAL     14  // Invalid argument
+#define LFI_MR_NOT_FOUND    15  // Memory region not found
 
 #ifdef __cplusplus
 }

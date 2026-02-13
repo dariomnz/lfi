@@ -23,11 +23,12 @@
 #include <cstdint>
 #include <ostream>
 
+#include "lfi_request.hpp"
 #include "rdma/fi_endpoint.h"
 namespace LFI {
 
 struct lfi_pending_op {
-    enum class Type : uint8_t { NONE, SEND, SENDV, RECV, RECVV, INJECT };
+    enum class Type : uint8_t { NONE, SEND, SENDV, RECV, RECVV, INJECT, PUT, GET };
     Type type;
     fid_ep *ep;
     union {
@@ -36,8 +37,8 @@ struct lfi_pending_op {
     } buf;
     size_t len;
     fi_addr_t addr;
-    uint64_t tag;
-    uint64_t ignore;
+    uint64_t tag_remote_addr;
+    uint64_t ignore_remote_key;
     void *context;
 
     friend std::ostream &operator<<(std::ostream &os, const lfi_pending_op &op) {
@@ -53,8 +54,21 @@ struct lfi_pending_op {
             CASE_TYPE(RECV);
             CASE_TYPE(RECVV);
             CASE_TYPE(INJECT);
+            CASE_TYPE(PUT);
+            CASE_TYPE(GET);
         }
-        os << "{len:" << op.len << ", tag:" << op.tag << ", addr:" << op.addr << ", context:" << op.context << "}";
+        os << "{buf:" << op.buf.cbuf << ", len:" << op.len;
+        if (op.type == lfi_pending_op::Type::PUT || op.type == lfi_pending_op::Type::GET) {
+            os << ", remote_addr: 0x" << std::hex << op.tag_remote_addr << std::dec;
+        } else {
+            os << ", tag:" << format_fi_tag{op.tag_remote_addr} << std::dec;
+        }
+        if (op.type == lfi_pending_op::Type::PUT || op.type == lfi_pending_op::Type::GET) {
+            os << ", remote_key:" << op.ignore_remote_key;
+        } else {
+            os << ", ignore: 0x" << std::hex << op.ignore_remote_key << std::dec;
+        }
+        os << ", addr:" << op.addr << ", context:" << op.context << "}";
         return os;
     }
 };

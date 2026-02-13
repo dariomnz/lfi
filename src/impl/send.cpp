@@ -75,11 +75,9 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
 int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
                              bool priority) {
     LFI_PROFILE_FUNCTION();
-    std::unique_lock req_lock(request.mutex);
     auto comm_id = request.m_comm_id;
-    req_lock.unlock();
     auto [lock, comm] = get_comm_and_mutex(comm_id);
-    req_lock.lock();
+    std::unique_lock req_lock(request.mutex);
     // Check if comm is found
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
@@ -106,7 +104,6 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
                                    << " rank_self_in_peer " << comm->rank_self_in_peer << " tag " << format_lfi_tag{tag}
                                    << " send_context " << request.wait_context);
 
-    request.is_send = true;
     request.size = size;
     request.tag = tag;
     request.source = request.m_comm_id;
@@ -116,10 +113,10 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     if (env::get_instance().LFI_use_inject && type == send_type::SEND &&
         size <= comm->m_endpoint.info->tx_attr->inject_size) {
         op_type = lfi_pending_op::Type::INJECT;
-        request.is_inject = true;
+        request.op_type = lfi_request::OpType::INJECT;
     } else {
         op_type = (type == send_type::SEND) ? lfi_pending_op::Type::SEND : lfi_pending_op::Type::SENDV;
-        request.is_inject = false;
+        request.op_type = lfi_request::OpType::SEND;
     }
 
     if (!request.wait_context.load()) {
