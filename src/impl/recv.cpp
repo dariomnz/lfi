@@ -120,7 +120,7 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
 
     debug_info("[LFI] msg size " << request);
     req_lock.unlock();
-    m_ft_manager.register_request(&request, tag, comm);
+    m_ft_manager.register_request(&request, comm);
 
     // comm->m_endpoint.protected_progress(true);
 

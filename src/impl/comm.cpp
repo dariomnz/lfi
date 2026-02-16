@@ -45,8 +45,8 @@ std::ostream& operator<<(std::ostream& os, const format_ft_status& st) {
     switch (st.status) {
         case lfi_comm::ft_status::IDLE:
             return os << "IDLE";
-        case lfi_comm::ft_status::PINGING:
-            return os << "PINGING";
+        case lfi_comm::ft_status::HEARTBEAT:
+            return os << "HEARTBEAT";
         case lfi_comm::ft_status::ERROR:
             return os << "ERROR";
     }

@@ -7,12 +7,8 @@
 
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <mutex>
-#include <shared_mutex>
-#include <thread>
 #include <vector>
 
 namespace LFI {
@@ -27,15 +23,17 @@ class lfi_ft_manager {
     explicit lfi_ft_manager(LFI& lfi);
     ~lfi_ft_manager();
 
-    // Prevent copying
+    // Prevent copy and move
     lfi_ft_manager(const lfi_ft_manager&) = delete;
     lfi_ft_manager& operator=(const lfi_ft_manager&) = delete;
+    lfi_ft_manager(lfi_ft_manager&&) = delete;
+    lfi_ft_manager& operator=(lfi_ft_manager&&) = delete;
 
     void start();
     void stop();
 
     // Called when a request starts to register it for monitoring
-    void register_request(lfi_request* req, uint32_t tag, lfi_comm* comm);
+    void register_request(lfi_request* req, lfi_comm* comm);
 
     // Called when a request finishes to update last_request_time and clean up ft_requests
     void on_request_complete(lfi_request* req, int& err);
@@ -43,28 +41,23 @@ class lfi_ft_manager {
     // Core monitoring loop executed by the FT thread or progress
     void one_loop(lfi_endpoint& ep);
 
-    void setup_ping_pongs();
+    void setup_heartbeat();
 
     int cancel_comm(lfi_comm& comm);
 
-    bool is_running() const { return m_running.load(); }
-    void notify_one() { m_cv.notify_one(); }
-
-    // Wait for the CV (used by the background thread)
-    void wait_for(std::unique_lock<std::mutex>& lock, std::chrono::milliseconds ms) { m_cv.wait_for(lock, ms); }
-
-    std::mutex& get_mutex() { return m_mutex; }
+    static constexpr uint64_t HEARBEAT_CODE = 0xBAADC0DEDEAD11FE;
+    uint64_t m_local_heartbeat = HEARBEAT_CODE;
+    int m_heartbeat_key = -1;
 
    private:
     void thread_loop();
-    void process_comm(lfi_comm* comm, int32_t ft_ms, std::vector<uint32_t>& canceled_comms);
+    void process_comm(lfi_comm* comm, int32_t ft_ms, std::vector<uint32_t>& canceled_comms,
+                      std::chrono::time_point<std::chrono::high_resolution_clock> now);
     void handle_any_comm_reports(lfi_endpoint& ep, std::vector<uint32_t>& canceled_comms);
 
     LFI& m_lfi;
-    std::thread m_thread;
     std::mutex m_mutex;
-    std::condition_variable m_cv;
-    std::atomic<bool> m_running{false};
+    bool m_initialized = false;
     std::vector<lfi_request*> m_requests_to_cancel;
     std::vector<uint32_t> m_canceled_coms;
 };

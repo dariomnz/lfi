@@ -128,6 +128,32 @@ int LFI::init_server(int socket, int32_t comm_id) {
     ret = comm->rank_peer;
     comm->is_ready = lfi_comm::comm_status::READY_INTERNAL;
 
+    // Exchange heartbeat info
+    if (env::get_instance().LFI_fault_tolerance) {
+        uint64_t local_hb_addr = reinterpret_cast<uint64_t>(&m_ft_manager.m_local_heartbeat);
+        uint64_t local_hb_key = m_ft_manager.m_heartbeat_key;
+        ret = socket::send(socket, &local_hb_addr, sizeof(local_hb_addr));
+        if (ret != sizeof(local_hb_addr)) {
+            print_error("socket::send local_hb_addr socket " << socket);
+            return -1;
+        }
+        ret = socket::send(socket, &local_hb_key, sizeof(local_hb_key));
+        if (ret != sizeof(local_hb_key)) {
+            print_error("socket::send local_hb_key socket " << socket);
+            return -1;
+        }
+        ret = socket::recv(socket, &comm->ft_remote_heartbeat_addr, sizeof(comm->ft_remote_heartbeat_addr));
+        if (ret != sizeof(comm->ft_remote_heartbeat_addr)) {
+            print_error("socket::recv comm->ft_remote_heartbeat_addr socket " << socket);
+            return -1;
+        }
+        ret = socket::recv(socket, &comm->ft_remote_heartbeat_key, sizeof(comm->ft_remote_heartbeat_key));
+        if (ret != sizeof(comm->ft_remote_heartbeat_key)) {
+            print_error("socket::recv comm->ft_remote_heartbeat_key socket " << socket);
+            return -1;
+        }
+    }
+
     // Do a send recv because some providers need it
     int buf = 123;
     lfi_msg msg;
@@ -251,6 +277,32 @@ int LFI::init_client(int socket, int32_t comm_id) {
 
     ret = comm->rank_peer;
     comm->is_ready = lfi_comm::comm_status::READY_INTERNAL;
+
+    // Exchange heartbeat info
+    if (env::get_instance().LFI_fault_tolerance) {
+        uint64_t local_hb_addr = reinterpret_cast<uint64_t>(&m_ft_manager.m_local_heartbeat);
+        uint64_t local_hb_key = m_ft_manager.m_heartbeat_key;
+        ret = socket::recv(socket, &comm->ft_remote_heartbeat_addr, sizeof(comm->ft_remote_heartbeat_addr));
+        if (ret != sizeof(comm->ft_remote_heartbeat_addr)) {
+            print_error("socket::recv comm->ft_remote_heartbeat_addr socket " << socket);
+            return -1;
+        }
+        ret = socket::recv(socket, &comm->ft_remote_heartbeat_key, sizeof(comm->ft_remote_heartbeat_key));
+        if (ret != sizeof(comm->ft_remote_heartbeat_key)) {
+            print_error("socket::recv comm->ft_remote_heartbeat_key socket " << socket);
+            return -1;
+        }
+        ret = socket::send(socket, &local_hb_addr, sizeof(local_hb_addr));
+        if (ret != sizeof(local_hb_addr)) {
+            print_error("socket::send local_hb_addr socket " << socket);
+            return -1;
+        }
+        ret = socket::send(socket, &local_hb_key, sizeof(local_hb_key));
+        if (ret != sizeof(local_hb_key)) {
+            print_error("socket::send local_hb_key socket " << socket);
+            return -1;
+        }
+    }
 
     // Do a recv send because some providers need it
     int buf = 123;

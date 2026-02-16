@@ -133,7 +133,8 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     debug_info("[LFI] msg " << request);
 
     req_lock.unlock();
-    m_ft_manager.register_request(&request, tag, comm);
+
+    m_ft_manager.register_request(&request, comm);
 
     // comm->m_endpoint.protected_progress(true);
 

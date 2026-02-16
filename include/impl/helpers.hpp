@@ -23,7 +23,6 @@
 
 #include "env.hpp"
 #include "ft_manager.hpp"
-#include "lfi.hpp"
 #include "lfi_endpoint.hpp"
 
 namespace LFI {
@@ -82,9 +81,6 @@ class ProgressGuard {
         std::unique_lock lock(m_ep.waiters_mutex);
         if (!m_ep.waiters_list.empty()) {
             (*m_ep.waiters_list.begin())->notify_one();
-        } else {
-            // Wake the ping pong thread if no one is waiting
-            m_ep.m_lfi.m_ft_manager.notify_one();
         }
     }
 };

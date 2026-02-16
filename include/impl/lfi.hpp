@@ -67,14 +67,13 @@ static constexpr const char *lfi_strerror(int error) {
         CASE_STR_ERROR(LFI_GROUP_NO_INIT, "The group is not initialized");
         CASE_STR_ERROR(LFI_GROUP_NO_SELF, "The hostname of the current process is missing");
         CASE_STR_ERROR(LFI_GROUP_INVAL, "Invalid argument");
+        CASE_STR_ERROR(LFI_MR_NOT_FOUND, "Memory region not found");
         default:
             return "Unknown";
     }
 }
 
 // Reserved tags
-#define LFI_TAG_FT_PING             (0xFFFFFFFF - 1)
-#define LFI_TAG_FT_PONG             (0xFFFFFFFF - 2)
 #define LFI_TAG_RECV_LD_PRELOAD     (0xFFFFFFFF - 3)
 #define LFI_TAG_BUFFERED_LD_PRELOAD 100000
 #define LFI_TAG_GROUP               (0xFFFFFFFF - 4)

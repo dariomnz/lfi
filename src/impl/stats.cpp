@@ -58,7 +58,7 @@ void LFI::dump_stats() {
                       << std::endl;
             if (env::get_instance().LFI_fault_tolerance) {
                 std::unique_lock ft_comm_lock(comm->ft_mutex);
-                std::cerr << indent(2) << "Last request: " << format_time<lfi_comm::clock>(comm->last_request_time)
+                std::cerr << indent(2) << "Last request: " << format_time<lfi_comm::clock>(comm->ft_last_request_time)
                           << std::endl;
                 std::cerr << indent(2) << "ft_requests size: " << comm->ft_requests.size() << std::endl;
                 for (auto &&req : comm->ft_requests) {

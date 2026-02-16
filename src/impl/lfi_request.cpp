@@ -36,8 +36,6 @@ std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag) {
     case LFI_TAG_##tag: \
         return os << #tag;
     switch (tag.tag) {
-        CASE_TAG(FT_PING);
-        CASE_TAG(FT_PONG);
         CASE_TAG(RECV_LD_PRELOAD);
         CASE_TAG(BUFFERED_LD_PRELOAD);
         CASE_TAG(GROUP);

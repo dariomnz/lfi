@@ -99,9 +99,7 @@ int LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64
     debug_info("[LFI] async_put size " << size << " to " << format_lfi_comm{request.m_comm_id});
     req_lock.unlock();
 
-    if (env::get_instance().LFI_fault_tolerance) {
-        m_ft_manager.register_request(&request, 0, comm);
-    }
+    m_ft_manager.register_request(&request, comm);
 
     return LFI_SUCCESS;
 }
@@ -142,9 +140,7 @@ int LFI::async_get(void *buffer, size_t size, uint64_t remote_addr, uint64_t rem
     debug_info("[LFI] async_get size " << size << " from " << format_lfi_comm{request.m_comm_id});
     req_lock.unlock();
 
-    if (env::get_instance().LFI_fault_tolerance) {
-        m_ft_manager.register_request(&request, 0, comm);
-    }
+    m_ft_manager.register_request(&request, comm);
 
     return LFI_SUCCESS;
 }

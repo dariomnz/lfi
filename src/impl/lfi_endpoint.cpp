@@ -291,6 +291,10 @@ int lfi_endpoint::progress(bool call_callbacks) {
 
     post_pending_ops();
 
+    if (env::get_instance().LFI_fault_tolerance) {
+        m_lfi.m_ft_manager.one_loop(*this);
+    }
+
     if (call_callbacks) {
         std::vector<std::tuple<lfi_request_callback, int, void *>> swap_callbacks;
         {

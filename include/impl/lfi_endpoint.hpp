@@ -24,8 +24,8 @@
 #include <rdma/fi_endpoint.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
-#include <memory>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
@@ -66,7 +66,7 @@ struct lfi_endpoint {
     std::unordered_set<lfi_request *> ft_any_comm_requests = {};
     std::unordered_set<uint32_t> ft_pending_failed_comms = {};
     std::unordered_set<lfi_comm *> ft_comms = {};
-    std::vector<std::unique_ptr<lfi_request>> ft_ping_pongs;
+    std::chrono::time_point<std::chrono::high_resolution_clock> ft_last_progress = {};
 
     std::mutex waiters_mutex = {};
     std::unordered_set<std::condition_variable *> waiters_list = {};

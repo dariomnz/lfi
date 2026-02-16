@@ -59,15 +59,18 @@ struct lfi_comm {
     std::recursive_mutex ft_mutex;
     std::unordered_set<lfi_request *> ft_requests;
     using clock = std::chrono::high_resolution_clock;
-    std::chrono::time_point<clock> ft_ping_pong_time_point = {};
-    std::unique_ptr<lfi_request> ft_ping = nullptr, ft_pong = nullptr;
-    std::chrono::time_point<clock> last_request_time = clock::now();
+    std::chrono::time_point<clock> ft_heartbeat_time_point = {};
+    std::chrono::time_point<clock> ft_last_request_time = clock::now();
     enum class ft_status {
         IDLE,
-        PINGING,
+        HEARTBEAT,
         ERROR,
     };
     ft_status ft_current_status = ft_status::IDLE;
+    uint64_t ft_remote_heartbeat_addr = 0;
+    uint64_t ft_remote_heartbeat_key = 0;
+    uint64_t ft_value_heartbeat = 0;
+    std::unique_ptr<lfi_request> ft_heartbeat_req = nullptr;
 
    public:
     bool is_canceled = false;
