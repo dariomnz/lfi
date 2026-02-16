@@ -39,7 +39,7 @@ void run_server() {
 
     // Send address and key to client
     uint64_t addr = (uint64_t)buffer;
-    printf("[SERVER] Sending addr=%p and key=%lu to client\n", buffer, key);
+    printf("[SERVER] Sending addr=%p and key=%lu-%lu to client\n", buffer, key.shm_key, key.peer_key);
     lfi_send(client_id, &addr, sizeof(addr));
     lfi_send(client_id, &key, sizeof(key));
 
