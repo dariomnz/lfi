@@ -42,6 +42,7 @@
 #include "lfi_error.h"
 #include "lfi_request.hpp"
 #include "lfi_request_context.hpp"
+#include "lfi_mr.hpp"
 
 #define CASE_STR_ERROR(name, msg) \
     case name:                    \
@@ -174,11 +175,11 @@ class LFI {
     }
 
     // rma.cpp
-    int put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key);
-    int get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key);
-    int async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key, lfi_request &request,
+    int put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+    int get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+    int async_put(const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
                   bool priority = false);
-    int async_get(void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key, lfi_request &request,
+    int async_get(void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
                   bool priority = false);
 
     // wait.cpp
@@ -209,20 +210,12 @@ class LFI {
     lfi_request_context_factory req_ctx_factory;
 
    public:
-    struct lfi_mr {
-        void *addr;
-        size_t size;
-        fid_mr *shm_mr = nullptr;
-        uint64_t shm_key;
-        fid_mr *peer_mr = nullptr;
-        uint64_t peer_key;
-    };
-    int mr_reg(void *addr, size_t size);
-    int mr_unreg(int key);
+    lfi_mr_key mr_reg(void *addr, size_t size);
+    int mr_unreg(lfi_mr_key key);
 
    private:
     std::mutex m_mr_mutex;
-    std::unordered_map<uint32_t, std::unique_ptr<lfi_mr>> m_mrs;
+    std::unordered_map<lfi_mr_key, lfi_mr, std::hash<lfi_mr_key>, lfi_mr_key_eq> m_mrs;
 
    public:
     static inline LFI &get_instance() {

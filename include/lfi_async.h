@@ -26,6 +26,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "lfi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -186,7 +188,7 @@ ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
  * @return 0 on success, or a negative error code on failure.
  */
 ssize_t lfi_put_async(lfi_request *request, const void *local_addr, size_t size, uint64_t remote_addr,
-                      uint64_t remote_key);
+                      lfi_mr_key remote_key);
 
 /**
  * @brief Performs an asynchronous remote get operation.
@@ -198,7 +200,7 @@ ssize_t lfi_put_async(lfi_request *request, const void *local_addr, size_t size,
  * @param remote_key The RMA key for the remote memory region.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_get_async(lfi_request *request, void *local_addr, size_t size, uint64_t remote_addr, uint64_t remote_key);
+ssize_t lfi_get_async(lfi_request *request, void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
 
 typedef struct lfi_status {
     uint64_t size;

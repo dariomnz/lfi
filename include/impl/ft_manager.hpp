@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <mutex>
 #include <vector>
+#include "lfi_mr.hpp"
 
 namespace LFI {
 
@@ -47,7 +48,7 @@ class lfi_ft_manager {
 
     static constexpr uint64_t HEARBEAT_CODE = 0xBAADC0DEDEAD11FE;
     uint64_t m_local_heartbeat = HEARBEAT_CODE;
-    int m_heartbeat_key = -1;
+    lfi_mr_key m_heartbeat_key = {-1,-1};
 
    private:
     void thread_loop();

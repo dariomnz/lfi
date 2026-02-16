@@ -14,7 +14,7 @@ void run_server() {
     int server_id, client_id;
     int port = PORT;
     char buffer[BUF_SIZE] = "Original server data";
-    uint64_t key;
+    lfi_mr_key key;
 
     printf("[SERVER] Creating server on port %d...\n", port);
     server_id = lfi_server_create(NULL, &port);
@@ -25,7 +25,7 @@ void run_server() {
 
     printf("[SERVER] Registering memory...\n");
     key = lfi_mr_reg(buffer, BUF_SIZE);
-    if (key < 0) {
+    if (key.shm_key < 0) {
         printf("[SERVER] Error registering memory\n");
         exit(1);
     }

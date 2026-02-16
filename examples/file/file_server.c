@@ -35,7 +35,7 @@ void run_server() {
         void *mapped_addr = NULL;
         size_t mapped_size = 0;
         int fd = -1;
-        int key = -1;
+        lfi_mr_key key;
 
         while (lfi_recv(client_id, &req, sizeof(req)) > 0) {
             memset(&res, 0, sizeof(res));
@@ -64,19 +64,19 @@ void run_server() {
                         fd = -1;
                     } else {
                         key = lfi_mr_reg(mapped_addr, mapped_size);
-                        if (key < 0) {
-                            fprintf(stderr, "[SERVER] Failed to register memory: %s\n", lfi_strerror(key));
+                        if (key.shm_key < 0) {
+                            fprintf(stderr, "[SERVER] Failed to register memory: %s\n", lfi_strerror(key.shm_key));
                             munmap(mapped_addr, mapped_size);
                             close(fd);
                             fd = -1;
                             res.status = -1;
                         } else {
                             res.remote_addr = (uint64_t)mapped_addr;
-                            res.remote_key = (uint64_t)key;
+                            res.remote_key = key;
                             res.size = mapped_size;
                             res.status = 0;
-                            printf("[SERVER] File opened, mapped at %p, key %d, size %zu\n", mapped_addr, key,
-                                   mapped_size);
+                            printf("[SERVER] File opened, mapped at %p, key %ld-%ld, size %zu\n", mapped_addr,
+                                   key.shm_key, key.peer_key, mapped_size);
                         }
                     }
                 }
@@ -92,7 +92,7 @@ void run_server() {
                         res.status = -1;
                     } else {
                         // Unregister and unmap old region
-                        if (key >= 0) lfi_mr_unreg(key);
+                        if (key.shm_key >= 0) lfi_mr_unreg(key);
                         if (mapped_addr && mapped_addr != MAP_FAILED) munmap(mapped_addr, mapped_size);
 
                         // Map and register new region
@@ -105,14 +105,14 @@ void run_server() {
                             fd = -1;
                         } else {
                             key = lfi_mr_reg(mapped_addr, mapped_size);
-                            if (key < 0) {
+                            if (key.shm_key < 0) {
                                 res.status = -1;
                                 munmap(mapped_addr, mapped_size);
                                 close(fd);
                                 fd = -1;
                             } else {
                                 res.remote_addr = (uint64_t)mapped_addr;
-                                res.remote_key = (uint64_t)key;
+                                res.remote_key = key;
                                 res.size = mapped_size;
                                 res.status = 0;
                             }
@@ -122,9 +122,10 @@ void run_server() {
                 lfi_send(client_id, &res, sizeof(res));
             } else if (req.op == OP_CLOSE) {
                 printf("[SERVER] Received CLOSE\n");
-                if (key >= 0) {
+                if (key.shm_key >= 0) {
                     lfi_mr_unreg(key);
-                    key = -1;
+                    key.shm_key = -1;
+                    key.peer_key = -1;
                 }
                 if (mapped_addr && mapped_addr != MAP_FAILED) {
                     munmap(mapped_addr, mapped_size);

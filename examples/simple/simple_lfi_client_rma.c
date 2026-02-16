@@ -12,7 +12,8 @@
 
 void run_client(const char *server_ip) {
     int client_id;
-    uint64_t remote_addr, remote_key;
+    uint64_t remote_addr;
+    lfi_mr_key remote_key;
     char local_buf[BUF_SIZE] = {0};
 
     sleep(1);  // Wait for server to start
@@ -26,7 +27,8 @@ void run_client(const char *server_ip) {
 
     lfi_recv(client_id, &remote_addr, sizeof(remote_addr));
     lfi_recv(client_id, &remote_key, sizeof(remote_key));
-    printf("[CLIENT] Received remote_addr=%p, remote_key=%lu\n", (void *)remote_addr, remote_key);
+    printf("[CLIENT] Received remote_addr=%p, remote_key=%lu-%lu\n", (void *)remote_addr, remote_key.shm_key,
+           remote_key.peer_key);
 
     // Test PUT
     const char *msg = "Data put by client";

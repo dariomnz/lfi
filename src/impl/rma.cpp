@@ -3,10 +3,12 @@
 #include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
+#include "lfi.h"
+#include "lfi_mr.hpp"
 
 namespace LFI {
 
-int LFI::put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key) {
+int LFI::put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
     LFI_PROFILE_FUNCTION();
     int ret = 0;
     debug_info("[LFI] Start");
@@ -34,7 +36,7 @@ int LFI::put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_
     return request.size;
 }
 
-int LFI::get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key) {
+int LFI::get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
     LFI_PROFILE_FUNCTION();
     int ret = 0;
     debug_info("[LFI] Start");
@@ -62,7 +64,7 @@ int LFI::get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, 
     return request.size;
 }
 
-int LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key, lfi_request &request,
+int LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
                    bool priority) {
     LFI_PROFILE_FUNCTION();
     auto comm_id = request.m_comm_id;
@@ -82,6 +84,7 @@ int LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64
         request.wait_context.store(req_ctx_factory.create(request));
     }
 
+    uint64_t key = comm->m_endpoint.is_shm ? remote_key.shm_key : remote_key.peer_key;
     {
         std::unique_lock lock_pending(comm->m_endpoint.pending_ops_mutex);
         debug_info("[LFI] Save put to " << (priority ? "priority_ops " : "pending_ops ") << request);
@@ -92,7 +95,7 @@ int LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64
                     size,
                     comm->fi_addr,
                     remote_addr,
-                    remote_key,
+                    key,
                     request.wait_context.load()});
     }
 
@@ -104,7 +107,7 @@ int LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, uint64
     return LFI_SUCCESS;
 }
 
-int LFI::async_get(void *buffer, size_t size, uint64_t remote_addr, uint64_t remote_key, lfi_request &request,
+int LFI::async_get(void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
                    bool priority) {
     LFI_PROFILE_FUNCTION();
     auto comm_id = request.m_comm_id;
@@ -123,6 +126,7 @@ int LFI::async_get(void *buffer, size_t size, uint64_t remote_addr, uint64_t rem
         request.wait_context.store(req_ctx_factory.create(request));
     }
 
+    uint64_t key = comm->m_endpoint.is_shm ? remote_key.shm_key : remote_key.peer_key;
     {
         std::unique_lock lock_pending(comm->m_endpoint.pending_ops_mutex);
         debug_info("[LFI] Save get to " << (priority ? "priority_ops " : "pending_ops ") << request);
@@ -133,7 +137,7 @@ int LFI::async_get(void *buffer, size_t size, uint64_t remote_addr, uint64_t rem
                     size,
                     comm->fi_addr,
                     remote_addr,
-                    remote_key,
+                    key,
                     request.wait_context.load()});
     }
 

@@ -9,7 +9,7 @@
 typedef struct {
     int client_id;
     uint64_t remote_addr;
-    uint64_t remote_key;
+    lfi_mr_key remote_key;
     size_t size;
 } lfi_file_t;
 

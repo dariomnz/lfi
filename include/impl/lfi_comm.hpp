@@ -68,7 +68,7 @@ struct lfi_comm {
     };
     ft_status ft_current_status = ft_status::IDLE;
     uint64_t ft_remote_heartbeat_addr = 0;
-    uint64_t ft_remote_heartbeat_key = 0;
+    lfi_mr_key ft_remote_heartbeat_key = {-1, -1};
     uint64_t ft_value_heartbeat = 0;
     std::unique_ptr<lfi_request> ft_heartbeat_req = nullptr;
 

@@ -24,6 +24,7 @@
 #include "impl/ns.hpp"
 #include "impl/profiler.hpp"
 #include "impl/socket.hpp"
+#include "lfi_mr.hpp"
 
 namespace LFI {
 
@@ -131,7 +132,7 @@ int LFI::init_server(int socket, int32_t comm_id) {
     // Exchange heartbeat info
     if (env::get_instance().LFI_fault_tolerance) {
         uint64_t local_hb_addr = reinterpret_cast<uint64_t>(&m_ft_manager.m_local_heartbeat);
-        uint64_t local_hb_key = m_ft_manager.m_heartbeat_key;
+        lfi_mr_key local_hb_key = m_ft_manager.m_heartbeat_key;
         ret = socket::send(socket, &local_hb_addr, sizeof(local_hb_addr));
         if (ret != sizeof(local_hb_addr)) {
             print_error("socket::send local_hb_addr socket " << socket);
@@ -281,7 +282,7 @@ int LFI::init_client(int socket, int32_t comm_id) {
     // Exchange heartbeat info
     if (env::get_instance().LFI_fault_tolerance) {
         uint64_t local_hb_addr = reinterpret_cast<uint64_t>(&m_ft_manager.m_local_heartbeat);
-        uint64_t local_hb_key = m_ft_manager.m_heartbeat_key;
+        lfi_mr_key local_hb_key = m_ft_manager.m_heartbeat_key;
         ret = socket::recv(socket, &comm->ft_remote_heartbeat_addr, sizeof(comm->ft_remote_heartbeat_addr));
         if (ret != sizeof(comm->ft_remote_heartbeat_addr)) {
             print_error("socket::recv comm->ft_remote_heartbeat_addr socket " << socket);

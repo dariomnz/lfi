@@ -37,18 +37,18 @@ void lfi_ft_manager::stop() {
         if (!m_initialized) return;
         m_initialized = false;
     }
-    if (m_heartbeat_key >= 0) {
+    if (m_heartbeat_key.shm_key >= 0) {
         m_lfi.mr_unreg(m_heartbeat_key);
-        m_heartbeat_key = -1;
+        m_heartbeat_key = {-1, -1};
     }
     debug_info("[LFI][FT] Manager End Stop");
 }
 
 void lfi_ft_manager::setup_heartbeat() {
     LFI_PROFILE_FUNCTION();
-    if (m_heartbeat_key >= 0) return;
+    if (m_heartbeat_key.shm_key >= 0) return;
     m_heartbeat_key = m_lfi.mr_reg(&m_local_heartbeat, sizeof(m_local_heartbeat));
-    if (m_heartbeat_key < 0) {
+    if (m_heartbeat_key.shm_key < 0) {
         print_error("Error registering local heartbeat MR");
     }
 }

@@ -191,6 +191,11 @@ ssize_t lfi_recv(int id, void *data, size_t size);
  */
 ssize_t lfi_trecv(int id, void *data, size_t size, int tag);
 
+typedef struct lfi_mr_key {
+    int64_t shm_key;
+    int64_t peer_key;
+} lfi_mr_key;
+
 /**
  * @brief Registers a memory region for RMA operations.
  *
@@ -198,7 +203,7 @@ ssize_t lfi_trecv(int id, void *data, size_t size, int tag);
  * @param size The size of the memory region.
  * @return key on success, or a negative error code on failure.
  */
-int lfi_mr_reg(void *addr, size_t size);
+lfi_mr_key lfi_mr_reg(void *addr, size_t size);
 
 /**
  * @brief Unregisters a memory region.
@@ -206,7 +211,7 @@ int lfi_mr_reg(void *addr, size_t size);
  * @param key The RMA key returned by lfi_mr_reg.
  * @return 0 on success, or a negative error code on failure.
  */
-int lfi_mr_unreg(int key);
+int lfi_mr_unreg(lfi_mr_key key);
 
 /**
  * @brief Performs a remote put operation.
@@ -218,7 +223,7 @@ int lfi_mr_unreg(int key);
  * @param remote_key The RMA key for the remote memory region.
  * @return The number of bytes put on success, or a negative error code on failure.
  */
-ssize_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_addr, uint64_t remote_key);
+ssize_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
 
 /**
  * @brief Performs a remote get operation.
@@ -230,7 +235,7 @@ ssize_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_add
  * @param remote_key The RMA key for the remote memory region.
  * @return The number of bytes received on success, or a negative error code on failure.
  */
-ssize_t lfi_get(int id, void *local_addr, size_t size, uint64_t remote_addr, uint64_t remote_key);
+ssize_t lfi_get(int id, void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
 
 #ifdef __cplusplus
 }

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "lfi.h"
 
 #define PORT 8082
 
@@ -20,7 +21,7 @@ struct request {
 
 struct response {
     uint64_t remote_addr;
-    uint64_t remote_key;
+    lfi_mr_key remote_key;
     size_t size;
     int status;
 };
