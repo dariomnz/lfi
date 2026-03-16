@@ -157,18 +157,16 @@ int LFI::init_server(int socket, int32_t comm_id) {
 
     // Do a send recv because some providers need it
     int buf = 123;
-    lfi_msg msg;
-    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
-    if (msg.error < 0) {
-        print("[LFI] [ERROR] LFI::send in init_server " << comm_id << " : " << msg.error << " "
-                                                        << lfi_strerror(msg.error));
-        return msg.error;
+    int64_t msg_ret;
+    msg_ret = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
+    if (msg_ret < 0) {
+        print("[LFI] [ERROR] LFI::send in init_server " << comm_id << " : " << msg_ret << " " << lfi_strerror(msg_ret));
+        return msg_ret;
     }
-    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
-    if (msg.error < 0) {
-        print("[LFI] [ERROR] LFI::recv in init_server " << comm_id << " : " << msg.error << " "
-                                                        << lfi_strerror(msg.error));
-        return msg.error;
+    msg_ret = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
+    if (msg_ret < 0) {
+        print("[LFI] [ERROR] LFI::recv in init_server " << comm_id << " : " << msg_ret << " " << lfi_strerror(msg_ret));
+        return msg_ret;
     }
 
     comm->is_ready = lfi_comm::comm_status::READY;
@@ -307,18 +305,16 @@ int LFI::init_client(int socket, int32_t comm_id) {
 
     // Do a recv send because some providers need it
     int buf = 123;
-    lfi_msg msg;
-    msg = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
-    if (msg.error < 0) {
-        print("[LFI] [ERROR] LFI::recv in init_client " << comm_id << " : " << msg.error << " "
-                                                        << lfi_strerror(msg.error));
-        return msg.error;
+    int64_t msg_ret;
+    msg_ret = LFI::recv(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_SRV);
+    if (msg_ret < 0) {
+        print("[LFI] [ERROR] LFI::recv in init_client " << comm_id << " : " << msg_ret << " " << lfi_strerror(msg_ret));
+        return msg_ret;
     }
-    msg = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
-    if (msg.error < 0) {
-        print("[LFI] [ERROR] LFI::send in init_client " << comm_id << " : " << msg.error << " "
-                                                        << lfi_strerror(msg.error));
-        return msg.error;
+    msg_ret = LFI::send(comm->rank_peer, &buf, sizeof(buf), LFI_TAG_INITIAL_SEND_CLI);
+    if (msg_ret < 0) {
+        print("[LFI] [ERROR] LFI::send in init_client " << comm_id << " : " << msg_ret << " " << lfi_strerror(msg_ret));
+        return msg_ret;
     }
     comm->is_ready = lfi_comm::comm_status::READY;
 

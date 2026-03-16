@@ -32,11 +32,13 @@
 #include "impl/ns.hpp"
 #include "lfi.h"
 #include "lfi_async.h"
+#include "mpi_proto.h"
 #include "thread_pool.hpp"
 
 using namespace bw_examples;
 
 #define MAX_MSG_SIZE 4 * 1024 * 1024  // 4 Mb
+#define MSG_SIZE     4 * 1024 * 1024  // 4 Mb
 #define TAG_MSG      100
 #define TAG_DATA     101
 #define TAG_ACK      102
@@ -48,32 +50,10 @@ static std::atomic<int> clients = 0;
 std::unique_ptr<lfi_request, void (*)(lfi_request *)> trigger_request(lfi_request_create(LFI_ANY_COMM_SHM),
                                                                       lfi_request_free);
 
-void post_recv(lfi_request *req) {
+void post_send(lfi_request *req) {
     static std::vector<uint8_t> data(MAX_MSG_SIZE);
     debug_info("lfi_trecv_async");
-    auto ret = lfi_trecv_async(req, data.data(), data.size(), TAG_DATA);
-    if (ret < 0) {
-        print("Error lfi_trecv_async " << lfi_strerror(ret));
-        exit(EXIT_FAILURE);
-    }
-}
-
-void send_callback(int error, void *ctx) {
-    lfi_request *req = static_cast<lfi_request *>(ctx);
-
-    if (error < 0) {
-        print("Error recv_callback " << lfi_strerror(error));
-    }
-    debug_info("lfi_request_free");
-    lfi_request_free(req);
-}
-
-void send_ack(int comm_id) {
-    static int dummy = 0;
-    lfi_request *req = lfi_request_create(comm_id);
-    lfi_request_set_callback(req, send_callback, req);
-    debug_info("lfi_tsend_async " << comm_id);
-    auto ret = lfi_tsend_async(req, &dummy, sizeof(dummy), TAG_ACK);
+    auto ret = lfi_tsend_async(req, data.data(), MSG_SIZE, TAG_DATA);
     if (ret < 0) {
         print("Error lfi_trecv_async " << lfi_strerror(ret));
         exit(EXIT_FAILURE);
@@ -85,12 +65,34 @@ void recv_callback(int error, void *ctx) {
 
     if (error < 0) {
         print("Error recv_callback " << lfi_strerror(error));
+    }
+    debug_info("lfi_request_free");
+    lfi_request_free(req);
+}
+
+void recv_ack(int comm_id) {
+    static int dummy = 0;
+    lfi_request *req = lfi_request_create(comm_id);
+    lfi_request_set_callback(req, recv_callback, req);
+    debug_info("lfi_trecv_async " << comm_id);
+    auto ret = lfi_trecv_async(req, &dummy, sizeof(dummy), TAG_ACK);
+    if (ret < 0) {
+        print("Error lfi_trecv_async " << lfi_strerror(ret));
+        exit(EXIT_FAILURE);
+    }
+}
+
+void send_callback(int error, void *ctx) {
+    lfi_request *req = static_cast<lfi_request *>(ctx);
+
+    if (error < 0) {
+        print("Error recv_callback " << lfi_strerror(error));
         lfi_request_free(req);
 
         lfi_client_close(lfi_request_source(req));
     } else {
-        send_ack(lfi_request_source(req));
-        post_recv(req);
+        recv_ack(lfi_request_source(req));
+        post_send(req);
     }
 }
 
@@ -192,7 +194,7 @@ int main() {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     // Creating socket file descriptor
-    int port = PORT_LFI+rank;
+    int port = PORT_LFI + rank;
     if ((server_fd = lfi_server_create(NULL, &port)) < 0) {
         perror("lfi server failed");
         exit(EXIT_FAILURE);
@@ -208,8 +210,8 @@ int main() {
         }
         print("Server accept client " << new_socket);
         auto req = lfi_request_create(new_socket);
-        lfi_request_set_callback(req, recv_callback, req);
-        post_recv(req);
+        lfi_request_set_callback(req, send_callback, req);
+        post_send(req);
         clients++;
     }
 

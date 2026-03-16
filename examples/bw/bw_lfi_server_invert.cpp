@@ -39,18 +39,18 @@ int run_test(int id, bw_test &test)
     // std::this_thread::sleep_for(std::chrono::seconds(12));
     for (size_t i = 0; i < test.test_count; i++)
     {
-        debug_info("count "<<i<<" lfi_recv("<<id<<", data.data(), "<<test_size<<")");
-        int ack = 0;
-        data_recv = lfi_recv(id, &ack, sizeof(ack));
-        if (data_recv != sizeof(ack)){
-            print("Error lfi_recv = "<<data_recv<<" "<<lfi_strerror(data_recv));
-            return -1;
-        }
-
-        debug_info("ack lfi_send("<<id<<", ack, "<<sizeof(ack)<<")");
+        debug_info("ack lfi_send("<<id<<", data, "<<test_size<<")");
         data_send = lfi_send(id, data.data(), test_size);
         if (data_send != test_size){
             print("Error lfi_send = "<<data_send<<" "<<lfi_strerror(data_send));
+            return -1;
+        }
+        
+        int ack = 0;
+        debug_info("count "<<i<<" lfi_recv("<<id<<", ack, "<<test_size<<")");
+        data_recv = lfi_recv(id, &ack, sizeof(ack));
+        if (data_recv != sizeof(ack)){
+            print("Error lfi_recv = "<<data_recv<<" "<<lfi_strerror(data_recv));
             return -1;
         }
     }

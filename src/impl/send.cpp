@@ -27,23 +27,20 @@
 
 namespace LFI {
 
-lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag) {
+int64_t LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag) {
     LFI_PROFILE_FUNCTION();
-    lfi_msg msg = {};
-    int ret = 0;
+    int64_t ret = 0;
     debug_info("[LFI] Start");
 
     // Check if any_comm in send is error
     if (comm_id == ANY_COMM_SHM || comm_id == ANY_COMM_PEER) {
-        msg.error = -LFI_SEND_ANY_COMM;
-        return msg;
+        return -LFI_SEND_ANY_COMM;
     }
 
     // Check if comm exists
     auto [lock, comm] = get_comm_and_mutex(comm_id);
     if (!comm) {
-        msg.error = -LFI_COMM_NOT_FOUND;
-        return msg;
+        return -LFI_COMM_NOT_FOUND;
     }
     lfi_request request(comm->m_endpoint, comm->rank_peer);
 
@@ -62,18 +59,20 @@ lfi_msg LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
     }
 
     if (ret < 0) {
-        msg.error = ret;
-        return msg;
+        return ret;
     }
 
-    wait(request);
+    ret = wait(request);
+    if (ret < 0) {
+        return ret;
+    }
 
     debug_info("[LFI] End");
-    return request;
+    return request.size;
 }
 
-int LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
-                             bool priority) {
+int64_t LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
+                                 bool priority) {
     LFI_PROFILE_FUNCTION();
     auto comm_id = request.m_comm_id;
     auto [lock, comm] = get_comm_and_mutex(comm_id);
@@ -91,6 +90,10 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
     // Check if any_comm in send is error
     if (request.m_comm_id == ANY_COMM_SHM || request.m_comm_id == ANY_COMM_PEER) {
         return -LFI_SEND_ANY_COMM;
+    }
+
+    if (type == send_type::SENDV && comm->m_endpoint.get_iov_limit() < size) {
+        return -LFI_IOV_LIMIT;
     }
 
     request.reset();
@@ -119,15 +122,22 @@ int LFI::async_send_internal(const void *buffer, size_t size, send_type type, ui
         request.op_type = lfi_request::OpType::SEND;
     }
 
-    if (!request.wait_context.load()) {
-        request.wait_context.store(req_ctx_factory.create(request));
-    }
+    request.wait_context.store(req_ctx_factory.create(request));
 
     {
         std::unique_lock lock_pending(comm->m_endpoint.pending_ops_mutex);
         debug_info("[LFI] Save send to " << (priority ? "priority_ops " : "pending_ops ") << request);
         auto &queue = priority ? comm->m_endpoint.priority_ops : comm->m_endpoint.pending_ops;
-        queue.push({op_type, p_tx_ep, {buffer}, size, comm->fi_addr, tag_send, 0, request.wait_context.load()});
+        queue.push({
+            op_type,
+            p_tx_ep,
+            {buffer},
+            size,
+            comm->fi_addr,
+            tag_send,
+            0,
+            request.wait_context.load(),
+        });
     }
 
     debug_info("[LFI] msg " << request);

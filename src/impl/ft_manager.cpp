@@ -72,7 +72,7 @@ void lfi_ft_manager::register_request(lfi_request *req, lfi_comm *comm) {
     debug_info(*req);
 }
 
-void lfi_ft_manager::on_request_complete(lfi_request *req, int &err) {
+void lfi_ft_manager::on_request_complete(lfi_request *req, int err) {
     auto [lock, comm] = m_lfi.get_comm_and_mutex(req->m_comm_id);
     if (comm) {
         std::scoped_lock ft_lock(comm->m_endpoint.ft_mutex, comm->ft_mutex);
@@ -141,7 +141,7 @@ void lfi_ft_manager::process_comm(lfi_comm *comm, int32_t ft_ms, std::vector<uin
 
 void lfi_ft_manager::handle_any_comm_reports(lfi_endpoint &lfi_ep, std::vector<uint32_t> &canceled_coms) {
     {
-        std::scoped_lock lock(lfi_ep.ft_mutex);
+        std::unique_lock lock(lfi_ep.ft_mutex);
         if (lfi_ep.ft_any_comm_requests.empty() && lfi_ep.ft_pending_failed_comms.empty() && canceled_coms.empty())
             return;
     }
@@ -248,6 +248,7 @@ int lfi_ft_manager::cancel_comm(lfi_comm &comm) {
         if (request == nullptr) continue;
         request->cancel();
     }
+    comm.ft_heartbeat_req = nullptr;
     {
         std::unique_lock ft_lock(comm.m_endpoint.ft_mutex);
         comm.m_endpoint.ft_comms.erase(&comm);

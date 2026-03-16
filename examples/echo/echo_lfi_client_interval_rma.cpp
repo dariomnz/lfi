@@ -32,6 +32,8 @@
 using namespace bw_examples;
 
 static std::vector<int> client_fds;
+static std::vector<uint64_t> client_rma_addr;
+static std::vector<lfi_mr_key> client_rma_key;
 
 #define MAX_MSG_SIZE 4 * 1024 * 1024  // 4 Mb
 #define TAG_MSG      100
@@ -47,34 +49,28 @@ static int64_t test_size_interval = 0;
 static std::atomic<bool> signal_stop = false;
 void signalHandler([[maybe_unused]] int signum) { signal_stop = true; }
 
+
 int run_test() {
     std::condition_variable cv;
     std::vector<uint8_t> data(test_size_global.load());
-    int dummy = 0;
-    ssize_t data_send = 0;
-    ssize_t data_recv = 0;
+    ssize_t data_size = 0;
     debug_info("Start run_test size " << test_size_global.load());
     [[maybe_unused]] int64_t i = 0;
     while (!signal_stop) {
         std::unique_lock lock(test_mutex);
+        int idx = 0;
         for (auto &id : client_fds) {
             auto test_size = test_size_global.load();
             if (data.size() < test_size) data.resize(test_size);
             debug_info("msg_size " << test_size);
-            data_send = lfi_tsend(id, data.data(), test_size, TAG_DATA);
-            if (data_send != static_cast<ssize_t>(test_size)) {
-                print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
-                return -1;
-            }
-
-            debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
-            data_recv = lfi_trecv(id, &dummy, sizeof(dummy), TAG_ACK);
-            if (data_recv != sizeof(dummy)) {
-                print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
+            int current_idx = idx++;
+            data_size = lfi_put(id, data.data(), test_size, client_rma_addr[current_idx], client_rma_key[current_idx]);
+            if (data_size != static_cast<ssize_t>(test_size)) {
+                print("Error lfi_send = " << data_size << " " << lfi_strerror(data_size));
                 return -1;
             }
             test_count_interval++;
-            test_size_interval += data_send;
+            test_size_interval += data_size;
         }
         cv.wait_for(lock, std::chrono::nanoseconds(0));
         i++;
@@ -133,13 +129,23 @@ int main(int argc, char *argv[]) {
     timer t;
 
     client_fds.resize(servers.size());
+    client_rma_addr.resize(servers.size());
+    client_rma_key.resize(servers.size());
     for (size_t i = 0; i < servers.size(); i++) {
-        int port = PORT_LFI+i;
-        print("Conecting to " << servers[i] << ":" << port);
-        if ((client_fds[i] = lfi_client_create(servers[i].data(), port)) < 0) {
+        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT_LFI)) < 0) {
             printf("lfi client creation error \n");
             MPI_Abort(MPI_COMM_WORLD, -1);
             return -1;
+        }
+        ret = lfi_recv(client_fds[i], &client_rma_addr[i], sizeof(client_rma_addr[i]));
+        if (ret != sizeof(client_rma_addr[i])) {
+            perror("lfi_recv addr");
+            break;
+        }
+        ret = lfi_recv(client_fds[i], &client_rma_key[i], sizeof(client_rma_key[i]));
+        if (ret != sizeof(client_rma_key[i])) {
+            perror("lfi_recv key");
+            break;
         }
     }
 

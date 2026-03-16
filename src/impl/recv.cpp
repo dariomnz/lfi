@@ -23,21 +23,20 @@
 #include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
+#include "lfi_error.h"
 #include "lfi_request.hpp"
 
 namespace LFI {
 
-lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag) {
+int64_t LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag) {
     LFI_PROFILE_FUNCTION();
-    lfi_msg msg = {};
-    int ret = 0;
+    int64_t ret = 0;
     debug_info("[LFI] Start");
 
     // Check if comm exists
     auto [lock, comm] = get_comm_and_mutex(comm_id);
     if (!comm) {
-        msg.error = -LFI_COMM_NOT_FOUND;
-        return msg;
+        return -LFI_COMM_NOT_FOUND;
     }
     lfi_request request(comm->m_endpoint, comm->rank_peer);
     lock.unlock();
@@ -55,18 +54,20 @@ lfi_msg LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
     }
 
     if (ret < 0) {
-        msg.error = ret;
-        return msg;
+        return ret;
     }
 
-    wait(request);
+    ret = wait(request);
+    if (ret < 0) {
+        return ret;
+    }
 
     debug_info("[LFI] End");
-    return request;
+    return request.size;
 }
 
-int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
-                             bool priority) {
+int64_t LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
+                                 bool priority) {
     LFI_PROFILE_FUNCTION();
     auto comm_id = request.m_comm_id;
     auto [lock, comm] = get_comm_and_mutex(comm_id);
@@ -80,6 +81,10 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
     // Check cancelled comm
     if (comm->is_canceled) {
         return -LFI_BROKEN_COMM;
+    }
+
+    if (type == recv_type::RECVV && comm->m_endpoint.get_iov_limit() < size) {
+        return -LFI_IOV_LIMIT;
     }
 
     request.reset();
@@ -104,14 +109,17 @@ int LFI::async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t
         std::unique_lock lock_pending(comm->m_endpoint.pending_ops_mutex);
         debug_info("[LFI] Save recv to " << (priority ? "priority_ops " : "pending_ops ") << request);
         auto &queue = priority ? comm->m_endpoint.priority_ops : comm->m_endpoint.pending_ops;
-        queue.push({(type == recv_type::RECV) ? lfi_pending_op::Type::RECV : lfi_pending_op::Type::RECVV,
-                    p_rx_ep,
-                    {buffer},
-                    size,
-                    comm->fi_addr,
-                    tag_recv,
-                    mask,
-                    request.wait_context.load()});
+        auto op_type = (type == recv_type::RECV) ? lfi_pending_op::Type::RECV : lfi_pending_op::Type::RECVV;
+        queue.push({
+            op_type,
+            p_rx_ep,
+            {buffer},
+            size,
+            comm->fi_addr,
+            tag_recv,
+            mask,
+            request.wait_context.load(),
+        });
     }
 
     request.size = size;

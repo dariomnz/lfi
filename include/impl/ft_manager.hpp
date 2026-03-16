@@ -37,7 +37,7 @@ class lfi_ft_manager {
     void register_request(lfi_request* req, lfi_comm* comm);
 
     // Called when a request finishes to update last_request_time and clean up ft_requests
-    void on_request_complete(lfi_request* req, int& err);
+    void on_request_complete(lfi_request* req, int err);
 
     // Core monitoring loop executed by the FT thread or progress
     void one_loop(lfi_endpoint& ep);

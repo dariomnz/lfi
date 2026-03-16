@@ -177,8 +177,6 @@ void signalHandler(int signum) {
 int main() {
     int new_socket;
 
-    MPI_Init(nullptr, nullptr);
-
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
@@ -188,11 +186,8 @@ int main() {
         return 1;
     }
 
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
     // Creating socket file descriptor
-    int port = PORT_LFI+rank;
+    int port = PORT_LFI;
     if ((server_fd = lfi_server_create(NULL, &port)) < 0) {
         perror("lfi server failed");
         exit(EXIT_FAILURE);
@@ -200,16 +195,22 @@ int main() {
 
     std::thread echo_thread(echo_server);
 
-    print("Server start accepting " << LFI::ns::get_host_name() << ":"<<port<<" :");
+    const int CONCURRENT_REQ = 10;
+    for (int i = 0; i<CONCURRENT_REQ; i++) {
+        auto req_shm = lfi_request_create(LFI_ANY_COMM_SHM);
+        lfi_request_set_callback(req_shm, recv_callback, req_shm);
+        post_recv(req_shm);
+        auto req_peer = lfi_request_create(LFI_ANY_COMM_PEER);
+        lfi_request_set_callback(req_peer, recv_callback, req_peer);
+        post_recv(req_peer);
+    }
+    print("Server start accepting " << LFI::ns::get_host_name() << " :");
     while (true) {
         if ((new_socket = lfi_server_accept(server_fd)) < 0) {
             perror("accept");
             break;
         }
         print("Server accept client " << new_socket);
-        auto req = lfi_request_create(new_socket);
-        lfi_request_set_callback(req, recv_callback, req);
-        post_recv(req);
         clients++;
     }
 
@@ -218,8 +219,6 @@ int main() {
 
     // closing the listening socket
     lfi_server_close(server_fd);
-
-    MPI_Finalize();
 
     return 0;
 }

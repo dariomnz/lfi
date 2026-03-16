@@ -45,20 +45,20 @@ int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
     {
         for (int j = 0; j < servers; j++)
         {
-            debug_info("count "<<i<<" MPI_Isend(data.data(), "<<test_size<<")");
-            int ack = 0;
-            ret = MPI_Send(&ack, 1, MPI_INT, j, 0, client_comm);
-            if (ret != MPI_SUCCESS){
-                printf("Error MPI_Send\n");
-                return -1;
-            }
-            debug_info("ack MPI_Recv(ack, "<<sizeof(ack)<<")");
+            debug_info("ack MPI_Recv(data, "<<test_size<<")");
             ret = MPI_Recv(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm, MPI_STATUS_IGNORE);
             if (ret != MPI_SUCCESS){
                 printf("Error MPI_Recv\n");
                 return -1;
             }
             test.size += test_size;
+            debug_info("count "<<i<<" MPI_Isend(ack, "<<test_size<<")");
+            int ack = 0;
+            ret = MPI_Send(&ack, 1, MPI_INT, j, 0, client_comm);
+            if (ret != MPI_SUCCESS){
+                printf("Error MPI_Send\n");
+                return -1;
+            }
         }
     }
 
@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
-    auto servers = split(argv[1], ";");
+    auto servers = split(argv[1], ",");
 
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)

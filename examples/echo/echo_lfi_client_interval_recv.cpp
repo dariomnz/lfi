@@ -23,6 +23,8 @@
 
 #include <condition_variable>
 #include <csignal>
+#include <string>
+#include <unordered_map>
 
 #include "echo_common.hpp"
 #include "impl/debug.hpp"
@@ -34,11 +36,12 @@ using namespace bw_examples;
 static std::vector<int> client_fds;
 
 #define MAX_MSG_SIZE 4 * 1024 * 1024  // 4 Mb
+#define MSG_SIZE     4 * 1024 * 1024  // 4 Mb
 #define TAG_MSG      100
 #define TAG_DATA     101
 #define TAG_ACK      102
 
-static std::atomic<uint64_t> test_size_global = 512 * 1024;
+static std::atomic<uint64_t> test_size_global = MSG_SIZE;
 
 static std::mutex test_mutex;
 static int64_t test_count_interval = 0;
@@ -61,16 +64,16 @@ int run_test() {
             auto test_size = test_size_global.load();
             if (data.size() < test_size) data.resize(test_size);
             debug_info("msg_size " << test_size);
-            data_send = lfi_tsend(id, data.data(), test_size, TAG_DATA);
+            data_send = lfi_trecv(id, data.data(), test_size, TAG_DATA);
             if (data_send != static_cast<ssize_t>(test_size)) {
-                print("Error lfi_send = " << data_send << " " << lfi_strerror(data_send));
+                print("Error lfi_trecv = " << data_send << " " << lfi_strerror(data_send));
                 return -1;
             }
 
-            debug_info("count " << i << " lfi_recv(" << id << ", data.data(), " << test_size << ")");
-            data_recv = lfi_trecv(id, &dummy, sizeof(dummy), TAG_ACK);
+            debug_info("count " << i << " lfi_tsend(" << id << ", data.data(), " << test_size << ")");
+            data_recv = lfi_tsend(id, &dummy, sizeof(dummy), TAG_ACK);
             if (data_recv != sizeof(dummy)) {
-                print("Error lfi_recv = " << data_recv << " " << lfi_strerror(data_recv));
+                print("Error lfi_tsend = " << data_recv << " " << lfi_strerror(data_recv));
                 return -1;
             }
             test_count_interval++;
@@ -107,7 +110,7 @@ int main(int argc, char *argv[]) {
     int ret;
 
     if (argc < 2) {
-        printf("Usage: %s <server_ips sep ';'>\n", argv[0]);
+        printf("Usage: %s <server_ips sep ','>\n", argv[0]);
         return -1;
     }
 
@@ -133,8 +136,18 @@ int main(int argc, char *argv[]) {
     timer t;
 
     client_fds.resize(servers.size());
+    std::unordered_map<std::string, int> port_count;
     for (size_t i = 0; i < servers.size(); i++) {
+
         int port = PORT_LFI+i;
+        // auto it = port_count.find(servers[i]);
+        // if (it != port_count.end()) {
+        //     port += it->second;
+        //     it->second++;
+        // } else {
+        //     port_count.emplace(servers[i], 1);
+        // }
+
         print("Conecting to " << servers[i] << ":" << port);
         if ((client_fds[i] = lfi_client_create(servers[i].data(), port)) < 0) {
             printf("lfi client creation error \n");

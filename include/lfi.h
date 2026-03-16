@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -128,7 +129,7 @@ int lfi_client_close(int id);
  * @param size The size of the data to send.
  * @return The number of bytes sent on success, or a negative error code on failure.
  */
-ssize_t lfi_send(int id, const void *data, size_t size);
+int64_t lfi_send(int id, const void *data, size_t size);
 
 /**
  * @brief Sends tagged data over the LFI client.
@@ -142,7 +143,8 @@ ssize_t lfi_send(int id, const void *data, size_t size);
  * @param tag The tag associated with the data.
  * @return The number of bytes sent on success, or a negative error code on failure.
  */
-ssize_t lfi_tsend(int id, const void *data, size_t size, int tag);
+int64_t lfi_tsend(int id, const void *data, size_t size, int tag);
+int64_t lfi_tsendv(int id, const struct iovec *iov, size_t count, int tag);
 
 /**
  * @brief Constant representing the ID of any client over shared memory to recv data.
@@ -170,7 +172,7 @@ ssize_t lfi_tsend(int id, const void *data, size_t size, int tag);
  * @param size The size of the buffer.
  * @return The number of bytes received on success, or a negative error code on failure.
  */
-ssize_t lfi_recv(int id, void *data, size_t size);
+int64_t lfi_recv(int id, void *data, size_t size);
 
 /**
  * @brief Receives tagged data over the LFI connection.
@@ -189,7 +191,8 @@ ssize_t lfi_recv(int id, void *data, size_t size);
  * @param tag The tag of the data to receive.
  * @return The number of bytes received on success, or a negative error code on failure.
  */
-ssize_t lfi_trecv(int id, void *data, size_t size, int tag);
+int64_t lfi_trecv(int id, void *data, size_t size, int tag);
+int64_t lfi_trecvv(int id, const struct iovec *iov, size_t count, int tag);
 
 typedef struct lfi_mr_key {
     int64_t shm_key;
@@ -223,7 +226,7 @@ int lfi_mr_unreg(lfi_mr_key key);
  * @param remote_key The RMA key for the remote memory region.
  * @return The number of bytes put on success, or a negative error code on failure.
  */
-ssize_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+int64_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
 
 /**
  * @brief Performs a remote get operation.
@@ -235,7 +238,7 @@ ssize_t lfi_put(int id, const void *local_addr, size_t size, uint64_t remote_add
  * @param remote_key The RMA key for the remote memory region.
  * @return The number of bytes received on success, or a negative error code on failure.
  */
-ssize_t lfi_get(int id, void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+int64_t lfi_get(int id, void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
 
 #ifdef __cplusplus
 }

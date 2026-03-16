@@ -31,6 +31,18 @@
 
 namespace LFI {
 
+lfi_request::~lfi_request() {
+    std::unique_lock request_lock(mutex);
+    if (!is_completed()) {
+        debug_info(*this);
+        request_lock.unlock();
+        cancel();
+    }
+    if (env::get_instance().LFI_fault_tolerance) {
+        m_endpoint.m_lfi.m_ft_manager.on_request_complete(this, -LFI_CANCELED);
+    }
+}
+
 std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag) {
 #define CASE_TAG(tag)   \
     case LFI_TAG_##tag: \
@@ -94,6 +106,7 @@ void lfi_request::reset() {
     if (aux_wait_context) {
         aux_wait_context->unassign();
     }
+    op_type = OpType::NONE;
     error = 0;
     size = 0;
     tag = 0;
@@ -146,7 +159,7 @@ void lfi_request::complete(int err) {
 
 void lfi_request::cancel() {
     LFI_PROFILE_FUNCTION();
-    int error = -LFI_CANCELED;
+    int cancel_error = -LFI_CANCELED;
 
     {
         std::unique_lock lock(m_endpoint.pending_ops_mutex);
@@ -188,9 +201,9 @@ void lfi_request::cancel() {
                 auto [lock, comm] = m_endpoint.m_lfi.get_comm_and_mutex(comm_id);
                 request_lock.lock();
                 if ((comm && comm->is_canceled) || error == -LFI_BROKEN_COMM) {
-                    error = -LFI_BROKEN_COMM;
+                    cancel_error = -LFI_BROKEN_COMM;
                 } else {
-                    error = -LFI_CANCELED;
+                    cancel_error = -LFI_CANCELED;
                 }
             }
         }
@@ -200,7 +213,7 @@ void lfi_request::cancel() {
     // Try one progress to read the canceled and not accumulate errors
     m_endpoint.protected_progress(false);
 
-    complete(error);
+    complete(cancel_error);
 
     debug_info("[LFI] End " << this);
 }

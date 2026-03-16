@@ -42,6 +42,7 @@ extern "C" {
 #define LFI_GROUP_NO_SELF   13  // The hostname of the current process is missing
 #define LFI_GROUP_INVAL     14  // Invalid argument
 #define LFI_MR_NOT_FOUND    15  // Memory region not found
+#define LFI_IOV_LIMIT       16  // IOV count exceeds hardware/software limit
 
 #ifdef __cplusplus
 }

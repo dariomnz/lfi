@@ -117,45 +117,51 @@ int lfi_server_accept(int socket) {
     return lfi_server_accept_t(socket, 0);
 }
 
-ssize_t lfi_send(int id, const void *data, size_t size) {
+int64_t lfi_send(int id, const void *data, size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_tsend(id, data, size, 0);
 }
 
-ssize_t lfi_tsend(int id, const void *data, size_t size, int tag) {
+int64_t lfi_tsend(int id, const void *data, size_t size, int tag) {
     LFI_PROFILE_FUNCTION();
-    ssize_t ret = -1;
-    LFI::lfi_msg msg;
+    int64_t ret = -1;
     debug_info("(" << id << ", " << data << ", " << size << ", " << tag << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    msg = lfi.send(id, data, size, tag);
-    if (msg.error < 0) {
-        ret = msg.error;
-    } else {
-        ret = msg.size;
-    }
+    ret = lfi.send(id, data, size, tag);
     debug_info("(" << id << ", " << data << ", " << size << ", " << tag << ")=" << ret << " >> End");
     return ret;
 }
+int64_t lfi_tsendv(int id, const struct iovec *iov, size_t count, int tag) {
+    LFI_PROFILE_FUNCTION();
+    int64_t ret = -1;
+    debug_info("(" << id << ", " << iov << ", " << count << ", " << tag << ")>> Begin");
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    ret = lfi.sendv(id, iov, count, tag);
+    debug_info("(" << id << ", " << iov << ", " << count << ", " << tag << ")=" << ret << " >> End");
+    return ret;
+}
 
-ssize_t lfi_recv(int id, void *data, size_t size) {
+int64_t lfi_recv(int id, void *data, size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_trecv(id, data, size, 0);
 }
 
-ssize_t lfi_trecv(int id, void *data, size_t size, int tag) {
+int64_t lfi_trecv(int id, void *data, size_t size, int tag) {
     LFI_PROFILE_FUNCTION();
-    ssize_t ret = -1;
-    LFI::lfi_msg msg;
+    int64_t ret = -1;
     debug_info("(" << id << ", " << data << ", " << size << ", " << tag << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
-    msg = lfi.recv(id, data, size, tag);
-    if (msg.error < 0) {
-        ret = msg.error;
-    } else {
-        ret = msg.size;
-    }
+    ret = lfi.recv(id, data, size, tag);
     debug_info("(" << id << ", " << data << ", " << size << ", " << tag << ")=" << ret << " >> End");
+    return ret;
+}
+int64_t lfi_trecvv(int id, const struct iovec *iov, size_t count, int tag) {
+    LFI_PROFILE_FUNCTION();
+    int64_t ret = -1;
+    debug_info("(" << id << ", " << iov << ", " << count << ", " << tag << ")>> Begin");
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    ret = lfi.recvv(id, iov, count, tag);
+    debug_info("(" << id << ", " << iov << ", " << count << ", " << tag << ")=" << ret << " >> End");
     return ret;
 }
 
@@ -206,9 +212,9 @@ int lfi_mr_unreg(lfi_mr_key key) {
     return ret;
 }
 
-ssize_t lfi_put(int id, const void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
+int64_t lfi_put(int id, const void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
     LFI_PROFILE_FUNCTION();
-    ssize_t ret = -1;
+    int64_t ret = -1;
     debug_info("(" << id << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key.shm_key << "-"
                    << remote_key.peer_key << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -219,9 +225,9 @@ ssize_t lfi_put(int id, const void *data, size_t size, uint64_t remote_addr, lfi
     return ret;
 }
 
-ssize_t lfi_get(int id, void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
+int64_t lfi_get(int id, void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
     LFI_PROFILE_FUNCTION();
-    ssize_t ret = -1;
+    int64_t ret = -1;
     debug_info("(" << id << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key.shm_key << "-"
                    << remote_key.peer_key << ")>> Begin");
     LFI::LFI &lfi = LFI::LFI::get_instance();

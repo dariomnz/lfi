@@ -40,9 +40,9 @@
 #include "lfi_comm.hpp"
 #include "lfi_endpoint.hpp"
 #include "lfi_error.h"
+#include "lfi_mr.hpp"
 #include "lfi_request.hpp"
 #include "lfi_request_context.hpp"
-#include "lfi_mr.hpp"
 
 #define CASE_STR_ERROR(name, msg) \
     case name:                    \
@@ -69,6 +69,7 @@ static constexpr const char *lfi_strerror(int error) {
         CASE_STR_ERROR(LFI_GROUP_NO_SELF, "The hostname of the current process is missing");
         CASE_STR_ERROR(LFI_GROUP_INVAL, "Invalid argument");
         CASE_STR_ERROR(LFI_MR_NOT_FOUND, "Memory region not found");
+        CASE_STR_ERROR(LFI_IOV_LIMIT, "IOV count exceeds hardware/software limit");
         default:
             return "Unknown";
     }
@@ -133,21 +134,24 @@ class LFI {
         RECV,
         RECVV,
     };
-    lfi_msg recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag);
-    int async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
-                            bool priority = false);
+    int64_t recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type type, uint32_t tag);
+    int64_t async_recv_internal(void *buffer, size_t size, recv_type type, uint32_t tag, lfi_request &request,
+                                bool priority = false);
     // Redirects
-    lfi_msg recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
+    int64_t recv(uint32_t comm_id, void *buffer, size_t size, uint32_t tag) {
         return recv_internal(comm_id, buffer, size, recv_type::RECV, tag);
     }
-    lfi_msg recvv(uint32_t comm_id, struct iovec *iov, size_t count, uint32_t tag) {
-        return recv_internal(comm_id, reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag);
+    int64_t recvv(uint32_t comm_id, const struct iovec *iov, size_t count, uint32_t tag) {
+        return recv_internal(comm_id, const_cast<void *>(reinterpret_cast<const void *>(iov)), count, recv_type::RECVV,
+                             tag);
     }
-    int async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, bool priority = false) {
+    int64_t async_recv(void *buffer, size_t size, uint32_t tag, lfi_request &request, bool priority = false) {
         return async_recv_internal(buffer, size, recv_type::RECV, tag, request, priority);
     }
-    int async_recvv(struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, bool priority = false) {
-        return async_recv_internal(reinterpret_cast<void *>(iov), count, recv_type::RECVV, tag, request, priority);
+    int64_t async_recvv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request,
+                        bool priority = false) {
+        return async_recv_internal(const_cast<void *>(reinterpret_cast<const void *>(iov)), count, recv_type::RECVV,
+                                   tag, request, priority);
     }
 
     // send.cpp
@@ -156,31 +160,32 @@ class LFI {
         SEND,
         SENDV,
     };
-    lfi_msg send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag);
-    int async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
-                            bool priority = false);
+    int64_t send_internal(uint32_t comm_id, const void *ptr, size_t size, send_type type, uint32_t tag);
+    int64_t async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
+                                bool priority = false);
     // Redirects
-    lfi_msg send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag) {
+    int64_t send(uint32_t comm_id, const void *buffer, size_t size, uint32_t tag) {
         return send_internal(comm_id, buffer, size, send_type::SEND, tag);
     }
-    lfi_msg sendv(uint32_t comm_id, const struct iovec *iov, size_t count, uint32_t tag) {
+    int64_t sendv(uint32_t comm_id, const struct iovec *iov, size_t count, uint32_t tag) {
         return send_internal(comm_id, reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag);
     }
-    int async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, bool priority = false) {
+    int64_t async_send(const void *buffer, size_t size, uint32_t tag, lfi_request &request, bool priority = false) {
         return async_send_internal(buffer, size, send_type::SEND, tag, request, priority);
     }
-    int async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request, bool priority = false) {
+    int64_t async_sendv(const struct iovec *iov, size_t count, uint32_t tag, lfi_request &request,
+                        bool priority = false) {
         return async_send_internal(reinterpret_cast<const void *>(iov), count, send_type::SENDV, tag, request,
                                    priority);
     }
 
     // rma.cpp
-    int put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
-    int get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
-    int async_put(const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
-                  bool priority = false);
-    int async_get(void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
-                  bool priority = false);
+    int64_t put(uint32_t comm_id, const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+    int64_t get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+    int64_t async_put(const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key,
+                      lfi_request &request, bool priority = false);
+    int64_t async_get(void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key, lfi_request &request,
+                      bool priority = false);
 
     // wait.cpp
    public:

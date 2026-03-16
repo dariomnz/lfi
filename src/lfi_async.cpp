@@ -69,14 +69,6 @@ void lfi_request_free(lfi_request *req) {
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
-    {
-        std::unique_lock request_lock(request->mutex);
-        if (!request->is_completed()) {
-            request_lock.unlock();
-            debug_info(*request);
-            request->cancel();
-        }
-    }
     debug_info("(" << req << ")>> End");
     delete request;
 }
@@ -93,14 +85,14 @@ bool lfi_request_completed(lfi_request *req) {
     return ret;
 }
 
-ssize_t lfi_request_size(lfi_request *req) {
+int64_t lfi_request_size(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
     debug_info(*request);
     std::unique_lock request_lock(request->mutex);
-    ssize_t ret;
+    int64_t ret;
     if (request->is_completed()) {
         if (request->error) {
             ret = request->error;
@@ -114,7 +106,7 @@ ssize_t lfi_request_size(lfi_request *req) {
     return ret;
 }
 
-ssize_t lfi_request_source(lfi_request *req) {
+int64_t lfi_request_source(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
@@ -126,7 +118,7 @@ ssize_t lfi_request_source(lfi_request *req) {
     return ret;
 }
 
-ssize_t lfi_request_error(lfi_request *req) {
+int64_t lfi_request_error(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
@@ -138,19 +130,19 @@ ssize_t lfi_request_error(lfi_request *req) {
     return ret;
 }
 
-ssize_t lfi_send_async(lfi_request *req, const void *data, size_t size) {
+int64_t lfi_send_async(lfi_request *req, const void *data, size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_tsend_async(req, data, size, 0);
 }
 
-ssize_t lfi_recv_async(lfi_request *req, void *data, size_t size) {
+int64_t lfi_recv_async(lfi_request *req, void *data, size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_trecv_async(req, data, size, 0);
 }
 
-ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag) {
+int64_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag) {
     LFI_PROFILE_FUNCTION();
-    ssize_t ret = 0;
+    int64_t ret = 0;
     debug_info("(" << req << ", " << data << ", " << size << ", " << tag << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -161,9 +153,22 @@ ssize_t lfi_tsend_async(lfi_request *req, const void *data, size_t size, int tag
     return ret;
 }
 
-ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
+int64_t lfi_tsendv_async(lfi_request *req, const struct iovec *iov, size_t count, int tag) {
     LFI_PROFILE_FUNCTION();
-    ssize_t ret = 0;
+    int64_t ret = 0;
+    debug_info("(" << req << ", " << iov << ", " << count << ", " << tag << ")>> Begin");
+    if (req == nullptr) return -LFI_NULL_REQUEST;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
+    debug_info(*request);
+    ret = lfi.async_sendv(iov, count, tag, *request);
+    debug_info("(" << request << ", " << iov << ", " << count << ", " << tag << ")=" << ret << ">> End");
+    return ret;
+}
+
+int64_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
+    LFI_PROFILE_FUNCTION();
+    int64_t ret = 0;
     debug_info("(" << req << ", " << data << ", " << size << ", " << tag << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
@@ -174,7 +179,20 @@ ssize_t lfi_trecv_async(lfi_request *req, void *data, size_t size, int tag) {
     return ret;
 }
 
-ssize_t lfi_put_async(lfi_request *req, const void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
+int64_t lfi_trecvv_async(lfi_request *req, const struct iovec *iov, size_t count, int tag) {
+    LFI_PROFILE_FUNCTION();
+    int64_t ret = 0;
+    debug_info("(" << req << ", " << iov << ", " << count << ", " << tag << ")>> Begin");
+    if (req == nullptr) return -LFI_NULL_REQUEST;
+    LFI::LFI &lfi = LFI::LFI::get_instance();
+    LFI::lfi_request *request = reinterpret_cast<LFI::lfi_request *>(req);
+    debug_info(*request);
+    ret = lfi.async_recvv(iov, count, tag, *request);
+    debug_info("(" << request << ", " << iov << ", " << count << ", " << tag << ")=" << ret << ">> End");
+    return ret;
+}
+
+int64_t lfi_put_async(lfi_request *req, const void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key.shm_key << "-"
                    << remote_key.peer_key << ")>> Begin");
@@ -188,7 +206,7 @@ ssize_t lfi_put_async(lfi_request *req, const void *data, size_t size, uint64_t 
     return ret;
 }
 
-ssize_t lfi_get_async(lfi_request *req, void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
+int64_t lfi_get_async(lfi_request *req, void *data, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ", " << data << ", " << size << ", " << remote_addr << ", " << remote_key.shm_key << "-"
                    << remote_key.peer_key << ")>> Begin");
@@ -202,7 +220,7 @@ ssize_t lfi_get_async(lfi_request *req, void *data, size_t size, uint64_t remote
     return ret;
 }
 
-ssize_t lfi_wait(lfi_request *req) {
+int64_t lfi_wait(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
@@ -214,28 +232,28 @@ ssize_t lfi_wait(lfi_request *req) {
     return ret;
 }
 
-inline ssize_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_many) {
+inline int64_t lfi_wait_wrapper(lfi_request *reqs[], size_t size, size_t how_many) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")>> Begin");
     if (reqs == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request **requests = reinterpret_cast<LFI::lfi_request **>(reqs);
-    const ssize_t ret = lfi.wait_num(requests, size, how_many);
+    const int64_t ret = lfi.wait_num(requests, size, how_many);
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")=" << ret << ">> End");
     return ret;
 }
 
-ssize_t lfi_wait_any(lfi_request *reqs[], size_t size) {
+int64_t lfi_wait_any(lfi_request *reqs[], size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_wait_wrapper(reqs, size, 1);
 }
 
-ssize_t lfi_wait_all(lfi_request *reqs[], size_t size) {
+int64_t lfi_wait_all(lfi_request *reqs[], size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_wait_wrapper(reqs, size, size);
 }
 
-ssize_t lfi_test(lfi_request *req) {
+int64_t lfi_test(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;
@@ -247,28 +265,28 @@ ssize_t lfi_test(lfi_request *req) {
     return ret;
 }
 
-inline ssize_t lfi_test_wrapper(lfi_request *reqs[], size_t size, size_t how_many) {
+inline int64_t lfi_test_wrapper(lfi_request *reqs[], size_t size, size_t how_many) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")>> Begin");
     if (reqs == nullptr) return -LFI_NULL_REQUEST;
     LFI::LFI &lfi = LFI::LFI::get_instance();
     LFI::lfi_request **requests = reinterpret_cast<LFI::lfi_request **>(reqs);
-    const ssize_t ret = lfi.test_num(requests, size, how_many);
+    const int64_t ret = lfi.test_num(requests, size, how_many);
     debug_info("(" << reqs << ", " << size << ", " << how_many << ")=" << ret << ">> End");
     return ret;
 }
 
-ssize_t lfi_test_any(lfi_request *reqs[], size_t size) {
+int64_t lfi_test_any(lfi_request *reqs[], size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_test_wrapper(reqs, size, 1);
 }
 
-ssize_t lfi_test_all(lfi_request *reqs[], size_t size) {
+int64_t lfi_test_all(lfi_request *reqs[], size_t size) {
     LFI_PROFILE_FUNCTION();
     return lfi_test_wrapper(reqs, size, size);
 }
 
-ssize_t lfi_cancel(lfi_request *req) {
+int64_t lfi_cancel(lfi_request *req) {
     LFI_PROFILE_FUNCTION();
     debug_info("(" << req << ")>> Begin");
     if (req == nullptr) return -LFI_NULL_REQUEST;

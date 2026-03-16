@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 
 #include "lfi.h"
 
@@ -83,7 +84,7 @@ bool lfi_request_completed(lfi_request *request);
  * @param request Pointer to the 'lfi_request' object.
  * @return The size of the data on success (if the request is completed), or a negative error code on failure.
  */
-ssize_t lfi_request_size(lfi_request *request);
+int64_t lfi_request_size(lfi_request *request);
 
 /**
  * @brief Returns the source ID of the data associated with a completed request.
@@ -92,7 +93,7 @@ ssize_t lfi_request_size(lfi_request *request);
  * @return The source of the data on success (if the request is completed), or -1 if the request is not completed or an
  * error occurred.
  */
-ssize_t lfi_request_source(lfi_request *request);
+int64_t lfi_request_source(lfi_request *request);
 
 /**
  * @brief Returns the error code associated with a request.
@@ -100,7 +101,7 @@ ssize_t lfi_request_source(lfi_request *request);
  * @param request Pointer to the 'lfi_request' object.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_request_error(lfi_request *request);
+int64_t lfi_request_error(lfi_request *request);
 
 /**
  * @brief Sets the callback function and context for an LFI asynchronous request.
@@ -125,7 +126,7 @@ void lfi_request_set_callback(lfi_request *request, lfi_request_callback func_pt
  * @param size The size of the data to send.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_send_async(lfi_request *request, const void *data, size_t size);
+int64_t lfi_send_async(lfi_request *request, const void *data, size_t size);
 
 /**
  * @brief Sends tagged data asynchronously over the LFI connection.
@@ -138,7 +139,8 @@ ssize_t lfi_send_async(lfi_request *request, const void *data, size_t size);
  * @param tag The tag associated with the data.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int tag);
+int64_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int tag);
+int64_t lfi_tsendv_async(lfi_request *request, const struct iovec *iov, size_t count, int tag);
 
 /**
  * @brief Receives data asynchronously over the LFI connection.
@@ -156,7 +158,7 @@ ssize_t lfi_tsend_async(lfi_request *request, const void *data, size_t size, int
  * @param size The size of the buffer.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
+int64_t lfi_recv_async(lfi_request *request, void *data, size_t size);
 
 /**
  * @brief Receives tagged data asynchronously over the LFI connection.
@@ -175,7 +177,8 @@ ssize_t lfi_recv_async(lfi_request *request, void *data, size_t size);
  * @param tag The tag of the data to receive.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
+int64_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
+int64_t lfi_trecvv_async(lfi_request *request, const struct iovec *iov, size_t count, int tag);
 
 /**
  * @brief Performs an asynchronous remote put operation.
@@ -187,7 +190,7 @@ ssize_t lfi_trecv_async(lfi_request *request, void *data, size_t size, int tag);
  * @param remote_key The RMA key for the remote memory region.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_put_async(lfi_request *request, const void *local_addr, size_t size, uint64_t remote_addr,
+int64_t lfi_put_async(lfi_request *request, const void *local_addr, size_t size, uint64_t remote_addr,
                       lfi_mr_key remote_key);
 
 /**
@@ -200,7 +203,7 @@ ssize_t lfi_put_async(lfi_request *request, const void *local_addr, size_t size,
  * @param remote_key The RMA key for the remote memory region.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_get_async(lfi_request *request, void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
+int64_t lfi_get_async(lfi_request *request, void *local_addr, size_t size, uint64_t remote_addr, lfi_mr_key remote_key);
 
 typedef struct lfi_status {
     uint64_t size;
@@ -220,7 +223,7 @@ int lfi_trecv_any(lfi_request *req_shm, void *buffer_shm, lfi_request *req_peer,
  * @param request Pointer to the 'lfi_request' object.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_wait(lfi_request *request);
+int64_t lfi_wait(lfi_request *request);
 
 /**
  * @brief Waits for any of the given asynchronous requests to complete.
@@ -231,7 +234,7 @@ ssize_t lfi_wait(lfi_request *request);
  * @param size The number of requests in the array.
  * @return The index of the one completed request in the array, or a negative error code on failure.
  */
-ssize_t lfi_wait_any(lfi_request *requests[], size_t size);
+int64_t lfi_wait_any(lfi_request *requests[], size_t size);
 
 /**
  * @brief Waits for all of the given asynchronous requests to complete.
@@ -242,7 +245,7 @@ ssize_t lfi_wait_any(lfi_request *requests[], size_t size);
  * @param size The number of requests in the array.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_wait_all(lfi_request *requests[], size_t size);
+int64_t lfi_wait_all(lfi_request *requests[], size_t size);
 
 /**
  * @brief Checks if an asynchronous request has completed.
@@ -254,7 +257,7 @@ ssize_t lfi_wait_all(lfi_request *requests[], size_t size);
  * @return -LFI_TIMEOUT if the request is not completed, LFI_SUCCESS if completed,
  * or a negative error code on failure.
  */
-ssize_t lfi_test(lfi_request *request);
+int64_t lfi_test(lfi_request *request);
 
 /**
  * @brief Checks if any of the given asynchronous requests have completed.
@@ -267,7 +270,7 @@ ssize_t lfi_test(lfi_request *request);
  * @return The index of a completed request, -LFI_TIMEOUT if none are completed,
  * or a negative error code on failure.
  */
-ssize_t lfi_test_any(lfi_request *requests[], size_t size);
+int64_t lfi_test_any(lfi_request *requests[], size_t size);
 
 /**
  * @brief Checks if all of the given asynchronous requests have completed.
@@ -280,7 +283,7 @@ ssize_t lfi_test_any(lfi_request *requests[], size_t size);
  * @return -LFI_TIMEOUT if all requests are not completed, LFI_SUCCESS if all requests are completed,
  * or a negative error code on failure.
  */
-ssize_t lfi_test_all(lfi_request *requests[], size_t size);
+int64_t lfi_test_all(lfi_request *requests[], size_t size);
 
 /**
  * @brief Cancels an asynchronous request.
@@ -294,7 +297,7 @@ ssize_t lfi_test_all(lfi_request *requests[], size_t size);
  * @param request Pointer to the 'lfi_request' object to cancel.
  * @return 0 on success, or a negative error code on failure.
  */
-ssize_t lfi_cancel(lfi_request *request);
+int64_t lfi_cancel(lfi_request *request);
 
 #ifdef __cplusplus
 }

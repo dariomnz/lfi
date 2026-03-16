@@ -43,15 +43,15 @@ int run_test(MPI_Comm& client_comm, int rank, bw_test &test)
     debug_info("Start run_test size "<<test.test_size);
     for (size_t i = 0; i < test.test_count; i++)
     {
-        debug_info("count "<<i<<" MPI_Irecv(data.data(), "<<test_size<<")");
-        int ack = 0;
-        ret = MPI_Recv(&ack, 1, MPI_INT, rank, 0, client_comm, MPI_STATUS_IGNORE);
+        debug_info("ack MPI_Send(data, "<<test_size<<")");
+        ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm);
         if (ret != MPI_SUCCESS){
             printf("Error MPI_Recv\n");
             return -1;
         }
-        debug_info("ack MPI_Send(ack, "<<sizeof(ack)<<")");
-        ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, rank, 0, client_comm);
+        debug_info("count "<<i<<" MPI_Irecv(data.data(), "<<test_size<<")");
+        int ack = 0;
+        ret = MPI_Recv(&ack, 1, MPI_INT, rank, 0, client_comm, MPI_STATUS_IGNORE);
         if (ret != MPI_SUCCESS){
             printf("Error MPI_Recv\n");
             return -1;

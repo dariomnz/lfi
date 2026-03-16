@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
-    auto servers = split(argv[1], ";");
+    auto servers = split(argv[1], ",");
 
     ret = MPI_Init(&argc, &argv);
     if (ret < 0) exit(EXIT_FAILURE);

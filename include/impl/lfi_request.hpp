@@ -46,20 +46,6 @@ struct wait_struct {
     std::atomic<int> wait_count = 0;
 };
 
-struct lfi_msg {
-    uint64_t size = 0;
-    uint32_t source = 0;
-    uint32_t tag = 0;
-    int32_t error = 0;
-
-    std::string to_string() {
-        std::stringstream out;
-        out << "lfi_msg "
-            << " size " << size << " source " << source << " tag " << tag << " error " << error;
-        return out.str();
-    }
-};
-
 // Forward declaration
 struct lfi_request_context;
 struct lfi_request {
@@ -82,6 +68,7 @@ struct lfi_request {
     lfi_request_callback callback = nullptr;
     void *callback_ctx = nullptr;
     lfi_request(lfi_endpoint &endpoint, uint32_t comm_id) : m_endpoint(endpoint), m_comm_id(comm_id) {}
+    ~lfi_request();
 
     // Delete default constructor
     lfi_request() = delete;
@@ -107,7 +94,5 @@ struct lfi_request {
 
     // std::string to_string();
     friend std::ostream &operator<<(std::ostream &os, lfi_request &req);
-
-    operator lfi_msg() const { return lfi_msg{.size = size, .source = source, .tag = tag, .error = error}; }
 };
 }  // namespace LFI
