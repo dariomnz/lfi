@@ -38,9 +38,6 @@ lfi_request::~lfi_request() {
         request_lock.unlock();
         cancel();
     }
-    if (env::get_instance().LFI_fault_tolerance) {
-        m_endpoint.m_lfi.m_ft_manager.on_request_complete(this, -LFI_CANCELED);
-    }
 }
 
 std::ostream &operator<<(std::ostream &os, const format_lfi_tag &tag) {

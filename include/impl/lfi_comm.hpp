@@ -60,7 +60,7 @@ struct lfi_comm {
     std::unordered_set<lfi_request *> ft_requests;
     using clock = std::chrono::high_resolution_clock;
     std::chrono::time_point<clock> ft_heartbeat_time_point = {};
-    std::chrono::time_point<clock> ft_last_request_time = clock::now();
+    std::atomic<std::chrono::time_point<clock>> ft_last_request_time = clock::now();
     enum class ft_status {
         IDLE,
         HEARTBEAT,

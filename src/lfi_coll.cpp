@@ -222,6 +222,7 @@ int lfi_group_create(const char *hostnames[], size_t n_hosts, lfi_group *out_gro
     }
 
     lfi_server_close(mesh_server_fd);
+    debug_info("lfi_group_create OK now barrier");
     lfi_barrier(out_group);
 
     return LFI_SUCCESS;

@@ -1,6 +1,8 @@
 
 #include "impl/ft_manager.hpp"
 
+#include <optional>
+
 #include "impl/debug.hpp"
 #include "impl/env.hpp"
 #include "impl/lfi.hpp"
@@ -56,12 +58,14 @@ void lfi_ft_manager::setup_heartbeat() {
 void lfi_ft_manager::register_request(lfi_request *req, lfi_comm *comm) {
     if (!env::get_instance().LFI_fault_tolerance) return;
 
-    std::scoped_lock ft_lock(comm->m_endpoint.ft_mutex, comm->ft_mutex);
+    std::unique_lock ft_lock(comm->ft_mutex);
     if (comm->rank_peer == ANY_COMM_SHM || comm->rank_peer == ANY_COMM_PEER) {
         debug_info("Save request in any_comm_requests " << req);
+        std::unique_lock end_lock(comm->m_endpoint.ft_mutex);
         comm->m_endpoint.ft_any_comm_requests.emplace(req);
     } else {
         if (comm->ft_requests.size() == 0) {
+            std::unique_lock end_lock(comm->m_endpoint.ft_mutex);
             comm->m_endpoint.ft_comms.emplace(comm);
         }
     }
@@ -73,65 +77,75 @@ void lfi_ft_manager::register_request(lfi_request *req, lfi_comm *comm) {
 }
 
 void lfi_ft_manager::on_request_complete(lfi_request *req, int err) {
-    auto [lock, comm] = m_lfi.get_comm_and_mutex(req->m_comm_id);
+    // auto start = lfi_comm::clock::now();
+    const auto comm = req->m_comm;
     if (comm) {
-        std::scoped_lock ft_lock(comm->m_endpoint.ft_mutex, comm->ft_mutex);
+        std::unique_lock ft_lock(comm->ft_mutex);
         comm->ft_requests.erase(req);
         if (req->m_comm_id != ANY_COMM_SHM && req->m_comm_id != ANY_COMM_PEER) {
             if (comm->ft_requests.size() == 0) {
+                std::unique_lock end_lock(comm->m_endpoint.ft_mutex);
                 req->m_endpoint.ft_comms.erase(comm);
             }
         } else {
+            std::unique_lock end_lock(comm->m_endpoint.ft_mutex);
             req->m_endpoint.ft_any_comm_requests.erase(req);
         }
     }
+    // auto end_ft = lfi_comm::clock::now();
     if (err == LFI_SUCCESS) {
-        auto comm_ptr = m_lfi.get_comm_internal(lock, req->source);
-        if (comm_ptr) {
-            std::unique_lock ft_lock(comm_ptr->ft_mutex);
-            comm_ptr->ft_last_request_time = lfi_comm::clock::now();
+        lfi_comm *comm_to_update = req->m_comm;
+        std::optional<std::shared_lock<std::shared_mutex>> opt_lock;
+        if (req->source != req->m_comm_id) {
+            opt_lock.emplace(m_lfi.m_comms_mutex);
+            comm_to_update = m_lfi.get_comm_internal(*opt_lock, req->source);
+        }
+        if (comm_to_update) {
+            comm_to_update->ft_last_request_time.store(lfi_comm::clock::now());
         }
     }
+    // auto end = lfi_comm::clock::now();
+    // auto ellapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    // auto ellapsed_ft_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end_ft - start).count();
+    // print("on_request_complete " << ellapsed_ft_ns << "ns " << ellapsed_ns << "ns");
 }
 
 void lfi_ft_manager::process_comm(lfi_comm *comm, int32_t ft_ms, std::vector<uint32_t> &canceled_coms,
                                   std::chrono::time_point<std::chrono::high_resolution_clock> now) {
     if (comm->ft_current_status == lfi_comm::ft_status::IDLE) {
-        decltype(comm->ft_last_request_time) last_request_time;
-        {
-            std::unique_lock ft_lock(comm->ft_mutex);
-            last_request_time = comm->ft_last_request_time;
-        }
+        auto last_request_time = comm->ft_last_request_time.load();
         int32_t elapsed_ms_req = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_request_time).count();
-        if (elapsed_ms_req > ft_ms) {
+        if (elapsed_ms_req >= ft_ms) {
             if (!comm->ft_heartbeat_req) {
-                comm->ft_heartbeat_req = std::make_unique<lfi_request>(comm->m_endpoint, comm->rank_peer);
+                comm->ft_heartbeat_req = std::make_unique<lfi_request>(comm->m_endpoint, comm);
             }
-            comm->ft_heartbeat_req->reset();
-            comm->ft_value_heartbeat = 0;
-            debug_info("Get hearbeat comm " << comm->rank_peer);
-            int ret = m_lfi.async_get(&comm->ft_value_heartbeat, sizeof(comm->ft_value_heartbeat),
-                                      comm->ft_remote_heartbeat_addr, comm->ft_remote_heartbeat_key,
-                                      *comm->ft_heartbeat_req, true);
-            if (ret < 0) {
-                canceled_coms.emplace_back(comm->rank_peer);
-                comm->ft_current_status = lfi_comm::ft_status::ERROR;
-                return;
-            }
+            if (comm->ft_heartbeat_req->is_completed()) {
+                comm->ft_heartbeat_req->reset();
+                comm->ft_value_heartbeat = 0;
+                debug_info("Get hearbeat comm " << comm->rank_peer);
+                int ret = m_lfi.async_get(&comm->ft_value_heartbeat, sizeof(comm->ft_value_heartbeat),
+                                          comm->ft_remote_heartbeat_addr, comm->ft_remote_heartbeat_key,
+                                          *comm->ft_heartbeat_req, true);
+                if (ret < 0) {
+                    canceled_coms.emplace_back(comm->rank_peer);
+                    comm->ft_current_status = lfi_comm::ft_status::ERROR;
+                    return;
+                }
 
-            comm->ft_current_status = lfi_comm::ft_status::HEARTBEAT;
-            comm->ft_heartbeat_time_point = std::chrono::high_resolution_clock::now();
+                comm->ft_current_status = lfi_comm::ft_status::HEARTBEAT;
+                comm->ft_heartbeat_time_point = std::chrono::high_resolution_clock::now();
+            }
         }
     } else if (comm->ft_current_status == lfi_comm::ft_status::HEARTBEAT) {
         std::unique_lock lock(comm->ft_heartbeat_req->mutex);
         if (comm->ft_heartbeat_req->is_completed() && comm->ft_value_heartbeat == HEARBEAT_CODE) {
-            debug_info("Hearbeat comm " << comm->rank_peer << " code " << std::hex << comm->ft_value_heartbeat
+            debug_info("Hearbeat comm " << comm->rank_peer << " code 0x" << std::hex << comm->ft_value_heartbeat
                                         << std::dec);
             comm->ft_current_status = lfi_comm::ft_status::IDLE;
         } else {
             int32_t elapsed_ms_pp =
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - comm->ft_heartbeat_time_point).count();
-            if (elapsed_ms_pp > ft_ms) {
+            if (elapsed_ms_pp > std::max(ft_ms, 1000)) {
                 canceled_coms.emplace_back(comm->rank_peer);
                 comm->ft_current_status = lfi_comm::ft_status::ERROR;
             }
@@ -141,15 +155,11 @@ void lfi_ft_manager::process_comm(lfi_comm *comm, int32_t ft_ms, std::vector<uin
 
 void lfi_ft_manager::handle_any_comm_reports(lfi_endpoint &lfi_ep, std::vector<uint32_t> &canceled_coms) {
     {
-        std::unique_lock lock(lfi_ep.ft_mutex);
+        std::unique_lock ft_ep_lock(lfi_ep.ft_mutex);
         if (lfi_ep.ft_any_comm_requests.empty() && lfi_ep.ft_pending_failed_comms.empty() && canceled_coms.empty())
             return;
-    }
 
-    m_requests_to_cancel.reserve(10);
-
-    {
-        std::unique_lock ft_ep_lock(lfi_ep.ft_mutex);
+        lfi_ep.ft_requests_to_cancel.reserve(10);
 
         auto report_to_any = [&](auto &error_sources, bool consume) {
             auto any_req_it = lfi_ep.ft_any_comm_requests.begin();
@@ -164,7 +174,7 @@ void lfi_ft_manager::handle_any_comm_reports(lfi_endpoint &lfi_ep, std::vector<u
                     any_req->source = failed_comm;
                     any_req->error = -LFI_BROKEN_COMM;
                 }
-                m_requests_to_cancel.push_back(any_req);
+                lfi_ep.ft_requests_to_cancel.push_back(any_req);
 
                 any_req_it = lfi_ep.ft_any_comm_requests.erase(any_req_it);
                 if (consume) {
@@ -187,10 +197,10 @@ void lfi_ft_manager::handle_any_comm_reports(lfi_endpoint &lfi_ep, std::vector<u
         }
     }
 
-    for (auto req : m_requests_to_cancel) {
+    for (auto req : lfi_ep.ft_requests_to_cancel) {
         req->cancel();
     }
-    m_requests_to_cancel.clear();
+    lfi_ep.ft_requests_to_cancel.clear();
 }
 
 void lfi_ft_manager::one_loop(lfi_endpoint &lfi_ep) {
@@ -205,8 +215,9 @@ void lfi_ft_manager::one_loop(lfi_endpoint &lfi_ep) {
     }
 
     lfi_ep.ft_last_progress = now;
-    m_canceled_coms.reserve(10);
-    int32_t ft_ms = std::max(1000, env::get_instance().LFI_fault_tolerance_time * 1000);
+    lfi_ep.ft_canceled_coms.reserve(10);
+    // int32_t ft_ms = std::max(1000, env::get_instance().LFI_fault_tolerance_time * 1000);
+    int32_t ft_ms = env::get_instance().LFI_fault_tolerance_time * 1000;
 
     {
         std::shared_lock comm_lock(m_lfi.m_comms_mutex);
@@ -217,25 +228,25 @@ void lfi_ft_manager::one_loop(lfi_endpoint &lfi_ep) {
             for (auto &&[comm_id, comm] : m_lfi.m_comms) {
                 if (comm && comm->m_endpoint == lfi_ep && comm->rank_peer != ANY_COMM_SHM &&
                     comm->rank_peer != ANY_COMM_PEER) {
-                    process_comm(comm.get(), ft_ms, m_canceled_coms, now);
+                    process_comm(comm.get(), ft_ms, lfi_ep.ft_canceled_coms, now);
                 }
             }
         } else {
             std::unordered_set<lfi_comm *> temp_ft_comms(lfi_ep.ft_comms);
             ft_ep_lock.unlock();
             for (auto &&comm : temp_ft_comms) {
-                process_comm(comm, ft_ms, m_canceled_coms, now);
+                process_comm(comm, ft_ms, lfi_ep.ft_canceled_coms, now);
             }
         }
 
-        for (auto &&comm_id : m_canceled_coms) {
+        for (auto &&comm_id : lfi_ep.ft_canceled_coms) {
             auto comm_ptr = m_lfi.get_comm_internal(comm_lock, comm_id);
             if (comm_ptr) cancel_comm(*comm_ptr);
         }
     }
 
-    handle_any_comm_reports(lfi_ep, m_canceled_coms);
-    m_canceled_coms.clear();
+    handle_any_comm_reports(lfi_ep, lfi_ep.ft_canceled_coms);
+    lfi_ep.ft_canceled_coms.clear();
 }
 
 int lfi_ft_manager::cancel_comm(lfi_comm &comm) {

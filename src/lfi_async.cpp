@@ -59,7 +59,7 @@ lfi_request *lfi_request_create(int id) {
         return nullptr;
     }
     const auto ret =
-        reinterpret_cast<lfi_request *>(new (std::nothrow) LFI::lfi_request(comm->m_endpoint, comm->rank_peer));
+        reinterpret_cast<lfi_request *>(new (std::nothrow) LFI::lfi_request(comm->m_endpoint, comm));
     debug_info("(" << id << ")=" << ret << " >> End");
     return ret;
 }

@@ -27,22 +27,26 @@ namespace LFI {
 
 int LFI::get_addr(lfi_comm& lfi_comm, std::vector<uint8_t>& out_addr) {
     LFI_PROFILE_FUNCTION();
-    int ret = -1;
+    int ret = 0;
     debug_info("[LFI] Start");
 
-    size_t size_addr = 0;
-    ret = fi_getname(&lfi_comm.m_endpoint.ep->fid, out_addr.data(), &size_addr);
-    if (ret != -FI_ETOOSMALL) {
-        printf("fi_getname error %d\n", ret);
-        return ret;
+    if (lfi_comm.m_endpoint.addr.empty()) {
+        size_t size_addr = 0;
+        ret = fi_getname(&lfi_comm.m_endpoint.ep->fid, lfi_comm.m_endpoint.addr.data(), &size_addr);
+        if (ret != -FI_ETOOSMALL) {
+            printf("fi_getname error %d\n", ret);
+            return ret;
+        }
+        debug_info("[LFI] size_addr " << size_addr);
+        lfi_comm.m_endpoint.addr.resize(size_addr);
+        ret = fi_getname(&lfi_comm.m_endpoint.ep->fid, lfi_comm.m_endpoint.addr.data(), &size_addr);
+        if (ret) {
+            printf("fi_getname error %d\n", ret);
+            return ret;
+        }
     }
-    debug_info("[LFI] size_addr " << size_addr);
-    out_addr.resize(size_addr);
-    ret = fi_getname(&lfi_comm.m_endpoint.ep->fid, out_addr.data(), &size_addr);
-    if (ret) {
-        printf("fi_getname error %d\n", ret);
-        return ret;
-    }
+
+    out_addr.assign(lfi_comm.m_endpoint.addr.begin(), lfi_comm.m_endpoint.addr.end());
     debug_info("[LFI] End = " << ret);
     return ret;
 }

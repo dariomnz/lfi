@@ -21,25 +21,27 @@
 
 #pragma once
 
+#include <condition_variable>
+
 #include "env.hpp"
 #include "ft_manager.hpp"
-#include "lfi_endpoint.hpp"
 
 namespace LFI {
 
+// Forward declaration
+struct lfi_endpoint;
 // RAII helper to manage progress leadership for an endpoint
 class ProgressGuard {
     lfi_endpoint &m_ep;
+    std::mutex *m_mutex = nullptr;
     std::condition_variable *m_cv = nullptr;
     bool m_is_leader = false;
     bool m_requested = false;
 
    public:
-    inline ProgressGuard(lfi_endpoint &ep, std::condition_variable *cv = nullptr, bool requested = true)
-        : m_ep(ep), m_cv(cv), m_requested(requested) {
-        if (m_requested) {
-            try_acquire();
-        }
+    inline ProgressGuard(lfi_endpoint &ep, std::mutex *mutex = nullptr, std::condition_variable *cv = nullptr,
+                         bool requested = true)
+        : m_ep(ep), m_mutex(mutex), m_cv(cv), m_requested(requested) {
         register_waiter();
     }
 
@@ -48,41 +50,15 @@ class ProgressGuard {
         release();
     }
 
-    inline void try_acquire() {
-        if (m_requested && !m_is_leader) {
-            m_is_leader = !env::get_instance().LFI_efficient_progress || !m_ep.in_progress.exchange(true);
-        }
-    }
+    std::mutex &get_mutex();
 
-    inline void release() {
-        if (m_is_leader) {
-            m_ep.in_progress.store(false);
-            m_is_leader = false;
-            wake_up_one_waiter();
-        }
-    }
-
-    inline bool is_leader() const { return m_is_leader; }
+    bool try_acquire();
+    void release();
 
    private:
-    inline void register_waiter() {
-        if (m_cv != nullptr) {
-            std::unique_lock lock(m_ep.waiters_mutex);
-            m_ep.waiters_list.emplace(m_cv);
-        }
-    }
-    inline void unregister_waiter() {
-        if (m_cv != nullptr) {
-            std::unique_lock lock(m_ep.waiters_mutex);
-            m_ep.waiters_list.erase(m_cv);
-        }
-    }
-    inline void wake_up_one_waiter() {
-        std::unique_lock lock(m_ep.waiters_mutex);
-        if (!m_ep.waiters_list.empty()) {
-            (*m_ep.waiters_list.begin())->notify_one();
-        }
-    }
+    void register_waiter();
+    void unregister_waiter();
+    void wake_up_one_waiter();
 };
 
 }  // namespace LFI

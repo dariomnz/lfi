@@ -101,7 +101,7 @@ void LFI::dump_stats() {
         {
             std::unique_lock lock(endpoint.waiters_mutex);
             std::cerr << indent(1) << "num_waiters: " << endpoint.waiters_list.size() << std::endl;
-            for (auto &&waiter : endpoint.waiters_list) {
+            for (auto &&[waiter, refs] : endpoint.waiters_list) {
                 std::cerr << indent(2) << "Waiter " << waiter << std::endl;
             }
         }

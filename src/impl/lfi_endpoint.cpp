@@ -23,7 +23,6 @@
 
 #include <rdma/fi_rma.h>
 
-#include "helpers.hpp"
 #include "impl/debug.hpp"
 #include "impl/ft_manager.hpp"
 #include "impl/lfi.hpp"
@@ -314,7 +313,7 @@ int lfi_endpoint::protected_progress(bool call_callbacks) {
     // LFI_PROFILE_FUNCTION();
     int made_progress = -1;
     ProgressGuard guard(*this);
-    if (guard.is_leader()) {
+    if (guard.try_acquire()) {
         // debug_info("Run progress from protected_progress");
         made_progress = progress(call_callbacks);
     }

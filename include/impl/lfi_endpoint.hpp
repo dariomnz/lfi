@@ -27,11 +27,13 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "lfi_async.h"
 #include "pending_ops.hpp"
+#include "progress_guard.hpp"
 #include "vector_queue.hpp"
 
 namespace LFI {
@@ -59,6 +61,7 @@ struct lfi_endpoint {
     struct fid_cq *cq = nullptr;
     std::atomic_bool enable_ep = false;
     bool is_shm = false;
+    std::vector<uint8_t> addr = {};
 
     std::atomic_bool in_progress = {false};
 
@@ -67,9 +70,11 @@ struct lfi_endpoint {
     std::unordered_set<uint32_t> ft_pending_failed_comms = {};
     std::unordered_set<lfi_comm *> ft_comms = {};
     std::chrono::time_point<std::chrono::high_resolution_clock> ft_last_progress = {};
+    std::vector<uint32_t> ft_canceled_coms;
+    std::vector<lfi_request *> ft_requests_to_cancel;
 
     std::mutex waiters_mutex = {};
-    std::unordered_set<std::condition_variable *> waiters_list = {};
+    std::unordered_map<ProgressGuard *, std::pair<std::mutex *, std::condition_variable *>> waiters_list = {};
 
     std::mutex callbacks_mutex = {};
     std::vector<std::tuple<lfi_request_callback, int, void *>> callbacks = {};

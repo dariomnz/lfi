@@ -51,6 +51,7 @@ struct lfi_request_context;
 struct lfi_request {
     lfi_endpoint &m_endpoint;
     const uint32_t m_comm_id;
+    lfi_comm* m_comm;
     std::mutex mutex = {};
     std::condition_variable cv = {};
     int error = 0;
@@ -67,7 +68,7 @@ struct lfi_request {
     wait_struct *shared_wait_struct = nullptr;
     lfi_request_callback callback = nullptr;
     void *callback_ctx = nullptr;
-    lfi_request(lfi_endpoint &endpoint, uint32_t comm_id) : m_endpoint(endpoint), m_comm_id(comm_id) {}
+    lfi_request(lfi_endpoint &endpoint, lfi_comm* comm) : m_endpoint(endpoint), m_comm_id(comm->rank_peer), m_comm(comm) {}
     ~lfi_request();
 
     // Delete default constructor

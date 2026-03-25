@@ -20,7 +20,6 @@
  */
 
 #include "impl/debug.hpp"
-#include "impl/helpers.hpp"
 #include "impl/lfi.hpp"
 #include "impl/profiler.hpp"
 #include "lfi_error.h"
@@ -40,7 +39,7 @@ int LFI::test(lfi_request &request) {
     std::unique_lock request_lock(request.mutex);
     auto &endpoint = request.m_endpoint;
     ProgressGuard progress_guard(endpoint);
-    if (progress_guard.is_leader()) {
+    if (progress_guard.try_acquire()) {
         request_lock.unlock();
         endpoint.progress(true);
         request_lock.lock();
@@ -69,11 +68,11 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
     }
 
     {
+        ProgressGuard guard(ep, &request.mutex, &request.cv);
         std::unique_lock request_lock(request.mutex);
         debug_info("[LFI] " << request);
         while (!request.is_completed() && !is_timeout) {
-            ProgressGuard guard(ep, &request.cv);
-            if (guard.is_leader()) {
+            if (guard.try_acquire()) {
                 request_lock.unlock();
                 while (!request.is_completed() && !is_timeout) {
                     ep.progress(true);
@@ -81,8 +80,9 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
                 }
                 request_lock.lock();
             } else {
+                auto wait_predicate = [&]() { return request.is_completed() || guard.try_acquire(); };
                 if (timeout_ms < 0) {
-                    request.cv.wait(request_lock);
+                    request.cv.wait(request_lock, wait_predicate);
                 } else {
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                           std::chrono::high_resolution_clock::now() - start)
@@ -90,7 +90,8 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
                     if (elapsed_ms >= timeout_ms) {
                         is_timeout = true;
                     } else {
-                        request.cv.wait_for(request_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
+                        request.cv.wait_for(request_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms),
+                                            wait_predicate);
                     }
                 }
             }
@@ -150,12 +151,12 @@ int LFI::test_num(lfi_request **requests, int n_requests, int how_many) {
         // Return all completed
         return 0;
     } else {
-        ProgressGuard shm_guard(shm_ep, nullptr, need_progress_in_shm);
-        ProgressGuard peer_guard(peer_ep, nullptr, need_progress_in_peer);
-        if (shm_guard.is_leader()) {
+        ProgressGuard shm_guard(shm_ep, nullptr, nullptr, need_progress_in_shm);
+        ProgressGuard peer_guard(peer_ep, nullptr, nullptr, need_progress_in_peer);
+        if (shm_guard.try_acquire()) {
             shm_ep.progress(true);
         }
-        if (peer_guard.is_leader()) {
+        if (peer_guard.try_acquire()) {
             peer_ep.progress(true);
         }
         loop_requests();
@@ -210,26 +211,27 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
     }
 
     if (shared_wait.wait_count.load() > 0) {
-        ProgressGuard shm_guard(shm_ep, &shared_wait.wait_cv, need_progress_in_shm);
-        ProgressGuard peer_guard(peer_ep, &shared_wait.wait_cv, need_progress_in_peer);
+        ProgressGuard shm_guard(shm_ep, &shared_wait.wait_mutex, &shared_wait.wait_cv, need_progress_in_shm);
+        ProgressGuard peer_guard(peer_ep, &shared_wait.wait_mutex, &shared_wait.wait_cv, need_progress_in_peer);
 
         while (shared_wait.wait_count.load() > 0 && !is_timeout) {
-            shm_guard.try_acquire();
-            peer_guard.try_acquire();
+            bool shm_is_leader = shm_guard.try_acquire();
+            bool peer_is_leader = peer_guard.try_acquire();
 
-            if (shm_guard.is_leader() || peer_guard.is_leader()) {
-                if (shm_guard.is_leader()) {
+            if (shm_is_leader || peer_is_leader) {
+                if (shm_is_leader) {
                     shm_ep.progress(true);
                 }
-                if (peer_guard.is_leader()) {
+                if (peer_is_leader) {
                     peer_ep.progress(true);
                 }
             } else {
+                auto wait_predicate = [&]() {
+                    return shared_wait.wait_count.load() <= 0 || shm_guard.try_acquire() || peer_guard.try_acquire();
+                };
                 if (timeout_ms < 0) {
                     std::unique_lock wait_lock(shared_wait.wait_mutex);
-                    if (shared_wait.wait_count.load() > 0) {
-                        shared_wait.wait_cv.wait(wait_lock);
-                    }
+                    shared_wait.wait_cv.wait(wait_lock, wait_predicate);
                 } else {
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                           std::chrono::high_resolution_clock::now() - start)
@@ -239,7 +241,8 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                     } else {
                         std::unique_lock wait_lock(shared_wait.wait_mutex);
                         if (shared_wait.wait_count.load() > 0) {
-                            shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms));
+                            shared_wait.wait_cv.wait_for(wait_lock, std::chrono::milliseconds(timeout_ms - elapsed_ms),
+                                                         wait_predicate);
                         }
                     }
                 }

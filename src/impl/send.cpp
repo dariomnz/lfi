@@ -42,7 +42,7 @@ int64_t LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
     }
-    lfi_request request(comm->m_endpoint, comm->rank_peer);
+    lfi_request request(comm->m_endpoint, comm);
 
     lock.unlock();
 

@@ -51,7 +51,6 @@ class lfi_ft_manager {
     lfi_mr_key m_heartbeat_key = {-1,-1};
 
    private:
-    void thread_loop();
     void process_comm(lfi_comm* comm, int32_t ft_ms, std::vector<uint32_t>& canceled_comms,
                       std::chrono::time_point<std::chrono::high_resolution_clock> now);
     void handle_any_comm_reports(lfi_endpoint& ep, std::vector<uint32_t>& canceled_comms);
@@ -59,8 +58,6 @@ class lfi_ft_manager {
     LFI& m_lfi;
     std::mutex m_mutex;
     bool m_initialized = false;
-    std::vector<lfi_request*> m_requests_to_cancel;
-    std::vector<uint32_t> m_canceled_coms;
 };
 
 }  // namespace LFI

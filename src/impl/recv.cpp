@@ -38,7 +38,7 @@ int64_t LFI::recv_internal(uint32_t comm_id, void *ptr, size_t size, recv_type t
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
     }
-    lfi_request request(comm->m_endpoint, comm->rank_peer);
+    lfi_request request(comm->m_endpoint, comm);
     lock.unlock();
 
     switch (type) {

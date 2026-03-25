@@ -18,7 +18,7 @@ int64_t LFI::put(uint32_t comm_id, const void *buffer, size_t size, uint64_t rem
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
     }
-    lfi_request request(comm->m_endpoint, comm->rank_peer);
+    lfi_request request(comm->m_endpoint, comm);
     lock.unlock();
 
     ret = async_put(buffer, size, remote_addr, remote_key, request);
@@ -46,7 +46,7 @@ int64_t LFI::get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_ad
     if (!comm) {
         return -LFI_COMM_NOT_FOUND;
     }
-    lfi_request request(comm->m_endpoint, comm->rank_peer);
+    lfi_request request(comm->m_endpoint, comm);
     lock.unlock();
 
     ret = async_get(buffer, size, remote_addr, remote_key, request);
