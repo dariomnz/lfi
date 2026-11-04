@@ -45,7 +45,7 @@ int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
     {
         for (int j = 0; j < servers; j++)
         {
-            debug_info("count "<<i<<" MPI_Isend(data.data(), "<<test_size<<")");
+            debug_info("count "<<i<<" MPI_Send(data.data(), "<<test_size<<")");
             ret = MPI_Send(data.data(), test_size, MPI_UINT8_T, j, 0, client_comm);
             if (ret != MPI_SUCCESS){
                 printf("Error MPI_Send\n");
@@ -53,8 +53,9 @@ int run_test(MPI_Comm& client_comm, int servers, bw_test &test)
             }
             test.size += test_size;
             int ack = 0;
-            debug_info("ack MPI_Recv(ack, "<<sizeof(ack)<<")");
+            debug_info("count "<<i<<" ack MPI_Recv(ack, "<<sizeof(ack)<<")");
             ret = MPI_Recv(&ack, 1, MPI_INT, j, 0, client_comm, MPI_STATUS_IGNORE);
+            debug_info("count "<<i<<" ack MPI_Recv(ack, "<<sizeof(ack)<<") = "<<ret);
             if (ret != MPI_SUCCESS){
                 printf("Error MPI_Recv\n");
                 return -1;
@@ -87,6 +88,9 @@ int main(int argc, char *argv[])
 
     auto servers = split(argv[1], ",");
 
+    // int provided;
+    // ret = MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    // if (ret < 0) exit(EXIT_FAILURE);
     ret = MPI_Init(&argc, &argv);
     if (ret < 0)
         exit(EXIT_FAILURE);
