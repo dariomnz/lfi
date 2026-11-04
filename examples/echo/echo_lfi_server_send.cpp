@@ -32,7 +32,6 @@
 #include "impl/ns.hpp"
 #include "lfi.h"
 #include "lfi_async.h"
-#include "mpi_proto.h"
 #include "thread_pool.hpp"
 
 using namespace bw_examples;

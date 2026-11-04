@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
     int ret;
 
     if (argc < 2) {
-        printf("Usage: %s <server_ips sep ';'>\n", argv[0]);
+        printf("Usage: %s <server_ips sep ','>\n", argv[0]);
         return -1;
     }
 
