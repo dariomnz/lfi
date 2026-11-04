@@ -10,4 +10,4 @@ file(GLOB_RECURSE LFI_LD_PRELOAD_SOURCE
 add_library(LD_PRELOAD_LFI SHARED ${LFI_LD_PRELOAD_HEADERS} ${LFI_LD_PRELOAD_SOURCE})
 set_target_properties(LD_PRELOAD_LFI PROPERTIES PREFIX "")
 
-target_link_libraries(LD_PRELOAD_LFI lfi)
+target_link_libraries(LD_PRELOAD_LFI lfi_static)
