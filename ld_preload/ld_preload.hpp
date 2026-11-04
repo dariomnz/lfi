@@ -73,6 +73,8 @@ class ld_preload {
     ssize_t internal_sendmsg(lfi_socket &lfi_socket, const struct iovec *msg, size_t count);
 
     ld_preload() {
+        static std::atomic<bool> initializing(false);
+        if (initializing.exchange(true)) return;
         debug("ld_preload init Constructor PID: " << getpid() << " - Addr: " << this);
         m_lfi = std::make_unique<LFI::LFI>();
         thread_eventfd_start();

@@ -697,6 +697,19 @@ extern "C"
             debug("[LFI LD_PRELOAD] "<<*preload.socket_ids[sockfd]);
         }
         
+        char aux_buf[1024] = "Hello";
+        for (size_t i = 0; i < 10; i++){
+            debug("[LFI LD_PRELOAD] send aux_buf");
+            auto aux_ret = preload.m_lfi->send(new_fd, aux_buf, sizeof(aux_buf), 1);
+            if (aux_ret < 0) {
+                print_error("connect send lfi (" << server_addr << ", " << ::LFI::env::get_instance().LFI_port << ")");
+            }
+            debug("[LFI LD_PRELOAD] recv aux_buf");
+            aux_ret = preload.m_lfi->recv(new_fd, aux_buf, sizeof(aux_buf), 1);
+            if (aux_ret < 0) {
+                print_error("connect recv lfi (" << server_addr << ", " << ::LFI::env::get_instance().LFI_port << ")");
+            }
+        }
 
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << addr << ", " << addrlen << ") = " << ret << " " << STR_ERRNO(ret));
         return ret;
@@ -809,6 +822,19 @@ extern "C"
         debug("[LFI LD_PRELOAD] save new lfi_socket fd " << ret << " lfi " << new_fd);
 
         
+        char aux_buf[1024] = "Hello";
+        for (size_t i = 0; i < 10; i++){
+            debug("[LFI LD_PRELOAD] recv aux_buf");
+            auto aux_ret = preload.m_lfi->recv(new_fd, aux_buf, sizeof(aux_buf), 1);
+            if (aux_ret < 0) {
+                print_error("accept recv lfi (" << host_ip << ", " << ::LFI::env::get_instance().LFI_port << ")");
+            }
+            debug("[LFI LD_PRELOAD] send aux_buf");
+            aux_ret = preload.m_lfi->send(new_fd, aux_buf, sizeof(aux_buf), 1);
+            if (aux_ret < 0) {
+                print_error("accept send lfi (" << host_ip << ", " << ::LFI::env::get_instance().LFI_port << ")");
+            }
+        }
 
         debug("[LFI LD_PRELOAD] End (" << sockfd << ", " << addr << ", " << addrlen << ", " << getAcceptFlags(flags) << ") = " << ret << " " << STR_ERRNO(ret));
         return ret;
