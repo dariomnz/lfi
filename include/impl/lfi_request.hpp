@@ -21,12 +21,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
-#include <sstream>
 
 #include "lfi_async.h"
-#include "lfi_comm.hpp"
 
 namespace LFI {
 
@@ -47,11 +46,14 @@ struct wait_struct {
 };
 
 // Forward declaration
+constexpr static const uint32_t UNINITIALIZED_COMM = 0xFFFFFFFF;
 struct lfi_request_context;
+struct lfi_comm;
+struct lfi_endpoint;
 struct lfi_request {
     lfi_endpoint &m_endpoint;
     const uint32_t m_comm_id;
-    lfi_comm* m_comm;
+    lfi_comm *m_comm;
     std::mutex mutex = {};
     std::condition_variable cv = {};
     int error = 0;
@@ -68,7 +70,13 @@ struct lfi_request {
     wait_struct *shared_wait_struct = nullptr;
     lfi_request_callback callback = nullptr;
     void *callback_ctx = nullptr;
-    lfi_request(lfi_endpoint &endpoint, lfi_comm* comm) : m_endpoint(endpoint), m_comm_id(comm->rank_peer), m_comm(comm) {}
+
+    // FT
+    lfi_request *prev = nullptr;
+    lfi_request *next = nullptr;
+    bool inserted = false;
+
+    lfi_request(lfi_endpoint &endpoint, lfi_comm *comm);
     ~lfi_request();
 
     // Delete default constructor

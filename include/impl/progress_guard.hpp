@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 
 #include "env.hpp"
@@ -35,30 +36,43 @@ class ProgressGuard {
     lfi_endpoint &m_ep;
     std::mutex *m_mutex = nullptr;
     std::condition_variable *m_cv = nullptr;
-    bool m_is_leader = false;
+    std::atomic<bool> m_is_leader = false;
     bool m_requested = false;
+
+   public:
+    ProgressGuard *prev = nullptr;
+    ProgressGuard *next = nullptr;
+    bool inserted = false;
 
    public:
     inline ProgressGuard(lfi_endpoint &ep, std::mutex *mutex = nullptr, std::condition_variable *cv = nullptr,
                          bool requested = true)
         : m_ep(ep), m_mutex(mutex), m_cv(cv), m_requested(requested) {
+        if (!env::get_instance().LFI_efficient_progress) {
+            m_is_leader = m_requested;
+            return;
+        }
+        try_acquire();
         register_waiter();
     }
 
     inline ~ProgressGuard() {
+        if (!env::get_instance().LFI_efficient_progress) {
+            return;
+        }
         unregister_waiter();
-        release();
+        transfer_leader_and_wake();
     }
 
     std::mutex &get_mutex();
 
-    bool try_acquire();
-    void release();
+    inline bool leader() { return m_is_leader; }
 
    private:
+    void transfer_leader_and_wake();
+    bool try_acquire();
     void register_waiter();
     void unregister_waiter();
-    void wake_up_one_waiter();
 };
 
 }  // namespace LFI

@@ -31,6 +31,9 @@
 
 namespace LFI {
 
+lfi_request::lfi_request(lfi_endpoint &endpoint, lfi_comm *comm)
+    : m_endpoint(endpoint), m_comm_id(comm->rank_peer), m_comm(comm), source(UNINITIALIZED_COMM) {}
+
 lfi_request::~lfi_request() {
     std::unique_lock request_lock(mutex);
     if (!is_completed()) {
@@ -114,17 +117,20 @@ void lfi_request::reset() {
 void lfi_request::complete(int err) {
     LFI_PROFILE_FUNCTION();
 
+    debug_info("[LFI] >> Check complete request " << this);
+    // If completed do nothing
+    if (is_completed()) {
+        debug_info("[LFI] << End complete request already completed " << this);
+        return;
+    }
+
     if (env::get_instance().LFI_fault_tolerance) {
         m_endpoint.m_lfi.m_ft_manager.on_request_complete(this, err);
     }
 
     std::unique_lock request_lock(mutex);
     debug_info("[LFI] >> Begin complete request " << *this);
-    // If completed do nothing
-    if (is_completed()) {
-        debug_info("[LFI] << End complete request already completed " << *this);
-        return;
-    }
+
     error = err;
     auto aux_wait_context = wait_context.load();
     if (aux_wait_context) {

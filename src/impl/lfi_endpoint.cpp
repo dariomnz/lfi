@@ -127,88 +127,86 @@ struct format_fi_cq_err_entry {
 };
 
 void lfi_endpoint::post_pending_ops() {
-    {
-        std::unique_lock<std::mutex> lock(pending_ops_mutex);
-        auto process_queue = [&](VectorQueue<lfi_pending_op> &queue) {
-            while (!queue.empty()) {
-                auto &op = queue.front();
-                int op_ret = 0;
-                switch (op.type) {
-                    case lfi_pending_op::Type::NONE:
-                        op_ret = 0;
-                        debug_error("[LFI] Pending op NONE");
-                        break;
-                    case lfi_pending_op::Type::SEND:
-                        op_ret = fi_tsend(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag_remote_addr, op.context);
-                        break;
-                    case lfi_pending_op::Type::SENDV:
-                        op_ret = fi_tsendv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
-                                           op.tag_remote_addr, op.context);
-                        break;
-                    case lfi_pending_op::Type::RECV:
-                        op_ret = fi_trecv(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag_remote_addr,
-                                          op.ignore_remote_key, op.context);
-                        break;
-                    case lfi_pending_op::Type::RECVV:
-                        op_ret = fi_trecvv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
-                                           op.tag_remote_addr, op.ignore_remote_key, op.context);
-                        break;
-                    case lfi_pending_op::Type::INJECT:
-                        op_ret = fi_tinject(op.ep, op.buf.cbuf, op.len, op.addr, op.tag_remote_addr);
-                        break;
-                    case lfi_pending_op::Type::PUT:
-                        op_ret = fi_write(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag_remote_addr,
-                                          op.ignore_remote_key, op.context);
-                        break;
-                    case lfi_pending_op::Type::GET:
-                        op_ret = fi_read(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag_remote_addr,
-                                         op.ignore_remote_key, op.context);
-                        break;
-                }
+    std::unique_lock<std::mutex> lock(pending_ops_mutex);
+    auto process_queue = [this](VectorQueue<lfi_pending_op> &queue) {
+        while (!queue.empty()) {
+            auto &op = queue.front();
+            int op_ret = 0;
+            switch (op.type) {
+                case lfi_pending_op::Type::NONE:
+                    op_ret = 0;
+                    debug_error("[LFI] Pending op NONE");
+                    break;
+                case lfi_pending_op::Type::SEND:
+                    op_ret = fi_tsend(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag_remote_addr, op.context);
+                    break;
+                case lfi_pending_op::Type::SENDV:
+                    op_ret = fi_tsendv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
+                                       op.tag_remote_addr, op.context);
+                    break;
+                case lfi_pending_op::Type::RECV:
+                    op_ret = fi_trecv(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag_remote_addr,
+                                      op.ignore_remote_key, op.context);
+                    break;
+                case lfi_pending_op::Type::RECVV:
+                    op_ret = fi_trecvv(op.ep, static_cast<const iovec *>(op.buf.cbuf), nullptr, op.len, op.addr,
+                                       op.tag_remote_addr, op.ignore_remote_key, op.context);
+                    break;
+                case lfi_pending_op::Type::INJECT:
+                    op_ret = fi_tinject(op.ep, op.buf.cbuf, op.len, op.addr, op.tag_remote_addr);
+                    break;
+                case lfi_pending_op::Type::PUT:
+                    op_ret = fi_write(op.ep, op.buf.cbuf, op.len, nullptr, op.addr, op.tag_remote_addr,
+                                      op.ignore_remote_key, op.context);
+                    break;
+                case lfi_pending_op::Type::GET:
+                    op_ret = fi_read(op.ep, op.buf.buf, op.len, nullptr, op.addr, op.tag_remote_addr,
+                                     op.ignore_remote_key, op.context);
+                    break;
+            }
 
-                if (op_ret == -FI_EAGAIN) {
-                    debug_info("[LFI] Pending op FI_EAGAIN, remaining ops: " << queue.size());
-                    debug_info("[LFI] op: " << op);
-                    // Not enough resources to post the operation, the queue is not empty
-                    return false;
-                } else {
-                    if (op_ret != 0) {
-                        debug_info("[LFI] Error in pending op: " << fi_strerror(op_ret));
-                        if (op.context) {
-                            lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
-                            if (ctx) {
-                                lfi_request *req = ctx->get_request();
-                                if (req) {
-                                    req->complete(-LFI_LIBFABRIC_ERROR);
-                                }
-                            }
-                        }
-                    } else if (op.type == lfi_pending_op::Type::INJECT) {
-                        // Inject does not generate CQ entry, complete it here
-                        if (op.context) {
-                            lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
-                            if (ctx) {
-                                lfi_request *req = ctx->get_request();
-                                if (req) {
-                                    req->complete(LFI_SUCCESS);
-                                }
-                                m_lfi.req_ctx_factory.destroy(ctx);
+            if (op_ret == -FI_EAGAIN) {
+                debug_info("[LFI] Pending op FI_EAGAIN, remaining ops: " << queue.size());
+                debug_info("[LFI] op: " << op);
+                // Not enough resources to post the operation, the queue is not empty
+                return false;
+            } else {
+                if (op_ret != 0) {
+                    debug_info("[LFI] Error in pending op: " << fi_strerror(op_ret));
+                    if (op.context) {
+                        lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
+                        if (ctx) {
+                            lfi_request *req = ctx->get_request();
+                            if (req) {
+                                req->complete(-LFI_LIBFABRIC_ERROR);
                             }
                         }
                     }
-
-                    debug_info("[LFI] Pending op posted, remaining " << queue.size() - 1);
-                    debug_info("[LFI] op: " << op);
-                    queue.pop();
+                } else if (op.type == lfi_pending_op::Type::INJECT) {
+                    // Inject does not generate CQ entry, complete it here
+                    if (op.context) {
+                        lfi_request_context *ctx = static_cast<lfi_request_context *>(op.context);
+                        if (ctx) {
+                            lfi_request *req = ctx->get_request();
+                            if (req) {
+                                req->complete(LFI_SUCCESS);
+                            }
+                            m_lfi.req_ctx_factory.destroy(ctx);
+                        }
+                    }
                 }
-            }
-            // Finish processing queue
-            return true;
-        };
 
-        if (process_queue(priority_ops)) {
-            process_queue(pending_ops);
+                debug_info("[LFI] Pending op posted, remaining " << queue.size() - 1);
+                debug_info("[LFI] op: " << op);
+                queue.pop();
+            }
         }
+        // Finish processing queue
+        return true;
+    };
+
+    if (process_queue(priority_ops)) {
+        process_queue(pending_ops);
     }
 }
 
@@ -295,14 +293,15 @@ int lfi_endpoint::progress(bool call_callbacks) {
     }
 
     if (call_callbacks) {
-        std::vector<std::tuple<lfi_request_callback, int, void *>> swap_callbacks;
-        {
-            std::unique_lock callback_lock(callbacks_mutex);
+        std::unique_lock callback_lock(callbacks_mutex);
+        if (callbacks.size() != 0) {
+            decltype(callbacks) swap_callbacks;
             callbacks.swap(swap_callbacks);
-        }
-        for (auto &&[callback, error, ctx] : swap_callbacks) {
-            debug_info("[LFI] calling callbacks");
-            callback(error, ctx);
+            callback_lock.unlock();
+            for (auto &&[callback, error, ctx] : swap_callbacks) {
+                debug_info("[LFI] calling callbacks");
+                callback(error, ctx);
+            }
         }
     }
 
@@ -313,7 +312,7 @@ int lfi_endpoint::protected_progress(bool call_callbacks) {
     // LFI_PROFILE_FUNCTION();
     int made_progress = -1;
     ProgressGuard guard(*this);
-    if (guard.try_acquire()) {
+    if (guard.leader()) {
         // debug_info("Run progress from protected_progress");
         made_progress = progress(call_callbacks);
     }

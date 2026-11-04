@@ -21,23 +21,23 @@
 
 #pragma once
 
+#include <math.h>
 #include <rdma/fabric.h>
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <unordered_set>
 
+#include "DoubleLinkedList.hpp"
 #include "lfi.h"
+#include "lfi_request.hpp"
 
 namespace LFI {
 
 // Forward declaration
-struct lfi_request;
 struct lfi_endpoint;
 
-constexpr static const uint32_t UNINITIALIZED_COMM = 0xFFFFFFFF;
 constexpr static const uint32_t ANY_COMM_SHM = LFI_ANY_COMM_SHM;
 constexpr static const uint32_t ANY_COMM_PEER = LFI_ANY_COMM_PEER;
 
@@ -56,11 +56,14 @@ struct lfi_comm {
     lfi_endpoint &m_endpoint;
 
     // For fault tolerance
-    std::recursive_mutex ft_mutex;
-    std::unordered_set<lfi_request *> ft_requests;
+    std::mutex ft_mutex;
+    lfi_comm *next = nullptr;
+    lfi_comm *prev = nullptr;
+    bool inserted = false;
+    DoubleLinkedList<lfi_request> ft_requests;
     using clock = std::chrono::high_resolution_clock;
     std::chrono::time_point<clock> ft_heartbeat_time_point = {};
-    std::atomic<std::chrono::time_point<clock>> ft_last_request_time = clock::now();
+    std::chrono::time_point<clock> ft_last_request_time = clock::now();
     enum class ft_status {
         IDLE,
         HEARTBEAT,

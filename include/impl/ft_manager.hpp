@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <mutex>
 #include <vector>
+
 #include "lfi_mr.hpp"
 
 namespace LFI {
@@ -46,9 +47,10 @@ class lfi_ft_manager {
 
     int cancel_comm(lfi_comm& comm);
 
+    lfi_mr_key m_heartbeat_key = {-1, -1};
+    
     static constexpr uint64_t HEARBEAT_CODE = 0xBAADC0DEDEAD11FE;
-    uint64_t m_local_heartbeat = HEARBEAT_CODE;
-    lfi_mr_key m_heartbeat_key = {-1,-1};
+    static uint64_t m_local_heartbeat;
 
    private:
     void process_comm(lfi_comm* comm, int32_t ft_ms, std::vector<uint32_t>& canceled_comms,

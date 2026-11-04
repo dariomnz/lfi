@@ -39,7 +39,7 @@ int LFI::test(lfi_request &request) {
     std::unique_lock request_lock(request.mutex);
     auto &endpoint = request.m_endpoint;
     ProgressGuard progress_guard(endpoint);
-    if (progress_guard.try_acquire()) {
+    if (progress_guard.leader()) {
         request_lock.unlock();
         endpoint.progress(true);
         request_lock.lock();
@@ -72,7 +72,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
         std::unique_lock request_lock(request.mutex);
         debug_info("[LFI] " << request);
         while (!request.is_completed() && !is_timeout) {
-            if (guard.try_acquire()) {
+            if (guard.leader()) {
                 request_lock.unlock();
                 while (!request.is_completed() && !is_timeout) {
                     ep.progress(true);
@@ -80,7 +80,7 @@ int LFI::wait(lfi_request &request, int32_t timeout_ms) {
                 }
                 request_lock.lock();
             } else {
-                auto wait_predicate = [&]() { return request.is_completed() || guard.try_acquire(); };
+                auto wait_predicate = [&]() { return request.is_completed() || guard.leader(); };
                 if (timeout_ms < 0) {
                     request.cv.wait(request_lock, wait_predicate);
                 } else {
@@ -153,10 +153,10 @@ int LFI::test_num(lfi_request **requests, int n_requests, int how_many) {
     } else {
         ProgressGuard shm_guard(shm_ep, nullptr, nullptr, need_progress_in_shm);
         ProgressGuard peer_guard(peer_ep, nullptr, nullptr, need_progress_in_peer);
-        if (shm_guard.try_acquire()) {
+        if (shm_guard.leader()) {
             shm_ep.progress(true);
         }
-        if (peer_guard.try_acquire()) {
+        if (peer_guard.leader()) {
             peer_ep.progress(true);
         }
         loop_requests();
@@ -215,8 +215,8 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
         ProgressGuard peer_guard(peer_ep, &shared_wait.wait_mutex, &shared_wait.wait_cv, need_progress_in_peer);
 
         while (shared_wait.wait_count.load() > 0 && !is_timeout) {
-            bool shm_is_leader = shm_guard.try_acquire();
-            bool peer_is_leader = peer_guard.try_acquire();
+            bool shm_is_leader = shm_guard.leader();
+            bool peer_is_leader = peer_guard.leader();
 
             if (shm_is_leader || peer_is_leader) {
                 if (shm_is_leader) {
@@ -227,7 +227,7 @@ int LFI::wait_num(lfi_request **requests, int n_requests, int how_many, int32_t 
                 }
             } else {
                 auto wait_predicate = [&]() {
-                    return shared_wait.wait_count.load() <= 0 || shm_guard.try_acquire() || peer_guard.try_acquire();
+                    return shared_wait.wait_count.load() <= 0 || shm_guard.leader() || peer_guard.leader();
                 };
                 if (timeout_ms < 0) {
                     std::unique_lock wait_lock(shared_wait.wait_mutex);

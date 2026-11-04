@@ -60,7 +60,7 @@ void LFI::dump_stats() {
                 std::unique_lock ft_comm_lock(comm->ft_mutex);
                 std::cerr << indent(2) << "Last request: " << format_time<lfi_comm::clock>(comm->ft_last_request_time)
                           << std::endl;
-                std::cerr << indent(2) << "ft_requests size: " << comm->ft_requests.size() << std::endl;
+                std::cerr << indent(2) << "ft_requests size: " << comm->ft_requests.size << std::endl;
                 for (auto &&req : comm->ft_requests) {
                     std::unique_lock lock_req(req->mutex);
                     std::cerr << indent(3) << *req << std::endl;
@@ -92,7 +92,7 @@ void LFI::dump_stats() {
         }
         {
             std::unique_lock lock(endpoint.ft_mutex);
-            std::cerr << indent(1) << "ft_comms size: " << endpoint.ft_comms.size() << std::endl;
+            std::cerr << indent(1) << "ft_comms size: " << endpoint.ft_comms.size << std::endl;
             for (auto &&comm : endpoint.ft_comms) {
                 std::cerr << indent(2) << "Comm " << comm->rank_peer << std::endl;
             }
@@ -100,8 +100,8 @@ void LFI::dump_stats() {
 
         {
             std::unique_lock lock(endpoint.waiters_mutex);
-            std::cerr << indent(1) << "num_waiters: " << endpoint.waiters_list.size() << std::endl;
-            for (auto &&[waiter, refs] : endpoint.waiters_list) {
+            std::cerr << indent(1) << "num_waiters: " << endpoint.waiters_list.size << std::endl;
+            for (auto &&waiter : endpoint.waiters_list) {
                 std::cerr << indent(2) << "Waiter " << waiter << std::endl;
             }
         }

@@ -31,10 +31,6 @@ std::mutex& ProgressGuard::get_mutex() { return m_ep.waiters_mutex; }
 bool ProgressGuard::try_acquire() {
     if (m_requested && !m_is_leader) {
         // printf("before in_progress %s\n", (m_ep.in_progress ? "true" : "false"));
-        if (!env::get_instance().LFI_efficient_progress) {
-            m_is_leader = true;
-            return m_is_leader;
-        }
         m_is_leader = !m_ep.in_progress.exchange(true);
         // printf("after in_progress %s\n", (m_ep.in_progress ? "true" : "false"));
         debug_info("try_acquire in " << this << " " << (m_is_leader ? "true" : "false"));
@@ -43,18 +39,9 @@ bool ProgressGuard::try_acquire() {
     return m_is_leader;
 }
 
-void ProgressGuard::release() {
-    if (m_is_leader) {
-        m_ep.in_progress.store(false);
-        m_is_leader = false;
-        debug_info("Release progress guard " << this);
-        wake_up_one_waiter();
-    }
-}
-
 void ProgressGuard::register_waiter() {
     std::unique_lock lock(m_ep.waiters_mutex);
-    m_ep.waiters_list.emplace(this, std::make_pair(m_mutex, m_cv));
+    m_ep.waiters_list.push_back(this);
     debug_info("Emplace progress guard " << this);
 }
 
@@ -64,17 +51,22 @@ void ProgressGuard::unregister_waiter() {
     debug_info("Erase progress guard " << this);
 }
 
-void ProgressGuard::wake_up_one_waiter() {
+void ProgressGuard::transfer_leader_and_wake() {
+    if (!m_is_leader) return;
+
     std::unique_lock lock(m_ep.waiters_mutex);
-    if (!m_ep.waiters_list.empty()) {
-        auto it = m_ep.waiters_list.begin();
-        ProgressGuard* target_guard = it->first;
-        std::mutex* target_mutex = it->second.first;
-        std::condition_variable* target_cv = it->second.second;
-        std::unique_lock target_lock(*target_mutex);
-        [[maybe_unused]] bool acquired = target_guard->try_acquire();
-        debug_info("Acquired from " << this << " in other " << target_guard << " " << (acquired ? "true" : "false"));
-        target_cv->notify_one();
+
+    ProgressGuard* successor = m_ep.waiters_list.head;
+    if (successor) {
+        this->m_is_leader = false;
+        successor->m_is_leader = true;
+        if (successor->m_mutex && successor->m_cv) {
+            std::unique_lock successor_lock(*successor->m_mutex);
+            successor->m_cv->notify_one();
+        }
+    } else {
+        m_ep.in_progress.store(false);
+        m_is_leader = false;
     }
 }
 }  // namespace LFI
