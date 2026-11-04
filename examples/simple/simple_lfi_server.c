@@ -27,7 +27,7 @@
 #include <unistd.h>
 
 #include "lfi.h"
-#define PORT 8080
+#define PORT 8954
 int main(void) {
     int server_fd, new_socket;
     ssize_t valread, valsend;

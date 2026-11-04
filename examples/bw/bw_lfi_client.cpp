@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
 
     if (argc < 2)
     {
-        printf("Usage: %s <server_ips sep ';'>\n", argv[0]);
+        printf("Usage: %s <server_ips sep ','>\n", argv[0]);
         return -1;
     }
 
@@ -98,7 +98,8 @@ int main(int argc, char *argv[])
     client_fds.resize(servers.size());
     for (size_t i = 0; i < servers.size(); i++)
     {
-        if ((client_fds[i] = lfi_client_create(servers[i].data(), PORT)) < 0) {
+        int port = PORT+i;
+        if ((client_fds[i] = lfi_client_create(servers[i].data(), port)) < 0) {
             printf("lfi client creation error \n");
             MPI_Abort(MPI_COMM_WORLD, -1);
             return -1;
@@ -115,6 +116,15 @@ int main(int argc, char *argv[])
     auto &tests = get_test_vector();
     data.resize(tests[tests.size()-1].test_size);
     print_header();
+
+    if (!tests.empty()) {
+        bw_test warmup_test = tests[0];
+        ret = run_test(client_fds, warmup_test);
+        if (ret < 0) {
+            MPI_Abort(MPI_COMM_WORLD, -1);
+        }
+        if (rank == 0) print("Warmup finished.");
+    }
 
     for (auto &test : tests)
     {

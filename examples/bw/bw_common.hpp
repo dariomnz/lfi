@@ -33,7 +33,7 @@
 
 namespace bw_examples
 {
-    constexpr const int PORT = 8080;
+    constexpr const int PORT = 8954;
 
     constexpr const uint64_t KB = 1024;
     constexpr const uint64_t MB = KB * 1024;
@@ -52,6 +52,7 @@ namespace bw_examples
     static std::vector<bw_test> &get_test_vector()
     {
         static std::vector<bw_test> tests(23);
+        // static std::vector<bw_test> tests(2);
         static bool initialized = false;
         if (!initialized)
         {
@@ -63,8 +64,8 @@ namespace bw_examples
                 tests[i].test_count = 100;
                 tests[i].test_tag = 1000+i;
             }
-            const int TO_REMOVE_FIRST = 10;
-            tests.erase(tests.begin(), tests.begin()+TO_REMOVE_FIRST);
+            // const int TO_REMOVE_FIRST = 10;
+            // tests.erase(tests.begin(), tests.begin()+TO_REMOVE_FIRST);
         }
         return tests;
     }
@@ -83,22 +84,23 @@ namespace bw_examples
         return tokens;
     }
 
-    [[maybe_unused]] static void print_header()
+    [[maybe_unused]] static void print_header(MPI_Comm comm = MPI_COMM_WORLD)
     {
         int rank;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_rank(comm, &rank);
         if (rank == 0)
         {
-            std::cout << std::left
-                      << std::setw( 6) << "Msg" << " | "
-                      << std::setw( 5) << "Count" << " | "
-                      << std::setw( 7) << "Size" << " | "
-                      << std::setw( 8) << "Time (s)" << " | "
-                      << std::setw( 8) << "Lat (ms)" << " | "
-                      << std::setw(10) << "Bw (MiB/s)" << " | "
-                      << std::setw( 9) << "Bw (Mbps)" << " | "
-                      << std::setw(11) << "Msg (msg/s)"
-                      << std::endl;
+            std::stringstream ss;
+            ss << std::left
+               << std::setw( 6) << "Msg" << " | "
+               << std::setw( 5) << "Count" << " | "
+               << std::setw( 7) << "Size" << " | "
+               << std::setw( 8) << "Time (s)" << " | "
+               << std::setw( 8) << "Lat (ms)" << " | "
+               << std::setw(10) << "Bw (MiB/s)" << " | "
+               << std::setw( 9) << "Bw (Mbps)" << " | "
+               << std::setw(11) << "Msg (msg/s)";
+            std::cout << ss.str() << std::endl;
         }
     }
 
@@ -138,7 +140,7 @@ namespace bw_examples
         return result.str();
     }
 
-    [[maybe_unused]] static void print_test(bw_test &test)
+    [[maybe_unused]] static void print_test(bw_test &test, MPI_Comm comm = MPI_COMM_WORLD)
     {
         uint64_t s_test_count = test.test_count;
         uint64_t s_size = test.size;
@@ -147,28 +149,29 @@ namespace bw_examples
         uint64_t r_size = 0;
 
         // MPI_Reduce(&s_bw, &r_bw, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_test_count, &r_test_count, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(&s_size, &r_size, 1, MPI_UINT64_T, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Reduce(&s_test_count, &r_test_count, 1, MPI_UINT64_T, MPI_SUM, 0, comm);
+        MPI_Reduce(&s_size, &r_size, 1, MPI_UINT64_T, MPI_SUM, 0, comm);
+        MPI_Barrier(comm);
 
         double sec =  ((double)test.nanosec / 1'000'000'000.0);
         double bw = ((double)r_size / (double)MB) / sec;
         test.test_count = r_test_count;
 
         int rank;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_rank(comm, &rank);
         if (rank == 0)
         {
-            std::cout << std::left
-                      << std::setw( 6) << bytes_to_str(test.test_size) << " | "
-                      << std::setw( 5) << test.test_count << " | "
-                      << std::setw( 7) << bytes_to_str(r_size) << " | "
-                      << std::setw( 8) << std::fixed << std::setprecision(5) << sec << " | "
-                      << std::setw( 8) << std::fixed << std::setprecision(5) << (double)test.nanosec / 1'000'000.0 / (double)test.test_count << " | "
-                      << std::setw(10) << std::fixed << std::setprecision(2) << bw << " | "
-                      << std::setw( 9) << std::fixed << std::setprecision(0) << (((bw * 1024 * 1024) * 8) / 1'000'000) << " | "
-                      << std::setw(11) << std::fixed << std::setprecision(0) << (double)test.test_count / ((double)test.nanosec / 1'000'000'000.0)
-                      << std::endl;
+            std::stringstream ss;
+            ss << std::left
+               << std::setw( 6) << bytes_to_str(test.test_size) << " | "
+               << std::setw( 5) << test.test_count << " | "
+               << std::setw( 7) << bytes_to_str(r_size) << " | "
+               << std::setw( 8) << std::fixed << std::setprecision(5) << sec << " | "
+               << std::setw( 8) << std::fixed << std::setprecision(5) << (double)test.nanosec / 1'000'000.0 / (double)test.test_count << " | "
+               << std::setw(10) << std::fixed << std::setprecision(2) << bw << " | "
+               << std::setw( 9) << std::fixed << std::setprecision(0) << (((bw * 1024 * 1024) * 8) / 1'000'000) << " | "
+               << std::setw(11) << std::fixed << std::setprecision(0) << (double)test.test_count / ((double)test.nanosec / 1'000'000'000.0);
+            std::cout << ss.str() << std::endl;
         }
     }
 

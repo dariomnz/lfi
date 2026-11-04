@@ -72,8 +72,11 @@ int main(int argc, char *argv[])
     ret = MPI_Init(&argc, &argv);
     if (ret < 0) exit(EXIT_FAILURE);
 
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     // Creating socket file descriptor
-    int port = PORT;
+    int port = PORT + rank;
     if ((server_fd = lfi_server_create(NULL, &port)) < 0) {
         perror("lfi server failed");
         exit(EXIT_FAILURE);
@@ -82,7 +85,7 @@ int main(int argc, char *argv[])
     auto &tests = get_test_vector();
     data.resize(tests[tests.size()-1].test_size);
 
-    print("Server start accepting "<<LFI::ns::get_host_name()<<" :");
+    print("Server start accepting "<<LFI::ns::get_host_name()<<":"<<port<<" :");
     int iter = 0;
     while (iter < max_clients)
     {
@@ -93,6 +96,9 @@ int main(int argc, char *argv[])
         print("Server accept client "<<new_socket);
         std::thread([new_socket, &tests](){
             int ret = 0;
+            if (!tests.empty()) {
+                run_test(new_socket, tests[0]);
+            }
             for (auto &test : tests)
             {
                 ret = run_test(new_socket, test);

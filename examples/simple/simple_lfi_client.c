@@ -25,7 +25,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "lfi.h"
-#define PORT 8080
+#define PORT 8954
 
 int main(int argc, char *argv[])
 {
