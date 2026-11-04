@@ -5,6 +5,7 @@ set(EXAMPLES_SIMPLE
     simple_lfi_client_pp
     simple_lfi_client_async
     simple_lfi_server
+    simple_lfi_server_loop
     simple_lfi_server_pp
     simple_lfi_coll
     simple_lfi_allreduce

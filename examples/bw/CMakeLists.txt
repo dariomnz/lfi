@@ -14,6 +14,7 @@ endif()
 set(EXAMPLES_BW
     bw_socket_client
     bw_socket_server
+    bw_lfi_bcast
     bw_lfi_client
     bw_lfi_server
     bw_lfi_client_invert
@@ -23,12 +24,14 @@ set(EXAMPLES_BW
     bw_lfi_server_async
     bw_lfi_any_comm_client
     bw_lfi_any_comm_server
+    bw_mpi_bcast
     bw_mpi_client
     bw_mpi_server
     bw_mpi_client_invert
     bw_mpi_server_invert
     bw_mpi_server_tpool
     simple_mpi_coll
+    bw_register_mr
 )
 
 # add the executables cpp
