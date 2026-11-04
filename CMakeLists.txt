@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # add_compile_options("-DLFI_PROFILE")
 # add_compile_options("-DDEBUG")
-add_compile_options("-fPIC" "-O3" "-g" "-Wall" "-Wextra")
+add_compile_options("-fPIC" "-O3" "-march=native" "-g" "-Wall" "-Wextra")
+# add_compile_options("-fPIC" "-O0" "-g" "-Wall" "-Wextra")
 
 link_libraries("pthread" "dl")
 
