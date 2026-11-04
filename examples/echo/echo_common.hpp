@@ -170,7 +170,7 @@ template <typename T, typename R>
     auto start = std::chrono::high_resolution_clock::now();
     volatile uint64_t value = 0;
     while (std::chrono::high_resolution_clock::now() - start < time) {
-        value += 1;
+        value = value + 1;
     }
 }
 

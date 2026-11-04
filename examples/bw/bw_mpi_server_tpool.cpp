@@ -57,7 +57,7 @@ int run_test(MPI_Comm &client_comm, int rank, bw_test &test, ThreadPool &tpool) 
             // simulate work
             volatile int acum = 0;
             for (size_t w = 0; w < 1'000'000; w++) {
-                acum += w;
+                acum = acum + w;
             }
 
             int ack = 0;
