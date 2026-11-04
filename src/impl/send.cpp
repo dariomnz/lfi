@@ -68,7 +68,7 @@ int64_t LFI::send_internal(uint32_t comm_id, const void *ptr, size_t size, send_
     }
 
     debug_info("[LFI] End");
-    return request.size;
+    return request.error < 0 ? request.error : request.size;
 }
 
 int64_t LFI::async_send_internal(const void *buffer, size_t size, send_type type, uint32_t tag, lfi_request &request,
@@ -83,6 +83,10 @@ int64_t LFI::async_send_internal(const void *buffer, size_t size, send_type type
     }
 
     // Check cancelled comm
+    std::unique_lock comm_lock(comm->ft_mutex, std::defer_lock);
+    if (env::get_instance().LFI_fault_tolerance) {
+        comm_lock.lock();
+    }
     if (comm->is_canceled) {
         return -LFI_BROKEN_COMM;
     }

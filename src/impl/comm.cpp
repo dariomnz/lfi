@@ -187,11 +187,10 @@ int LFI::close_comm(uint32_t id) {
         if (!comm) {
             return -LFI_COMM_NOT_FOUND;
         }
-        remove_addr(*comm);
-
         if (env::get_instance().LFI_fault_tolerance) {
             m_ft_manager.cancel_comm(*comm);
         }
+        remove_addr(*comm);
     }
     {
         std::unique_lock comm_lock(m_comms_mutex);

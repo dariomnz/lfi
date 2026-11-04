@@ -27,13 +27,13 @@ int64_t LFI::put(uint32_t comm_id, const void *buffer, size_t size, uint64_t rem
         return ret;
     }
 
-    wait(request);
+    ret = wait(request);
+    if (ret < 0) {
+        return ret;
+    }
 
     debug_info("[LFI] End");
-    if (request.error < 0) {
-        return request.error;
-    }
-    return request.size;
+    return request.error < 0 ? request.error : request.size;
 }
 
 int64_t LFI::get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key) {
@@ -55,13 +55,13 @@ int64_t LFI::get(uint32_t comm_id, void *buffer, size_t size, uint64_t remote_ad
         return ret;
     }
 
-    wait(request);
+    ret = wait(request);
+    if (ret < 0) {
+        return ret;
+    }
 
     debug_info("[LFI] End");
-    if (request.error < 0) {
-        return request.error;
-    }
-    return request.size;
+    return request.error < 0 ? request.error : request.size;
 }
 
 int64_t LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, lfi_mr_key remote_key,
@@ -73,6 +73,10 @@ int64_t LFI::async_put(const void *buffer, size_t size, uint64_t remote_addr, lf
     std::unique_lock req_lock(request.mutex);
 
     if (!comm) return -LFI_COMM_NOT_FOUND;
+    std::unique_lock comm_lock(comm->ft_mutex, std::defer_lock);
+    if (env::get_instance().LFI_fault_tolerance) {
+        comm_lock.lock();
+    }
     if (comm->is_canceled) return -LFI_BROKEN_COMM;
 
     request.reset();
@@ -115,6 +119,10 @@ int64_t LFI::async_get(void *buffer, size_t size, uint64_t remote_addr, lfi_mr_k
     std::unique_lock req_lock(request.mutex);
 
     if (!comm) return -LFI_COMM_NOT_FOUND;
+    std::unique_lock comm_lock(comm->ft_mutex, std::defer_lock);
+    if (env::get_instance().LFI_fault_tolerance) {
+        comm_lock.lock();
+    }
     if (comm->is_canceled) return -LFI_BROKEN_COMM;
 
     request.reset();
