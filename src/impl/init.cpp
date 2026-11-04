@@ -165,7 +165,6 @@ int LFI::init(lfi_endpoint &lfi_ep) {
         return ret;
     }
 
-    av_attr.type = FI_AV_MAP;
     ret = fi_av_open(lfi_ep.domain, &av_attr, &lfi_ep.av, NULL);
     debug_info("[LFI] fi_av_open = " << ret);
     if (ret) {
