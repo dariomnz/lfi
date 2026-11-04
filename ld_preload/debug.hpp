@@ -35,11 +35,20 @@
 #ifdef DEBUG
 #define debug(out_format)                                                                                                          \
     {                                                                                                                              \
-        std::unique_lock internal_debug_lock(::LFI::debug_lock::get_lock());                                                                                \
+        std::unique_lock internal_debug_lock(::LFI::get_print_mutex());                                                                                \
         std::cerr << ::LFI::getTime() << " [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl << std::flush; \
     }
 #else
 #define debug(out_format)
+#endif
+#ifdef DEBUG_SENDS
+#define debug_send(out_format)                                                                                                          \
+    {                                                                                                                              \
+        std::unique_lock internal_debug_lock(::LFI::get_print_mutex());                                                                                \
+        std::cerr << ::LFI::getTime() << " [" << ::LFI::file_name(__FILE__) << ":" << __LINE__ << "] [" << __func__ << "] [" << std::this_thread::get_id() << "] " << out_format << std::endl << std::flush; \
+    }
+#else
+#define debug_send(out_format)
 #endif
 
 #define CASE_STR_OS(name) \
@@ -55,7 +64,7 @@
         return #name;      \
     }
 
-#define STR_ERRNO std::strerror(errno)
+#define STR_ERRNO(ret)  (ret < 0 ? std::strerror(errno) : "")
 
 std::ostream &operator<<(std::ostream &os, const socklen_t *addlen)
 {
@@ -799,14 +808,27 @@ std::string printIovec(const struct iovec *iov, size_t iovlen, size_t how_many =
         uint8_t * data = static_cast<uint8_t *>(iov[i].iov_base);
         result << std::dec << "iovec[" << i << "] ";
         result << std::dec << "(" << iov[i].iov_len << " bytes) ";
-        auto num = std::min(iov[i].iov_len, how_many);
-        for (size_t j = 0; j < num; ++j) {
-            result << std::hex << std::setw(2) << std::setfill('0') << (int)data[j] << " ";
-            if (j % 1024 == 0 && j != 0){
-                result << std::endl;
+        if (i < static_cast<ssize_t>(iovlen) - 1) {
+            uint8_t* current_end = data + iov[i].iov_len;
+            uint8_t* next_start = static_cast<uint8_t*>(iov[i+1].iov_base);
+
+            if (current_end == next_start) {
+                result << "[MERGE] ";
             }
         }
-        result << std::endl;
+        auto num = std::min(iov[i].iov_len, how_many);
+        for (size_t j = 0; j < num; ++j) {
+            if (isprint(data[j])){
+                result << data[j];
+            }
+            // result << std::hex << std::setw(2) << std::setfill('0') << (int)data[j] << " ";
+            // if (j % 1024 == 0 && j != 0){
+            //     result << std::endl;
+            // }
+        }
+        // if (num != 0){
+        //     result << std::endl;
+        // }
     }
 
     return result.str();
@@ -856,14 +878,37 @@ std::string msghdr_to_str(const struct msghdr *msg, size_t how_many = 0)
     {
         os << "Message Data: null, ";
     }
+    // --- Datos de Control (Ancillary Data) ---
+    if (msg->msg_control && msg->msg_controllen >= sizeof(struct cmsghdr)) {
+        os << "Control Data [" << msg->msg_controllen << " bytes]: { ";
 
-    if (msg->msg_control && msg->msg_controllen > 0)
-    {
-        os << "Control Data: (not implemented, " << msg->msg_controllen << " bytes)";
-    }
-    else
-    {
-        os << "Control Data: null";
+        // Forzamos el puntero inicial
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(msg);
+
+        // Verificación crítica: ¿Es el primer puntero válido y su tamaño coherente?
+        while (cmsg != nullptr) {
+            // 1. Verificar que el puntero cmsg esté dentro de los límites de msg_control
+            uintptr_t ptr_start = reinterpret_cast<uintptr_t>(msg->msg_control);
+            uintptr_t ptr_curr = reinterpret_cast<uintptr_t>(cmsg);
+            uintptr_t ptr_end = ptr_start + msg->msg_controllen;
+
+            if (ptr_curr < ptr_start || (ptr_curr + sizeof(struct cmsghdr)) > ptr_end) {
+                os << "Invalid Pointer Offset";
+                break;
+            }
+
+            // 2. Verificar que cmsg_len no sea una dirección de memoria (el error que ves)
+            if (cmsg->cmsg_len > msg->msg_controllen || cmsg->cmsg_len < sizeof(struct cmsghdr)) {
+                os << "Invalid cmsg_len detected: " << cmsg->cmsg_len;
+                break;
+            }
+
+            os << "[L: " << cmsg->cmsg_level << ", T: " << cmsg->cmsg_type << ", Len: " << cmsg->cmsg_len << "]";
+
+            // Siguiente elemento
+            cmsg = CMSG_NXTHDR(const_cast<struct msghdr *>(msg), cmsg);
+        }
+        os << " }";
     }
     os << ", ";
 

@@ -22,21 +22,22 @@
 #ifndef _LD_PRELOAD_H
 #define _LD_PRELOAD_H
 
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <unordered_map>
-#include <mutex>
-#include <tuple>
+#include <sys/types.h>
+
 #include <deque>
 #include <impl/lfi.hpp>
+#include <mutex>
+#include <tuple>
+#include <unordered_map>
 
-class ld_preload
-{
-public:
+#include "debug.hpp"
+
+class ld_preload {
+   public:
     std::unique_ptr<LFI::LFI> m_lfi;
 
-    struct lfi_socket
-    {
+    struct lfi_socket {
         int lfi_id = -1;
         int eventfd = -1;
         std::mutex m_mutex = {};
@@ -45,85 +46,94 @@ public:
             uint64_t consumed = 0;
         };
         std::deque<buffered> buffers = {};
+
+        friend std::ostream &operator<<(std::ostream &os, const lfi_socket &s);
     };
 
     std::recursive_mutex m_mutex;
-    std::unordered_map<int, lfi_socket> socket_ids;
+    std::unordered_map<int, std::unique_ptr<lfi_socket>> socket_ids;
 
     std::mutex m_map_comm_socket_mutex;
     std::unordered_map<int, int> m_map_comm_socket;
 
     std::vector<std::thread> m_thread_eventfd;
+    std::vector<std::unique_ptr<::LFI::lfi_request>> m_shm_request;
+    std::vector<std::unique_ptr<::LFI::lfi_request>> m_peer_request;
     std::mutex m_thread_eventfd_mutex;
     std::atomic_bool m_thread_eventfd_is_running = {false};
 
-    int create_eventfd(lfi_socket& ids);
-    int destroy_eventfd(lfi_socket& ids);
+    int create_eventfd(lfi_socket &ids);
+    int destroy_eventfd(lfi_socket &ids);
     static inline bool is_caller_libfabric();
     void thread_eventfd_start();
     void thread_eventfd_end();
-    static void thread_eventfd_loop();
-    
-    ssize_t internal_recvmsg(lfi_socket& lfi_socket, const struct iovec *msg, size_t count);
-    ssize_t internal_sendmsg(lfi_socket& lfi_socket, const struct iovec *msg, size_t count);
+    static void thread_eventfd_loop(int id);
 
-    ld_preload()
-    {
+    ssize_t internal_recvmsg(lfi_socket &lfi_socket, const struct iovec *msg, size_t count);
+    ssize_t internal_sendmsg(lfi_socket &lfi_socket, const struct iovec *msg, size_t count);
+
+    ld_preload() {
+        debug("ld_preload init Constructor PID: " << getpid() << " - Addr: " << this);
         m_lfi = std::make_unique<LFI::LFI>();
         thread_eventfd_start();
     }
 
-    ~ld_preload()
-    {
+    ~ld_preload() {
+        debug("ld_preload destroy");
         thread_eventfd_end();
+        
+        for (size_t i = 0; i < LFI::env::get_instance().LFI_ld_preload_threads; i++) {
+            m_shm_request[i].reset();
+            m_peer_request[i].reset();
+        }
         m_lfi.reset();
     }
 
-    static ld_preload &get_instance()
-    {
+    static ld_preload &get_instance() {
         static ld_preload instance;
         return instance;
     }
 };
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
-    int socket(int domain, int type, int protocol);
-    int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int socket(int domain, int type, int protocol) throw();
+int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
-    ssize_t write(int fd, const void *buf, size_t count);
-    ssize_t read(int fd, void *buf, size_t count);
+ssize_t write(int fd, const void *buf, size_t count);
+ssize_t read(int fd, void *buf, size_t count);
 
-    int close(int fd);
+int close(int fd);
 
-    int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
-    int listen(int sockfd, int backlog);
+int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) throw();
+int listen(int sockfd, int backlog) throw();
 
-    int accept(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen);
-    int accept4(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen, int flags);
+int accept(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen);
+int accept4(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen, int flags);
 
-    ssize_t recv(int sockfd, void *buf, size_t len, int flags);
-    ssize_t recvfrom(int sockfd, void *__restrict buf, size_t len, int flags, struct sockaddr *__restrict src_addr, socklen_t *__restrict addrlen);
-    ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+ssize_t recvfrom(int sockfd, void *__restrict buf, size_t len, int flags, struct sockaddr *__restrict src_addr,
+                 socklen_t *__restrict addrlen);
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
 
-    ssize_t send(int sockfd, const void *buf, size_t len, int flags);
-    ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
-    ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags);
+ssize_t send(int sockfd, const void *buf, size_t len, int flags);
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
+ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags);
 
-    int select(int nfds, fd_set *__restrict readfds, fd_set *__restrict writefds, fd_set *__restrict exceptfds, struct timeval *__restrict timeout);
+int select(int nfds, fd_set *__restrict readfds, fd_set *__restrict writefds, fd_set *__restrict exceptfds,
+           struct timeval *__restrict timeout);
 
-    int shutdown(int sockfd, int how);
+int shutdown(int sockfd, int how) throw();
 
-    int getpeername(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen);
+int getpeername(int sockfd, struct sockaddr *__restrict addr, socklen_t *__restrict addrlen) throw();
 
-    int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *__restrict optlen);
-    int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
+int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *__restrict optlen) throw();
+int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen) throw();
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // _LD_PRELOAD_H
+#endif  // _LD_PRELOAD_H

@@ -27,6 +27,7 @@
 #include "impl/debug.hpp"
 #include "impl/ns.hpp"
 #include "impl/profiler.hpp"
+#include "impl/proxy.hpp"
 
 namespace LFI {
 
@@ -48,7 +49,7 @@ int socket::server_init(const std::string& addr, int& port) {
     server_addr.sin_family = AF_INET;
     if (!addr.empty()) {
         debug_info("Socket bind to " << addr);
-        if (::inet_pton(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
+        if (PROXY(inet_pton)(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
             debug_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
             return -1;
         }
@@ -56,9 +57,9 @@ int socket::server_init(const std::string& addr, int& port) {
         debug_info("Socket bind to INADDR_ANY");
         server_addr.sin_addr.s_addr = INADDR_ANY;
     }
-    server_addr.sin_port = ::htons(port);
+    server_addr.sin_port = PROXY(htons)(port);
 
-    ret = ::bind(socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    ret = PROXY(bind)(socket, (struct sockaddr*)&server_addr, sizeof(server_addr));
     if (ret < 0) {
         debug_error("ERROR: bind fails");
         socket::close(socket);
@@ -68,15 +69,15 @@ int socket::server_init(const std::string& addr, int& port) {
     // listen
     debug_info("Socket listen");
 
-    ret = ::listen(socket, 1024);
+    ret = PROXY(listen)(socket, 1024);
     if (ret < 0) {
         debug_error("ERROR: listen fails");
         socket::close(socket);
         return ret;
     }
     socklen_t len = sizeof(server_addr);
-    ::getsockname(socket, (struct sockaddr*)&server_addr, &len);
-    port = ::ntohs(server_addr.sin_port);
+    PROXY(getsockname)(socket, (struct sockaddr*)&server_addr, &len);
+    port = PROXY(ntohs)(server_addr.sin_port);
 
     debug_info("available at " << port);
 
@@ -90,7 +91,7 @@ int socket::retry_connect(int socket, sockaddr* addr, socklen_t len, int timeout
     auto start = std::chrono::high_resolution_clock::now();
     while (ret < 0) {
         debug_info("Try to connect server");
-        ret = ::connect(socket, addr, len);
+        ret = PROXY(connect)(socket, addr, len);
         if (ret < 0) {
             auto elapsed =
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start)
@@ -146,14 +147,14 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
         }
 
         // Free the linked list created by getaddrinfo
-        ::freeaddrinfo(res);
+        PROXY(freeaddrinfo)(res);
     } else {
         struct sockaddr_in server_addr = {};
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
 
         debug_info("Socket bind to " << addr);
-        if (::inet_pton(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
+        if (PROXY(inet_pton)(AF_INET, addr.c_str(), &server_addr.sin_addr) <= 0) {
             debug_error("Error: Invalid IP address or conversion error in addr '" << addr << "'");
             return -1;
         }
@@ -161,7 +162,7 @@ int socket::client_init(const std::string& addr, int port, int timeout_ms, bool 
         if (socket < 0) {
             return socket;
         }
-        if ((ret = ::connect(socket, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr))) == -1) {
+        if ((ret = PROXY(connect)(socket, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr))) == -1) {
             debug_error("connect " << addr << " port " << port);
             socket::close(socket);
             return -1;
@@ -198,7 +199,7 @@ int socket::open() {
     // Socket init
     debug_info("Socket init");
 
-    out_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    out_socket = PROXY(socket)(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (out_socket < 0) {
         debug_error("ERROR: socket fails");
         return out_socket;
@@ -208,7 +209,7 @@ int socket::open() {
     debug_info("TCP nodelay");
 
     val = 1;
-    ret = ::setsockopt(out_socket, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
+    ret = PROXY(setsockopt)(out_socket, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val));
     if (ret < 0) {
         debug_error("ERROR: setsockopt fails");
         socket::close(out_socket);
@@ -219,7 +220,7 @@ int socket::open() {
     debug_info("Socket reuseaddr");
 
     val = 1;
-    ret = ::setsockopt(out_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&val, sizeof(int));
+    ret = PROXY(setsockopt)(out_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&val, sizeof(int));
     if (ret < 0) {
         debug_error("ERROR: setsockopt fails");
         socket::close(out_socket);
@@ -235,7 +236,7 @@ int socket::accept_timeout(int socket, int timeout_ms) {
     sockaddr_in client_addr;
     socklen_t size = sizeof(sockaddr_in);
     if (timeout_ms == 0) {
-        return ::accept(socket, (struct sockaddr*)&client_addr, &size);
+        return PROXY(accept)(socket, (struct sockaddr*)&client_addr, &size);
     }
     struct pollfd fds[1];
     fds[0].fd = socket;
@@ -260,7 +261,7 @@ int socket::accept_timeout(int socket, int timeout_ms) {
             return -1;
         } else {
             if (fds[0].revents & POLLIN) {
-                return ::accept(socket, (struct sockaddr*)&client_addr, &size);
+                return PROXY(accept)(socket, (struct sockaddr*)&client_addr, &size);
             } else {
                 return -1;
             }
@@ -283,7 +284,7 @@ int socket::accept(int socket, int timeout_ms) {
 
     // tcp_nodelay
     flag = 1;
-    ret = ::setsockopt(new_socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+    ret = PROXY(setsockopt)(new_socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
     if (ret < 0) {
         debug_error("setsockopt: ");
         socket::close(new_socket);
@@ -308,7 +309,7 @@ int socket::close(int socket) {
     LFI_PROFILE_FUNCTION();
     int ret = -1;
     debug_info(">> Begin");
-    ret = ::close(socket);
+    ret = PROXY(close)(socket);
     debug_info(">> End = " << ret);
     return ret;
 }
@@ -321,8 +322,11 @@ ssize_t socket::send(int socket, const void* data, size_t len) {
     debug_info(">> Begin");
 
     do {
-        r = ::send(socket, buffer, l, 0);
-        if (r < 0) return r; /* fail */
+        r = PROXY(send)(socket, buffer, l, 0);
+        if (r < 0) {
+            debug_info(">> End = " << r << " " << strerror(errno));
+            return r; /* fail */
+        }
 
         l = l - r;
         buffer = buffer + r;
@@ -341,8 +345,11 @@ ssize_t socket::recv(int socket, void* data, size_t len) {
     char* buffer = static_cast<char*>(data);
 
     do {
-        r = ::recv(socket, buffer, l, 0);
-        if (r < 0) return r; /* fail */
+        r = PROXY(recv)(socket, buffer, l, 0);
+        if (r < 0) {
+            debug_info(">> End = " << r << " " << strerror(errno));
+            return r; /* fail */
+        }
 
         l = l - r;
         buffer = buffer + r;

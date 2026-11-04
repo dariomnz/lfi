@@ -26,26 +26,17 @@
 #include <stdexcept>
 #include <debug.hpp>
 
-#define PROXY(func) \
-    ::lookupSymbol<::func>(#func)
+#define PROXY(func) ::lookupSymbol<::func>(#func)
 
-static auto getSymbol(const char *name)
-{
-    auto symbol = ::dlsym(RTLD_NEXT, name);
-    if (!symbol)
-    {
+template <auto T>
+static auto lookupSymbol(const char *name) {
+    using return_type = decltype(T);
+    static return_type symbol = (return_type)::dlsym(RTLD_NEXT, name);
+    if (!symbol) {
         std::string errormsg = "dlsym failed to find symbol '";
         errormsg += name;
         errormsg += "'";
         throw std::runtime_error(errormsg);
     }
-    return symbol;
-}
-
-template <auto T>
-static auto lookupSymbol(const char *name)
-{
-    using return_type = decltype(T);
-    static return_type symbol = (return_type)getSymbol(name);
     return symbol;
 }
